@@ -33,9 +33,14 @@ describe('buildExplainPrompt', () => {
     expect(prompt).toContain('api.example.com')
     expect(prompt).toContain('Workspace path escapes')
     expect(prompt).toContain('~/x')
+    expect(prompt).toContain('case study')
+    expect(prompt).toContain('not a glossary')
   })
 
-  it('forbids changing verdict in system prompt', () => {
+  it('asks for case analysis instead of term definitions', () => {
     expect(EXPLAIN_SYSTEM).toContain('NOT a security verdict')
+    expect(EXPLAIN_SYSTEM).toContain('THIS plugin')
+    expect(EXPLAIN_SYSTEM).toContain('Do not')
+    expect(EXPLAIN_SYSTEM).toMatch(/glossary|abstract/i)
   })
 })

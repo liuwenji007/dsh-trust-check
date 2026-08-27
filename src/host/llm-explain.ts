@@ -85,8 +85,8 @@ export async function explainWithLlm(ctx: Context, prompt: string): Promise<stri
       content: [{ type: 'text', text: prompt }],
       source: { kind: 'plugin', plugin: 'dsh-trust-check' },
     }],
-    maxTokens: 1024,
-    temperature: 0.2,
+    maxTokens: 1200,
+    temperature: 0.3,
     ...(sessionId === undefined ? {} : { sessionId }),
   }))
 
