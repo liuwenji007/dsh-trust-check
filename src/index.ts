@@ -201,10 +201,6 @@ export function apply(ctx: Context, config?: Config): void {
                   sendJson(response, 404, { error: 'plugin not found' })
                   return
                 }
-                if (report.redLines.length > 0) {
-                  sendJson(response, 400, { error: 'cannot ack a plugin with red lines' })
-                  return
-                }
                 const entry = setAck(resolveProfileDir(profile), report)
                 sendJson(response, 200, { name: body.name, ack: entry })
               } catch (error) {

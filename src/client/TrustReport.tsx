@@ -446,12 +446,14 @@ function PluginCardBody({
   const drift = ackDrifted(report, ack)
   const [evidenceFocus, setEvidenceFocus] = useState<Capability | null>(null)
   const [ackLoading, setAckLoading] = useState(false)
+  const [ackError, setAckError] = useState(false)
   const [explainLoading, setExplainLoading] = useState(false)
   const [explainText, setExplainText] = useState<string | null>(null)
   const [explainError, setExplainError] = useState(false)
 
   const postAck = async () => {
     setAckLoading(true)
+    setAckError(false)
     try {
       const res = await fetch('/dsh-trust-check/ack', {
         method: 'POST',
@@ -460,6 +462,8 @@ function PluginCardBody({
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       onAckChange()
+    } catch {
+      setAckError(true)
     } finally {
       setAckLoading(false)
     }
@@ -467,12 +471,15 @@ function PluginCardBody({
 
   const revokeAck = async () => {
     setAckLoading(true)
+    setAckError(false)
     try {
       const res = await fetch(`/dsh-trust-check/ack?name=${encodeURIComponent(report.name)}`, {
         method: 'DELETE',
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       onAckChange()
+    } catch {
+      setAckError(true)
     } finally {
       setAckLoading(false)
     }
@@ -534,6 +541,7 @@ function PluginCardBody({
             {explainLoading ? t('explain.loading') : t('explain.button')}
           </button>
         </div>
+        {ackError && <div className={css.errorInline}>{t('ack.error')}</div>}
         {explainError && <div className={css.muted}>{t('explain.error')}</div>}
         {explainText !== null && (
           <div className={css.explainBox}>
