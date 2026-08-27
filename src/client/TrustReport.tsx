@@ -13,6 +13,7 @@ import {
   formatInjectionDetail,
   groupEvidenceByFile,
   groupInjections,
+  presentInjection,
   topCapabilities,
   verdict,
   type Concern,
@@ -315,6 +316,7 @@ function InjectionPanel({ report, t }: { report: AuditReport; t: T }) {
       <section className={css.section}>
         <header className={css.sectionHead}>
           <h3 className={css.sectionTitle}>{t('injections')}</h3>
+          <p className={css.sectionHint}>{t('injections.hint')}</p>
         </header>
         <p className={css.sectionEmpty}>{t('noInjection')}</p>
       </section>
@@ -331,15 +333,35 @@ function InjectionPanel({ report, t }: { report: AuditReport; t: T }) {
             <span className={css.foldMeta}>~{tokens} {t('injectedTokens')}</span>
           )}
         </summary>
+        <p className={css.sectionHint}>{t('injections.hint')}</p>
         <div className={css.injectionGroups}>
           {[...grouped.entries()].map(([kind, findings]) => (
             <div key={kind} className={css.injectionGroup}>
               <div className={css.injKindHead}>{t(injKindKey(kind))}</div>
-              <ul className={css.list}>
-                {findings.map((inj, i) => (
-                  <li key={i} className={css.injPath}>{formatInjectionDetail(inj.detail)}</li>
-                ))}
-              </ul>
+              <div className={css.injItems}>
+                {findings.map((inj, i) => {
+                  const view = presentInjection(inj.detail)
+                  return (
+                    <div key={i} className={css.injItem}>
+                      <div className={css.injSummary}>
+                        {view.summaryKey !== undefined
+                          ? t(view.summaryKey as TrustKey)
+                          : (view.fallback ?? formatInjectionDetail(inj.detail))}
+                      </div>
+                      {view.packages !== undefined && view.packages.length > 0 && (
+                        <ul className={css.injPackages}>
+                          {view.packages.map(pkg => (
+                            <li key={pkg}><code>{pkg}</code></li>
+                          ))}
+                        </ul>
+                      )}
+                      {view.target !== undefined && view.packages === undefined && (
+                        <code className={css.injTarget}>{view.target}</code>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           ))}
         </div>
@@ -472,6 +494,7 @@ function PluginCardBody({
         <section className={css.section}>
           <header className={css.sectionHead}>
             <h3 className={css.sectionTitle}>{t('source')}</h3>
+            <p className={css.sectionHint}>{t('source.hint')}</p>
           </header>
           <div className={css.meta}>
             {report.pinned

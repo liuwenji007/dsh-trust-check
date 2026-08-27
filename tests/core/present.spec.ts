@@ -5,6 +5,7 @@ import {
   countVerdicts,
   formatInjectionDetail,
   groupEvidence,
+  presentInjection,
   topCapabilities,
   verdict,
 } from '../../src/core/present.ts'
@@ -155,9 +156,23 @@ describe('topCapabilities', () => {
 })
 
 describe('formatInjectionDetail', () => {
+  it('lists client inject packages', () => {
+    expect(formatInjectionDetail('injects client deps: @a/b, @c/d'))
+      .toBe('@a/b, @c/d')
+  })
+
   it('strips skill instruction prefix', () => {
-    expect(formatInjectionDetail('skill ships instruction text skills/modlens/SKILL.md'))
+    expect(formatInjectionDetail('ships instruction text skills/modlens/SKILL.md'))
       .toBe('skills/modlens/SKILL.md')
+  })
+})
+
+describe('presentInjection', () => {
+  it('parses client deps into packages', () => {
+    expect(presentInjection('injects client deps: @deepseek-ai/dsh-client-locale, @x/y')).toEqual({
+      summaryKey: 'inj.client-deps',
+      packages: ['@deepseek-ai/dsh-client-locale', '@x/y'],
+    })
   })
 })
 

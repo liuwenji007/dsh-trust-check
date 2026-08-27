@@ -168,9 +168,57 @@ export function topCapabilities(report: AuditReport, max = 3): Capability[] {
 
 /** Strip engine prefixes from injection detail strings for display. */
 export function formatInjectionDetail(detail: string): string {
-  const prefix = 'skill ships instruction text '
-  if (detail.startsWith(prefix)) return detail.slice(prefix.length)
-  return detail
+  const presented = presentInjection(detail)
+  if (presented.packages !== undefined && presented.packages.length > 0) {
+    return presented.packages.join(', ')
+  }
+  if (presented.target !== undefined) return presented.target
+  return presented.fallback ?? detail
+}
+
+export type InjectionSummaryKey =
+  | 'inj.client-deps'
+  | 'inj.override'
+  | 'inj.disable'
+  | 'inj.system-prompt'
+  | 'inj.runtime-skill'
+  | 'inj.assemble'
+  | 'inj.skill'
+
+export interface InjectionPresentation {
+  summaryKey?: InjectionSummaryKey
+  packages?: string[]
+  target?: string
+  fallback?: string
+}
+
+/** Parse engine detail strings into a UI-friendly shape. */
+export function presentInjection(detail: string): InjectionPresentation {
+  const clientDeps = detail.match(/^injects client deps:\s*(.+)$/)
+  if (clientDeps?.[1] !== undefined) {
+    const packages = clientDeps[1].split(',').map(s => s.trim()).filter(Boolean)
+    return { summaryKey: 'inj.client-deps', packages }
+  }
+
+  const override = detail.match(/^overrides bundle\s+(.+)$/)
+  if (override?.[1] !== undefined) return { summaryKey: 'inj.override', target: override[1] }
+
+  const disable = detail.match(/^disables bundle\s+(.+)$/)
+  if (disable?.[1] !== undefined) return { summaryKey: 'inj.disable', target: disable[1] }
+
+  const sysPrompt = detail.match(/^registers a system prompt\s+\((.+)\)$/)
+  if (sysPrompt?.[1] !== undefined) return { summaryKey: 'inj.system-prompt', target: sysPrompt[1] }
+
+  const runtimeSkill = detail.match(/^registers a runtime skill\s+\((.+)\)$/)
+  if (runtimeSkill?.[1] !== undefined) return { summaryKey: 'inj.runtime-skill', target: runtimeSkill[1] }
+
+  const assemble = detail.match(/^hooks the system-prompt assemble waterfall\s+\((.+)\)$/)
+  if (assemble?.[1] !== undefined) return { summaryKey: 'inj.assemble', target: assemble[1] }
+
+  const skill = detail.match(/^(?:skill\s+)?ships instruction text\s+(.+)$/)
+  if (skill?.[1] !== undefined) return { summaryKey: 'inj.skill', target: skill[1] }
+
+  return { fallback: detail }
 }
 
 /** Group injections by kind for the expanded injection panel. */
