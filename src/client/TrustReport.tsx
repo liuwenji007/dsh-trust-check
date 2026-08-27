@@ -1,22 +1,24 @@
 /**
  * Settings section: renders the cached audit report and offers a rescan.
- * Decision-first layout: verdict, concerns, scan dimensions, then evidence.
+ * Decision-first layout: verdict, shape, scan dimensions, evidence, ack, explain.
  */
 import { useEffect, useMemo, useState } from 'react'
 import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
-import type { AuditReport, AuditResponse, Capability, InjectionKind } from '../core/types.ts'
+import type { AuditReport, AuditResponse, Capability, InjectionKind, TrustAckEntry } from '../core/types.ts'
 import {
+  ackDrifted,
   capabilityTier,
   concerns,
   countVerdicts,
   formatInjectionDetail,
-  groupEvidence,
+  groupEvidenceByFile,
   groupInjections,
   topCapabilities,
   verdict,
   type Concern,
   type Verdict,
 } from '../core/present.ts'
+import { normalizeAuditReport, normalizeAuditResponse } from '../core/ack-fingerprint.ts'
 import type { TrustKey } from './locales.ts'
 import type { createTrustStore } from './stores.ts'
 import css from './TrustReport.module.css'
@@ -27,15 +29,15 @@ export type TrustReportProps =
 
 type T = (key: TrustKey) => string
 
-const EVIDENCE_PREVIEW = 3
+const EVIDENCE_PREVIEW = 2
 
-function defaultExpandedNames(plugins: AuditReport[]): Set<string> {
+function defaultExpandedNames(plugins: AuditReport[], acks?: Record<string, TrustAckEntry>): Set<string> {
   const names = new Set<string>()
   for (const plugin of plugins) {
-    if (verdict(plugin) === 'red') names.add(plugin.name)
+    if (verdict(plugin, acks?.[plugin.name]) === 'red') names.add(plugin.name)
   }
   if (names.size === 0) {
-    const firstReview = plugins.find(plugin => verdict(plugin) === 'review')
+    const firstReview = plugins.find(p => verdict(p, acks?.[p.name]) === 'review')
     if (firstReview !== undefined) names.add(firstReview.name)
   }
   return names
@@ -44,12 +46,14 @@ function defaultExpandedNames(plugins: AuditReport[]): Set<string> {
 function verdictKey(v: Verdict): TrustKey {
   if (v === 'red') return 'verdict.red'
   if (v === 'review') return 'verdict.review'
+  if (v === 'expected') return 'verdict.expected'
   return 'verdict.clear'
 }
 
 function actionKey(v: Verdict): TrustKey {
   if (v === 'red') return 'action.red'
   if (v === 'review') return 'action.review'
+  if (v === 'expected') return 'action.expected'
   return 'action.clear'
 }
 
@@ -59,11 +63,20 @@ function capLabelKey(cap: Capability): TrustKey {
 
 function concernLabel(concern: Concern, t: T): string {
   if (concern.code === 'raw') return concern.detail ?? ''
-  return t(`concern.${concern.code}` as TrustKey)
+  const key = `concern.${concern.code}` as TrustKey
+  return t(key)
 }
 
 function injKindKey(kind: InjectionKind): TrustKey {
   return `injKind.${kind}` as TrustKey
+}
+
+function destKindKey(kind: AuditReport['destinations'][number]['kind']): TrustKey {
+  return `destKind.${kind}` as TrustKey
+}
+
+function secretKindKey(kind: AuditReport['secretTouches'][number]['kind']): TrustKey {
+  return `secretKind.${kind}` as TrustKey
 }
 
 function CapabilityChips({
@@ -93,6 +106,50 @@ function CapabilityChips({
   )
 }
 
+function DestinationsPanel({ report, t }: { report: AuditReport; t: T }) {
+  const destinations = report.destinations ?? []
+  if (destinations.length === 0) {
+    return (
+      <div className={css.scanRow}>
+        <div className={css.subTitle}>{t('destinations')}</div>
+        <div className={css.muted}>{t('destinations.none')}</div>
+      </div>
+    )
+  }
+  return (
+    <div className={css.scanRow}>
+      <div className={css.subTitle}>{t('destinations')}</div>
+      <div className={css.muted}>{t('destinations.literal')}</div>
+      <ul className={css.shapeList}>
+        {destinations.map((d, i) => (
+          <li key={i}>
+            <span className={css.shapeKind}>{t(destKindKey(d.kind))}</span>
+            <code>{d.value}</code>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function SecretTouchesPanel({ report, t }: { report: AuditReport; t: T }) {
+  const secretTouches = report.secretTouches ?? []
+  if (secretTouches.length === 0) return null
+  return (
+    <div className={css.scanRow}>
+      <div className={css.subTitle}>{t('secretTouches')}</div>
+      <ul className={css.shapeList}>
+        {secretTouches.map((s, i) => (
+          <li key={i}>
+            <span className={css.shapeKind}>{t(secretKindKey(s.kind))}</span>
+            <code>{s.value}</code>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 function EvidencePanel({
   report,
   t,
@@ -102,38 +159,39 @@ function EvidencePanel({
   t: T
   focusCap: Capability | null
 }) {
-  const grouped = useMemo(() => groupEvidence(report.evidence), [report.evidence])
-  const [expandedGroups, setExpandedGroups] = useState<Set<Capability>>(new Set())
+  const filtered = focusCap === null
+    ? report.evidence
+    : report.evidence.filter(e => e.capability === focusCap)
+  const fileGroups = useMemo(() => groupEvidenceByFile(filtered), [filtered])
+  const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set())
 
   useEffect(() => {
-    if (focusCap !== null) setExpandedGroups(prev => new Set(prev).add(focusCap))
-  }, [focusCap])
+    if (focusCap !== null && fileGroups.length > 0) {
+      setExpandedFiles(new Set(fileGroups.map(g => g.file)))
+    }
+  }, [focusCap, fileGroups])
 
   if (report.evidence.length === 0) return null
-
-  const entries = [...grouped.entries()].sort(
-    (a, b) => b[1].length - a[1].length,
-  )
 
   return (
     <details className={css.fold} open={focusCap !== null}>
       <summary className={css.foldSummary}>
-        {t('evidence')} ({report.evidence.length}) · {t('evidence.grouped')}
+        {t('evidence')} ({report.evidence.length}) · {t('evidence.byFile')}
       </summary>
       <div className={css.evidenceGroups}>
-        {entries.map(([cap, rows]) => {
-          const showAll = expandedGroups.has(cap)
+        {fileGroups.map(({ file, rows }) => {
+          const showAll = expandedFiles.has(file)
           const visible = showAll ? rows : rows.slice(0, EVIDENCE_PREVIEW)
           return (
-            <div key={cap} className={css.evidenceGroup} data-cap={cap}>
+            <div key={file} className={css.evidenceGroup}>
               <div className={css.evidenceGroupHead}>
-                <span className={`${css.chip} ${css[`tier-${capabilityTier(cap)}`]}`}>{t(capLabelKey(cap))}</span>
+                <code>{file}</code>
                 <span className={css.muted}>{rows.length}</span>
               </div>
               <ul className={css.evidenceList}>
                 {visible.map((ev, i) => (
                   <li key={i} className={css.evidenceItem}>
-                    <code>{ev.file}:{ev.line}</code>
+                    <span className={css.evidenceMeta}>{ev.line} · {t(capLabelKey(ev.capability))}</span>
                     <span className={css.evidenceSnippet}>{ev.snippet}</span>
                   </li>
                 ))}
@@ -142,7 +200,7 @@ function EvidencePanel({
                 <button
                   type="button"
                   className={css.linkBtn}
-                  onClick={() => setExpandedGroups(prev => new Set(prev).add(cap))}
+                  onClick={() => setExpandedFiles(prev => new Set(prev).add(file))}
                 >
                   {t('evidence.showAll')} ({rows.length})
                 </button>
@@ -196,20 +254,79 @@ function InjectionPanel({ report, t }: { report: AuditReport; t: T }) {
 
 function PluginCardBody({
   report,
+  ack,
   t,
+  onAckChange,
 }: {
   report: AuditReport
+  ack?: TrustAckEntry
   t: T
+  onAckChange: () => void
 }) {
-  const v = verdict(report)
+  const v = verdict(report, ack)
   const concernList = concerns(report)
+  const drift = ackDrifted(report, ack)
   const [evidenceFocus, setEvidenceFocus] = useState<Capability | null>(null)
+  const [ackLoading, setAckLoading] = useState(false)
+  const [explainLoading, setExplainLoading] = useState(false)
+  const [explainText, setExplainText] = useState<string | null>(null)
+  const [explainError, setExplainError] = useState(false)
+
+  const postAck = async () => {
+    setAckLoading(true)
+    try {
+      const res = await fetch('/dsh-trust-check/ack', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: report.name }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      onAckChange()
+    } finally {
+      setAckLoading(false)
+    }
+  }
+
+  const revokeAck = async () => {
+    setAckLoading(true)
+    try {
+      const res = await fetch(`/dsh-trust-check/ack?name=${encodeURIComponent(report.name)}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      onAckChange()
+    } finally {
+      setAckLoading(false)
+    }
+  }
+
+  const explain = async () => {
+    setExplainLoading(true)
+    setExplainError(false)
+    try {
+      const locale = typeof document !== 'undefined' ? document.documentElement.lang : undefined
+      const res = await fetch('/dsh-trust-check/explain', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: report.name, locale }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json() as { text?: string }
+      setExplainText(data.text ?? '')
+    } catch {
+      setExplainError(true)
+      setExplainText(null)
+    } finally {
+      setExplainLoading(false)
+    }
+  }
 
   return (
     <div className={css.cardBody}>
       <div className={css.decision}>
         <p className={css.action}>{t(actionKey(v))}</p>
-        {concernList.length > 0 && (
+        {drift && <div className={css.drift}>{t('drift.title')}</div>}
+        {concernList.length > 0 && v !== 'expected' && (
           <div className={css.concerns}>
             <div className={css.subTitle}>{t('concerns.title')}</div>
             <ul className={css.concernList}>
@@ -219,17 +336,37 @@ function PluginCardBody({
             </ul>
           </div>
         )}
+        <div className={css.actions}>
+          {v === 'review' && (
+            <button type="button" className={css.actionBtn} disabled={ackLoading} onClick={() => void postAck()}>
+              {ackLoading ? t('ack.saving') : t('ack.accept')}
+            </button>
+          )}
+          {v === 'expected' && (
+            <button type="button" className={css.actionBtnSecondary} disabled={ackLoading} onClick={() => void revokeAck()}>
+              {t('ack.revoke')}
+            </button>
+          )}
+          <button type="button" className={css.actionBtnSecondary} disabled={explainLoading} onClick={() => void explain()}>
+            {explainLoading ? t('explain.loading') : t('explain.button')}
+          </button>
+        </div>
+        {explainError && <div className={css.muted}>{t('explain.error')}</div>}
+        {explainText !== null && (
+          <div className={css.explainBox}>
+            <div className={css.muted}>{t('explain.disclaimer')}</div>
+            <p className={css.explainText}>{explainText}</p>
+          </div>
+        )}
       </div>
 
       <div className={css.scanRow}>
         <div className={css.subTitle}>{t('capabilities')}</div>
-        <CapabilityChips
-          caps={report.capabilities}
-          t={t}
-          onSelect={cap => setEvidenceFocus(cap)}
-        />
+        <CapabilityChips caps={report.capabilities} t={t} onSelect={cap => setEvidenceFocus(cap)} />
       </div>
 
+      <DestinationsPanel report={report} t={t} />
+      <SecretTouchesPanel report={report} t={t} />
       <InjectionPanel report={report} t={t} />
 
       <div className={css.scanRow}>
@@ -255,26 +392,25 @@ function PluginCardBody({
 
 function PluginRow({
   report,
+  ack,
   t,
   expanded,
   onToggle,
+  onAckChange,
 }: {
   report: AuditReport
+  ack?: TrustAckEntry
   t: T
   expanded: boolean
   onToggle: () => void
+  onAckChange: () => void
 }) {
-  const v = verdict(report)
+  const v = verdict(report, ack)
   const previewCaps = topCapabilities(report, 3)
 
   return (
     <article className={`${css.plugin} ${css[`verdict-${v}`]}`}>
-      <button
-        type="button"
-        className={css.pluginToggle}
-        aria-expanded={expanded}
-        onClick={onToggle}
-      >
+      <button type="button" className={css.pluginToggle} aria-expanded={expanded} onClick={onToggle}>
         <span className={css.toggleMain}>
           <span className={css.nameLine}>
             <span className={css.name}>{report.name}</span>
@@ -293,13 +429,19 @@ function PluginRow({
         )}
         <span className={css.srOnly}>{expanded ? t('collapsePlugin') : t('expandPlugin')}</span>
       </button>
-      {expanded && <PluginCardBody report={report} t={t} />}
+      {expanded && (
+        <PluginCardBody report={report} ack={ack} t={t} onAckChange={onAckChange} />
+      )}
     </article>
   )
 }
 
 export function TrustReport({ useStore, actions, t }: TrustReportProps) {
   const report = useStore(s => s.report)
+  const normalizedReport = useMemo(
+    () => (report === null ? null : normalizeAuditResponse(report)),
+    [report],
+  )
   const fetchedAt = useStore(s => s.fetchedAt)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
@@ -313,7 +455,7 @@ export function TrustReport({ useStore, actions, t }: TrustReportProps) {
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const data = await response.json() as AuditResponse
       actions.setReport(data, Date.now())
-      setExpanded(defaultExpandedNames(data.plugins))
+      setExpanded(defaultExpandedNames(data.plugins, data.acks))
     } catch {
       setError(true)
     } finally {
@@ -323,17 +465,17 @@ export function TrustReport({ useStore, actions, t }: TrustReportProps) {
 
   useEffect(() => {
     if (report === null) void refresh()
-    else if (expanded.size === 0 && report.plugins.length > 0) {
-      setExpanded(defaultExpandedNames(report.plugins))
+    else if (expanded.size === 0 && normalizedReport !== null && normalizedReport.plugins.length > 0) {
+      setExpanded(defaultExpandedNames(normalizedReport.plugins, normalizedReport.acks))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const overview = useMemo(() => {
-    if (report === null || report.plugins.length === 0) return null
-    const counts = countVerdicts(report.plugins)
-    return `${report.plugins.length} ${t('overview.plugins')} · ${counts.red} ${t('verdict.red')} · ${counts.review} ${t('verdict.review')} · ${counts.clear} ${t('verdict.clear')}`
-  }, [report, t])
+    if (normalizedReport === null || normalizedReport.plugins.length === 0) return null
+    const counts = countVerdicts(normalizedReport.plugins, normalizedReport.acks)
+    return `${normalizedReport.plugins.length} ${t('overview.plugins')} · ${counts.red} ${t('verdict.red')} · ${counts.review} ${t('verdict.review')} · ${counts.expected} ${t('verdict.expected')} · ${counts.clear} ${t('verdict.clear')}`
+  }, [normalizedReport, t])
 
   const togglePlugin = (name: string) => {
     setExpanded(prev => {
@@ -370,26 +512,28 @@ export function TrustReport({ useStore, actions, t }: TrustReportProps) {
 
       {error && <div className={css.error}>{t('loadError')}</div>}
 
-      {!error && report !== null && report.plugins.length === 0 && (
+      {!error && normalizedReport !== null && normalizedReport.plugins.length === 0 && (
         <div className={css.empty}>{t('empty')}</div>
       )}
 
-      {report !== null && report.plugins.map(plugin => (
+      {normalizedReport !== null && normalizedReport.plugins.map(plugin => (
         <PluginRow
           key={plugin.name}
-          report={plugin}
+          report={normalizeAuditReport(plugin)}
+          ack={normalizedReport.acks?.[plugin.name]}
           t={t}
           expanded={expanded.has(plugin.name)}
           onToggle={() => togglePlugin(plugin.name)}
+          onAckChange={() => void refresh()}
         />
       ))}
 
-      {report !== null && report.errors.length > 0 && (
+      {normalizedReport !== null && normalizedReport.errors.length > 0 && (
         <section className={css.errors}>
           <div className={css.subTitle}>{t('errors.title')}</div>
           <div className={css.muted}>{t('errors.hint')}</div>
           <ul className={css.list}>
-            {report.errors.map((err, i) => (
+            {normalizedReport.errors.map((err, i) => (
               <li key={i}>{err.name}: {err.message}</li>
             ))}
           </ul>

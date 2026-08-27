@@ -1,29 +1,39 @@
 /**
- * dsh-trust-check host entry: a single read-only audit route mounted once the
- * profile composes the webServer service. No mutation, no network.
+ * dsh-trust-check host entry: audit, ack, and optional explain routes.
  */
 
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
+import { readAckStore, removeAck, setAck } from './core/ack.ts'
 import { auditPlugin } from './core/audit.ts'
+import { buildExplainPrompt, EXPLAIN_SYSTEM } from './core/explain.ts'
 import { collectPlugin, readInstalled, resolveProfileDir } from './fs.ts'
 import type { AuditReport, AuditResponse } from './core/types.ts'
 
-export type { AuditReport, AuditResponse } from './core/types.ts'
+export type { AuditReport, AuditResponse, TrustAckEntry } from './core/types.ts'
 export { auditPlugin, MAX_EVIDENCE } from './core/audit.ts'
 export {
+  ackDrifted,
   capabilityTier,
   classifyRedLine,
   concerns,
   countVerdicts,
   formatInjectionDetail,
   groupEvidence,
+  groupEvidenceByFile,
   groupInjections,
   topCapabilities,
   verdict,
 } from './core/present.ts'
+export { fingerprintFromReport, readAckStore, removeAck, setAck } from './core/ack.ts'
+export {
+  ackMatchesReport,
+  normalizeAuditReport,
+  normalizeAuditResponse,
+} from './core/ack-fingerprint.ts'
+export { buildExplainPrompt, EXPLAIN_SYSTEM } from './core/explain.ts'
 export type { Concern, ConcernCode, RedLineCode, Verdict } from './core/present.ts'
 export { collectPlugin, readInstalled, resolveProfileDir } from './fs.ts'
 
@@ -42,14 +52,22 @@ interface WebServerService {
   }): () => void
 }
 
+interface LlmFace {
+  complete?(input: {
+    system?: string
+    prompt?: string
+    messages?: { role: string; content: string }[]
+  }): Promise<string | { text?: string; content?: string }> | string | { text?: string; content?: string }
+}
+
 interface Host {
   webServer: WebServerService
   loader: { entries(): Iterable<unknown> }
   effect(callback: () => (() => void | Promise<void>) | void, label: string): void
   logger?: { warn(message: string): void; info?(message: string): void }
+  llm?: LlmFace
 }
 
-/** The profile this host booted (`--profile <name>`), like dsh-market. */
 function argvProfile(): string | undefined {
   const argv = process.argv
   const flag = argv.indexOf('--profile')
@@ -65,16 +83,11 @@ function sendJson(response: ServerResponse, status: number, payload: unknown): v
   response.end(JSON.stringify(payload))
 }
 
-/** Whether the request came from a loopback peer (not a forwarded remote client). */
 export function isLoopbackRequest(request: IncomingMessage): boolean {
   const address = request.socket.remoteAddress
   return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1'
 }
 
-/**
- * Audit-route origin policy: missing Origin is allowed (same-machine curl);
- * when present it must match Host.
- */
 export function trustedAuditRequest(request: IncomingMessage): boolean {
   if (!isLoopbackRequest(request)) return false
   if (request.headers.forwarded !== undefined
@@ -92,7 +105,25 @@ export function trustedAuditRequest(request: IncomingMessage): boolean {
   }
 }
 
-function runAudit(profile: string): AuditResponse {
+async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = []
+  for await (const chunk of request) chunks.push(Buffer.from(chunk))
+  const text = Buffer.concat(chunks).toString('utf8').trim()
+  if (text === '') return {}
+  return JSON.parse(text) as unknown
+}
+
+function findPluginReport(profile: string, name: string): AuditReport | undefined {
+  const profileDir = resolveProfileDir(profile)
+  const installed = readInstalled(profileDir)
+  const spec = installed[name]
+  if (spec === undefined) return undefined
+  const dir = join(profileDir, 'node_modules', name)
+  if (!existsSync(dir)) return undefined
+  return auditPlugin(collectPlugin(dir, spec))
+}
+
+export function runAudit(profile: string): AuditResponse {
   const profileDir = resolveProfileDir(profile)
   const installed = readInstalled(profileDir)
   const plugins: AuditReport[] = []
@@ -109,31 +140,142 @@ function runAudit(profile: string): AuditResponse {
   }
 
   plugins.sort((a, b) => a.score - b.score)
+  const acks = readAckStore(profileDir)
 
-  return { profile, generatedAt: new Date().toISOString(), plugins, errors }
+  return { profile, generatedAt: new Date().toISOString(), plugins, errors, acks }
+}
+
+async function llmExplain(host: Host, prompt: string): Promise<string> {
+  const llm = host.llm
+  if (llm?.complete === undefined) {
+    throw new Error('host llm service is not available')
+  }
+  const result = await llm.complete({
+    system: EXPLAIN_SYSTEM,
+    prompt,
+    messages: [
+      { role: 'system', content: EXPLAIN_SYSTEM },
+      { role: 'user', content: prompt },
+    ],
+  })
+  if (typeof result === 'string') return result
+  if (typeof result === 'object' && result !== null) {
+    const text = 'text' in result ? result.text : 'content' in result ? result.content : undefined
+    if (typeof text === 'string') return text
+  }
+  throw new Error('llm returned empty response')
+}
+
+function guard(request: IncomingMessage, response: ServerResponse): boolean {
+  if (!trustedAuditRequest(request)) {
+    sendJson(response, 403, { error: 'audit is limited to same-origin loopback requests' })
+    return false
+  }
+  return true
 }
 
 export function apply(ctx: Context, config?: Config): void {
   ctx.inject(['webServer', 'loader'], (hostCtx: Context) => {
     const host = hostCtx as unknown as Host
+    const profile = config?.profile ?? argvProfile() ?? 'web'
+
     host.effect(() => {
-      const profile = config?.profile ?? argvProfile() ?? 'web'
-      return host.webServer.register({
-        kind: 'exact',
-        path: '/dsh-trust-check/audit',
-        handler: (request, response) => {
-          if (request.method !== undefined && request.method !== 'GET') {
-            response.writeHead(405, { allow: 'GET' })
+      const disposers = [
+        host.webServer.register({
+          kind: 'exact',
+          path: '/dsh-trust-check/audit',
+          handler: (request, response) => {
+            if (request.method !== undefined && request.method !== 'GET') {
+              response.writeHead(405, { allow: 'GET' })
+              response.end()
+              return
+            }
+            if (!guard(request, response)) return
+            sendJson(response, 200, runAudit(profile))
+          },
+        }),
+        host.webServer.register({
+          kind: 'exact',
+          path: '/dsh-trust-check/ack',
+          handler: async (request, response) => {
+            if (!guard(request, response)) return
+            const method = request.method ?? 'GET'
+            if (method === 'POST') {
+              try {
+                const body = await readJsonBody(request) as { name?: string }
+                if (typeof body.name !== 'string' || body.name === '') {
+                  sendJson(response, 400, { error: 'name is required' })
+                  return
+                }
+                const report = findPluginReport(profile, body.name)
+                if (report === undefined) {
+                  sendJson(response, 404, { error: 'plugin not found' })
+                  return
+                }
+                if (report.redLines.length > 0) {
+                  sendJson(response, 400, { error: 'cannot ack a plugin with red lines' })
+                  return
+                }
+                const entry = setAck(resolveProfileDir(profile), report)
+                sendJson(response, 200, { name: body.name, ack: entry })
+              } catch (error) {
+                sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) })
+              }
+              return
+            }
+            if (method === 'DELETE') {
+              const url = new URL(request.url ?? '', 'http://local')
+              const name = url.searchParams.get('name')
+              if (name === null || name === '') {
+                sendJson(response, 400, { error: 'name query param is required' })
+                return
+              }
+              removeAck(resolveProfileDir(profile), name)
+              sendJson(response, 200, { ok: true })
+              return
+            }
+            response.writeHead(405, { allow: 'POST, DELETE' })
             response.end()
-            return
-          }
-          if (!trustedAuditRequest(request)) {
-            sendJson(response, 403, { error: 'audit is limited to same-origin loopback requests' })
-            return
-          }
-          sendJson(response, 200, runAudit(profile))
-        },
-      })
-    }, 'dsh-trust-check: audit route')
+          },
+        }),
+        host.webServer.register({
+          kind: 'exact',
+          path: '/dsh-trust-check/explain',
+          handler: async (request, response) => {
+            if ((request.method ?? 'GET') !== 'POST') {
+              response.writeHead(405, { allow: 'POST' })
+              response.end()
+              return
+            }
+            if (!guard(request, response)) return
+            try {
+              const body = await readJsonBody(request) as { name?: string; locale?: string }
+              if (typeof body.name !== 'string' || body.name === '') {
+                sendJson(response, 400, { error: 'name is required' })
+                return
+              }
+              const report = findPluginReport(profile, body.name)
+              if (report === undefined) {
+                sendJson(response, 404, { error: 'plugin not found' })
+                return
+              }
+              const prompt = buildExplainPrompt(report, body.locale)
+              const text = await llmExplain(host, prompt)
+              sendJson(response, 200, { name: body.name, text, disclaimer: 'explanation only, not a security verdict' })
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              if (message.includes('not available')) {
+                sendJson(response, 503, { error: message })
+                return
+              }
+              sendJson(response, 500, { error: message })
+            }
+          },
+        }),
+      ]
+      return () => {
+        for (const dispose of disposers) dispose()
+      }
+    }, 'dsh-trust-check: routes')
   })
 }

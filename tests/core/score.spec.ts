@@ -3,6 +3,7 @@ import { scoreTrust } from '../../src/core/score.ts'
 
 const base = {
   capabilities: [] as import('../../src/core/types.ts').Capability[],
+  destinations: [] as import('../../src/core/types.ts').DestinationFinding[],
   injectedTokensEstimate: 0,
   injections: [] as import('../../src/core/types.ts').InjectionFinding[],
   hasBuildScript: false,

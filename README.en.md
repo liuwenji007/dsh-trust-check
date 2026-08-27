@@ -34,7 +34,14 @@ The settings UI and CLI use a **decision-first** layout: verdict, then capabilit
 |---|---|---|
 | **Red line(s)** | Hard red line hit; stop by default | Only when `redLines.length > 0` |
 | **Review** | No hard red lines, but privileged capabilities or patch changes | Has capabilities or override/disable, no red lines |
+| **As expected** | You acknowledged the current capability/shape fingerprint | Local `trust-ack.json` matches this scan |
 | **Clear** | No red lines or privileged capabilities | Everything else |
+
+**Shape layer (code-judged)**: besides capability chips, the report lists **literal destinations** (URL/host/IP/relative paths) and **secret touches** (paths, sensitive env names) found in source. This is not “address safety” — only “we saw this string in source”; runtime-built URLs are invisible.
+
+**Mark as expected**: after you confirm capabilities match why you installed the plugin, the fingerprint is stored in `~/.dsh/profiles/<profile>/trust-ack.json`. Upgrades that change capabilities/destinations/secrets return to **review**.
+
+**AI explain**: optional button; explains the report summary only, **does not change the verdict**; unavailable when the host has no LLM.
 
 **Important: "red line(s)" follows `redLines`, not a low score.** A low score (e.g. 9) can come from shell + network + unpinned spec stacking — the UI shows **review**, not red line(s). JSON `band` may still be `red` (score &lt; 50), but UI/CLI use `verdict()` — do not mix them.
 
@@ -50,7 +57,9 @@ Reading order:
 
 1. declares install/postinstall/preinstall/**prepare** scripts;
 2. `cordis.patch.yml` overrides/disables an `@deepseek-ai/*` core bundle (matched by `id` **or** `name`);
-3. reads credential/secret material (keychain / keytar / dotenv / `~/.ssh` / `.aws/credentials` …) **and** has network access.
+3. reads credential/secret material (keychain / keytar / dotenv / `~/.ssh` / `.aws/credentials` …) **and** has network access;
+4. plaintext `http://` to non-localhost (literal) **and** has network;
+5. non-loopback literal IP outbound **and** has network.
 
 Red lines cap the numeric score at 49 (avoid "100 + high risk"), but UI/CLI verdicts follow `redLines`, not score or `band`.
 

@@ -3,7 +3,8 @@
  * every deduction is reproducible from the evidence the scanner produced.
  */
 
-import type { Band, Capability, Deduction, InjectionFinding } from './types.ts'
+import type { Band, Capability, Deduction, DestinationFinding, InjectionFinding } from './types.ts'
+import { shapeRedLines } from './shape.ts'
 
 export const CAPABILITY_WEIGHT: Readonly<Record<Capability, number>> = {
   shell: 25,
@@ -24,6 +25,7 @@ const TOKEN_DEDUCTION_STEP = 50
 
 export interface ScoreInput {
   capabilities: Capability[]
+  destinations: DestinationFinding[]
   injectedTokensEstimate: number
   injections: InjectionFinding[]
   hasBuildScript: boolean
@@ -82,6 +84,10 @@ export function scoreTrust(input: ScoreInput): ScoreResult {
   // Secrets + network together is the classic exfiltration shape.
   if (input.capabilities.includes('credentials') && input.capabilities.includes('network')) {
     redLines.push('reads credentials/secrets AND has network access')
+  }
+
+  for (const line of shapeRedLines(input.capabilities, input.destinations)) {
+    if (!redLines.includes(line)) redLines.push(line)
   }
 
   // Token cost of injected content.

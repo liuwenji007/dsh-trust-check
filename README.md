@@ -34,7 +34,14 @@ npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 |---|---|---|
 | **有红线** | 命中硬红线，默认应停用 | 仅当 `redLines.length > 0` |
 | **需确认** | 未见硬红线，但有特权能力或 patch 改动 | 有能力或 override/disable，且无红线 |
+| **能力如预期** | 你已确认当前能力与去向指纹 | 本机 `trust-ack.json` 与本次扫描一致 |
 | **无红线** | 未见红线或特权能力 | 其余 |
+
+**形状层（代码判定）**：除能力芯片外，报告会列出源码中的**字面量去向**（URL/host/IP/相对路径）和**密钥触摸**（路径、敏感 env 名）。这不代表「地址安全」，只代表「在源码里看到了什么」；运行时拼接的 URL 看不到。
+
+**记为预期**：在设置页确认「这些能力符合我装它的目的」后，写入 `~/.dsh/profiles/<profile>/trust-ack.json`。升级后能力/去向/密钥触摸变化会回到「需确认」。
+
+**AI 解释**：可选按钮，只解释已有报告摘要，**不改裁决**；宿主无 LLM 时不可用。
 
 **重要：`有红线` 只看 `redLines`，不看低分。** 分数低（如 9 分）可能只是因为 shell + 网络 + 未锁版本等叠加，此时应显示「需确认」而非「有红线」。JSON 里的 `band` 仍可能为 `red`（分数 &lt; 50），但 UI/CLI 用 `verdict()` 呈现，二者不要混读。
 
@@ -50,7 +57,9 @@ npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 
 1. 声明 install/postinstall/preinstall/**prepare** 安装脚本；
 2. `cordis.patch.yml` override / disable 了 `@deepseek-ai/*` 核心 bundle（匹配 `id` **或** `name`）；
-3. 读取凭据/密钥材料（keychain / keytar / dotenv / `~/.ssh` / `.aws/credentials` 等）**且**有网络访问。
+3. 读取凭据/密钥材料（keychain / keytar / dotenv / `~/.ssh` / `.aws/credentials` 等）**且**有网络访问；
+4. 非 localhost 的明文 `http://` 外连（字面量）**且**有 network；
+5. 非 loopback 的字面量 IP 外连 **且**有 network。
 
 命中红线时数值分封顶 49（避免「100 分 + 高风险」的误导），但 UI/CLI 以 `redLines` 裁决，不以分数或 `band` 作标签。
 

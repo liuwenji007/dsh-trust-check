@@ -8,6 +8,7 @@ import { scanCapabilities } from './capability.ts'
 import { scanInjections } from './injection.ts'
 import { readProvenance } from './provenance.ts'
 import { scoreTrust } from './score.ts'
+import { scanShape } from './shape.ts'
 import type { AuditReport, Capability, Evidence, PluginInput } from './types.ts'
 
 /** Cap evidence rows so hostile plugins cannot explode JSON responses. */
@@ -52,6 +53,7 @@ function capEvidence(evidence: Evidence[]): Evidence[] {
 export function auditPlugin(input: PluginInput): AuditReport {
   const { capabilities, evidence } = scanCapabilities(input)
   const { injections, skillBytes } = scanInjections(input)
+  const { destinations, secretTouches } = scanShape(input)
   const provenance = readProvenance(input)
 
   const promptBytes = injections
@@ -63,6 +65,7 @@ export function auditPlugin(input: PluginInput): AuditReport {
 
   const { score, band, redLines, deductions } = scoreTrust({
     capabilities,
+    destinations,
     injectedTokensEstimate,
     injections,
     hasBuildScript: provenance.hasBuildScript,
@@ -77,6 +80,8 @@ export function auditPlugin(input: PluginInput): AuditReport {
     spec: input.spec,
     capabilities,
     evidence: capEvidence(evidence),
+    destinations,
+    secretTouches,
     injections,
     injectedTokensEstimate,
     hasBuildScript: provenance.hasBuildScript,

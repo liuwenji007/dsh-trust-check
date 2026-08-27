@@ -26,6 +26,26 @@ export interface Evidence {
   snippet: string
 }
 
+/** A literal network destination found in source (not runtime-built). */
+export type DestinationKind = 'relative' | 'loopback' | 'https-host' | 'http-host' | 'ip'
+
+export interface DestinationFinding {
+  kind: DestinationKind
+  /** Host, IP, or relative path string. */
+  value: string
+  file: string
+  line: number
+}
+
+export type SecretTouchKind = 'path' | 'env-key' | 'api'
+
+export interface SecretTouchFinding {
+  kind: SecretTouchKind
+  value: string
+  file: string
+  line: number
+}
+
 /** What a plugin injects into the host or the user's context. */
 export type InjectionKind =
   | 'system-prompt'
@@ -57,6 +77,10 @@ export interface AuditReport {
   spec: string
   capabilities: Capability[]
   evidence: Evidence[]
+  /** Literal destinations in source (URLs, IPs, relative paths). */
+  destinations: DestinationFinding[]
+  /** Literal secret/credential touch patterns. */
+  secretTouches: SecretTouchFinding[]
   injections: InjectionFinding[]
   /** Coarse token estimate of injected content (bytes / 4). */
   injectedTokensEstimate: number
@@ -96,6 +120,14 @@ export interface PluginInput {
   spec: string
 }
 
+/** User-acknowledged capability/shape fingerprint for one plugin. */
+export interface TrustAckEntry {
+  capabilities: Capability[]
+  destinations: string[]
+  secretTouches: string[]
+  at: string
+}
+
 /** The payload the audit route returns to the client. */
 export interface AuditResponse {
   /** Profile name; empty when the scan target was `--dir` only. */
@@ -105,4 +137,6 @@ export interface AuditResponse {
   generatedAt: string
   plugins: AuditReport[]
   errors: { name: string; spec: string; message: string }[]
+  /** Plugin name → ack fingerprint loaded from profile store. */
+  acks?: Record<string, TrustAckEntry>
 }

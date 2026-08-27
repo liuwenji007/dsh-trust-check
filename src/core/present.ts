@@ -3,14 +3,21 @@
  * concern lists. Shared by the settings UI and CLI; no DOM, no locale strings.
  */
 
+import { ackMatchesReport } from './ack-fingerprint.ts'
 import { CAPABILITY_WEIGHT } from './score.ts'
-import type { AuditReport, Capability, Evidence, InjectionKind } from './types.ts'
+import type { AuditReport, Capability, Evidence, InjectionKind, TrustAckEntry } from './types.ts'
 
-export type Verdict = 'red' | 'review' | 'clear'
+export type Verdict = 'red' | 'review' | 'expected' | 'clear'
 
-export type RedLineCode = 'install-script' | 'core-tamper' | 'creds-network' | 'raw'
+export type RedLineCode =
+  | 'install-script'
+  | 'core-tamper'
+  | 'creds-network'
+  | 'plaintext-http'
+  | 'literal-ip'
+  | 'raw'
 
-export type ConcernCode = RedLineCode | Capability
+export type ConcernCode = RedLineCode | Capability | 'external-dest' | 'secret-touch'
 
 export interface Concern {
   code: ConcernCode
@@ -23,14 +30,17 @@ export function classifyRedLine(line: string): RedLineCode {
   if (line.startsWith('runs code at install time')) return 'install-script'
   if (line.startsWith('tampers with a core bundle')) return 'core-tamper'
   if (line === 'reads credentials/secrets AND has network access') return 'creds-network'
+  if (line.startsWith('uses plaintext http://')) return 'plaintext-http'
+  if (line.startsWith('uses literal IP')) return 'literal-ip'
   return 'raw'
 }
 
 /**
  * User-facing verdict. Unlike `band`, low scores without red lines are `review`, not `red`.
  */
-export function verdict(report: AuditReport): Verdict {
+export function verdict(report: AuditReport, ack?: TrustAckEntry): Verdict {
   if (report.redLines.length > 0) return 'red'
+  if (ack !== undefined && ackMatchesReport(report, ack)) return 'expected'
   const hasPatchChange = report.injections.some(
     inj => inj.kind === 'override' || inj.kind === 'disable',
   )
@@ -38,13 +48,29 @@ export function verdict(report: AuditReport): Verdict {
   return 'clear'
 }
 
-/** Up to `max` concern bullets: red lines first, then capabilities by weight. */
+function externalDestinations(report: AuditReport): boolean {
+  return (report.destinations ?? []).some(
+    d => d.kind === 'https-host' || d.kind === 'http-host' || d.kind === 'ip',
+  )
+}
+
+/** Up to `max` concern bullets: red lines first, then shape, then capabilities by weight. */
 export function concerns(report: AuditReport, max = 3): Concern[] {
   const result: Concern[] = []
   for (const line of report.redLines) {
     if (result.length >= max) break
     const code = classifyRedLine(line)
     result.push(code === 'raw' ? { code, detail: line } : { code })
+  }
+  if (result.length >= max) return result
+
+  if (externalDestinations(report) && !result.some(c => c.code === 'external-dest')) {
+    result.push({ code: 'external-dest' })
+  }
+  if (result.length >= max) return result
+
+  if ((report.secretTouches ?? []).length > 0 && !result.some(c => c.code === 'secret-touch')) {
+    result.push({ code: 'secret-touch' })
   }
   if (result.length >= max) return result
 
@@ -67,6 +93,36 @@ export function groupEvidence(evidence: Evidence[]): Map<Capability, Evidence[]>
     map.set(row.capability, list)
   }
   return map
+}
+
+export interface EvidenceFileGroup {
+  file: string
+  rows: Evidence[]
+}
+
+/** Group evidence by file; collapse import-only rows when calls exist in same file. */
+export function groupEvidenceByFile(evidence: Evidence[]): EvidenceFileGroup[] {
+  const byFile = new Map<string, Evidence[]>()
+  for (const row of evidence) {
+    const list = byFile.get(row.file) ?? []
+    list.push(row)
+    byFile.set(row.file, list)
+  }
+
+  const groups: EvidenceFileGroup[] = []
+  for (const [file, rows] of byFile.entries()) {
+    const hasCall = rows.some(r => !isImportOnlySnippet(r.snippet))
+    const filtered = hasCall ? rows.filter(r => !isImportOnlySnippet(r.snippet)) : rows
+    groups.push({ file, rows: filtered })
+  }
+  return groups.sort((a, b) => b.rows.length - a.rows.length)
+}
+
+function isImportOnlySnippet(snippet: string): boolean {
+  const s = snippet.trim()
+  return /^import\s/.test(s)
+    || /^from\s+['"]/.test(s)
+    || /^(?:require|import)\s*\(/.test(s)
 }
 
 /** Highest-weight capabilities for collapsed row chips. */
@@ -97,9 +153,12 @@ export function groupInjections(
 }
 
 /** Count verdicts across a plugin list (for the page overview line). */
-export function countVerdicts(reports: AuditReport[]): Record<Verdict, number> {
-  const counts: Record<Verdict, number> = { red: 0, review: 0, clear: 0 }
-  for (const report of reports) counts[verdict(report)]++
+export function countVerdicts(
+  reports: AuditReport[],
+  acks?: Record<string, TrustAckEntry>,
+): Record<Verdict, number> {
+  const counts: Record<Verdict, number> = { red: 0, review: 0, expected: 0, clear: 0 }
+  for (const report of reports) counts[verdict(report, acks?.[report.name])]++
   return counts
 }
 
@@ -108,4 +167,11 @@ export function capabilityTier(cap: Capability): 'high' | 'medium' | 'neutral' {
   if (cap === 'shell' || cap === 'credentials') return 'high'
   if (cap === 'fs-write') return 'medium'
   return 'neutral'
+}
+
+/** Whether ack exists but fingerprint drifted from current scan. */
+export function ackDrifted(report: AuditReport, ack?: TrustAckEntry): boolean {
+  if (ack === undefined) return false
+  if (report.redLines.length > 0) return false
+  return !ackMatchesReport(report, ack)
 }

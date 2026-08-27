@@ -12,17 +12,24 @@
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import {
-  actionText,
   auditPlugin,
   collectPlugin,
   concernText,
   concerns,
   countVerdicts,
   formatInjectionDetail,
+  readAckStore,
   readInstalled,
   resolveProfileDir,
   verdict,
 } from '../lib/index.js'
+
+const ACTION_EN = {
+  red: 'Stop by default; confirm the risk before continuing.',
+  review: 'No hard red lines; if capabilities match why you installed it, mark as expected in Settings.',
+  expected: 'Capabilities marked as expected in Settings.',
+  clear: 'No red lines or privileged capabilities detected.',
+}
 
 function parseArgs(argv) {
   const args = {
@@ -65,12 +72,12 @@ Options:
   return args
 }
 
-function printPlugin(p) {
-  const v = verdict(p)
+function printPlugin(p, ack) {
+  const v = verdict(p, ack)
   console.log(`${p.name} ${p.version} — ${v}`)
-  console.log(`  ${actionText(v)}`)
+  console.log(`  ${ACTION_EN[v] ?? ''}`)
   const list = concerns(p)
-  if (list.length > 0) {
+  if (list.length > 0 && v !== 'expected') {
     console.log('  why be careful:')
     for (const item of list) console.log(`    · ${concernText(item)}`)
   }
@@ -78,6 +85,14 @@ function printPlugin(p) {
     ? 'none'
     : p.capabilities.join(', ')
   console.log(`  capabilities: ${caps}`)
+  if (p.destinations?.length > 0) {
+    console.log('  destinations (literal):')
+    for (const d of p.destinations.slice(0, 8)) console.log(`    ${d.kind}: ${d.value}`)
+  }
+  if (p.secretTouches?.length > 0) {
+    console.log('  secret touches:')
+    for (const s of p.secretTouches.slice(0, 8)) console.log(`    ${s.kind}: ${s.value}`)
+  }
   if (p.injections.length > 0) {
     const tokenPart = p.injectedTokensEstimate > 0 ? ` · ~${p.injectedTokensEstimate} tokens (cost)` : ''
     console.log(`  injections: ${p.injections.length} item(s)${tokenPart}`)
@@ -95,12 +110,12 @@ function printPlugin(p) {
   console.log('')
 }
 
-function humanReport(contextLabel, plugins, errors) {
-  const counts = countVerdicts(plugins)
+function humanReport(contextLabel, plugins, errors, acks) {
+  const counts = countVerdicts(plugins, acks)
   console.log(contextLabel)
-  console.log(`${plugins.length} plugin(s) · ${counts.red} red · ${counts.review} review · ${counts.clear} clear`)
+  console.log(`${plugins.length} plugin(s) · ${counts.red} red · ${counts.review} review · ${counts.expected} expected · ${counts.clear} clear`)
   console.log('')
-  for (const p of plugins) printPlugin(p)
+  for (const p of plugins) printPlugin(p, acks?.[p.name])
   if (errors.length > 0) {
     console.log(`${errors.length} plugin(s) could not be read:`)
     for (const e of errors) console.log(`  - ${e.name}: ${e.message}`)
@@ -135,6 +150,7 @@ if (args.dir !== undefined) {
   }
 } else {
   const profileDir = resolveProfileDir(args.profile)
+  const acks = readAckStore(profileDir)
   const installed = readInstalled(profileDir)
   for (const [name, spec] of Object.entries(installed)) {
     const dir = join(profileDir, 'node_modules', name)
@@ -150,6 +166,7 @@ if (args.dir !== undefined) {
     generatedAt: new Date().toISOString(),
     plugins,
     errors,
+    acks,
   }
 }
 
@@ -161,5 +178,5 @@ if (args.json) {
   const label = args.dir !== undefined
     ? `dir: ${args.dir}`
     : `profile: ${args.profile}`
-  humanReport(label, plugins, errors)
+  humanReport(label, plugins, errors, response.acks)
 }

@@ -4,6 +4,7 @@
  * once in `apply`.
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
+import { normalizeAuditResponse } from '../core/ack-fingerprint.ts'
 import type { AuditResponse } from '../core/types.ts'
 
 export interface TrustStoreState {
@@ -18,10 +19,10 @@ export type TrustStoreActions = {
 export function createTrustStore(): EngineStoreHandle<TrustStoreState, TrustStoreActions> {
   return defineStore({
     init: (): TrustStoreState => ({ report: null, fetchedAt: null }),
-    persist: 'dsh.trust-check.report',
+    persist: 'dsh.trust-check.report.v2',
     actions: {
       setReport: (draft, report, at) => {
-        draft.report = report
+        draft.report = normalizeAuditResponse(report)
         draft.fetchedAt = at
       },
     },

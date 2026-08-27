@@ -16,6 +16,8 @@ const baseReport = (): AuditReport => ({
   spec: 'npm:test@1.0.0',
   capabilities: [],
   evidence: [],
+  destinations: [],
+  secretTouches: [],
   injections: [],
   injectedTokensEstimate: 0,
   hasBuildScript: false,
@@ -88,6 +90,11 @@ describe('classifyRedLine', () => {
     expect(classifyRedLine('reads credentials/secrets AND has network access')).toBe('creds-network')
     expect(classifyRedLine('something unknown')).toBe('raw')
   })
+
+  it('maps shape red lines to stable codes', () => {
+    expect(classifyRedLine('uses plaintext http:// to evil.test')).toBe('plaintext-http')
+    expect(classifyRedLine('uses literal IP 203.0.113.1 for network access')).toBe('literal-ip')
+  })
 })
 
 describe('concerns', () => {
@@ -152,6 +159,22 @@ describe('countVerdicts', () => {
       { ...baseReport(), capabilities: ['network'] as Capability[], band: 'yellow' as const },
       baseReport(),
     ]
-    expect(countVerdicts(reports)).toEqual({ red: 1, review: 1, clear: 1 })
+    expect(countVerdicts(reports)).toEqual({ red: 1, review: 1, expected: 0, clear: 1 })
+  })
+
+  it('returns expected when ack fingerprint matches', () => {
+    const report = {
+      ...baseReport(),
+      capabilities: ['network', 'fs-read'] as Capability[],
+      destinations: [{ kind: 'relative' as const, value: '/api', file: 'a.js', line: 1 }],
+      secretTouches: [],
+    }
+    const ack = {
+      capabilities: ['fs-read', 'network'] as Capability[],
+      destinations: ['relative:/api'],
+      secretTouches: [],
+      at: '2026-01-01T00:00:00.000Z',
+    }
+    expect(verdict(report, ack)).toBe('expected')
   })
 })
