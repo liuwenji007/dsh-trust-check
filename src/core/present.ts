@@ -4,6 +4,7 @@
  */
 
 import { ackMatchesReport } from './ack-fingerprint.ts'
+import { destinationTier } from './destination-priority.ts'
 import { CAPABILITY_WEIGHT } from './score.ts'
 import type { AuditReport, Capability, Evidence, InjectionKind, TrustAckEntry } from './types.ts'
 
@@ -48,10 +49,12 @@ export function verdict(report: AuditReport, ack?: TrustAckEntry): Verdict {
   return 'clear'
 }
 
+/** True when there is an outbound destination that is not on the safe allowlist. */
 function externalDestinations(report: AuditReport): boolean {
-  return (report.destinations ?? []).some(
-    d => d.kind === 'https-host' || d.kind === 'http-host' || d.kind === 'ip',
-  )
+  return (report.destinations ?? []).some(d => {
+    if (d.kind !== 'https-host' && d.kind !== 'http-host' && d.kind !== 'ip') return false
+    return destinationTier(d) !== 'safe'
+  })
 }
 
 /** Up to `max` concern bullets: red lines first, then shape, then capabilities by weight. */

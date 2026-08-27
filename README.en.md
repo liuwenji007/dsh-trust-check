@@ -37,11 +37,11 @@ The settings UI and CLI use a **decision-first** layout: verdict, then capabilit
 | **As expected** | You acknowledged the current capability/shape fingerprint | Local `trust-ack.json` matches this scan |
 | **Clear** | No red lines or privileged capabilities | Everything else |
 
-**Shape layer (code-judged)**: besides capability chips, the report lists **literal destinations** (URL/host/IP/relative paths) and **secret touches** (paths, sensitive env names) found in source. This is not “address safety” — only “we saw this string in source”; runtime-built URLs are invisible.
+**Shape layer (code-judged)**: besides capability chips, the report lists **literal destinations** (URL/host/IP/relative paths) and **secret touches** (paths, sensitive env names) found in source. This is not “address safety” — only “we saw this string in source”; runtime-built URLs are invisible. Common host / registry domains (GitHub, npm, npmmirror, …) have a built-in allowlist: collapsed by default with a short note; plaintext HTTP is never downgraded by the allowlist.
 
 **Mark as expected**: after you confirm capabilities match why you installed the plugin, the fingerprint is stored in `~/.dsh/profiles/<profile>/trust-ack.json`. Upgrades that change capabilities/destinations/secrets return to **review**.
 
-**AI explain**: optional button; explains the report summary only, **does not change the verdict**; unavailable when the host has no LLM.
+**AI explain**: optional button; uses your DSH-configured model to explain the report summary only, **does not change the verdict**; unavailable when no model is configured.
 
 **Important: "red line(s)" follows `redLines`, not a low score.** A low score (e.g. 9) can come from shell + network + unpinned spec stacking — the UI shows **review**, not red line(s). JSON `band` may still be `red` (score &lt; 50), but UI/CLI use `verdict()` — do not mix them.
 

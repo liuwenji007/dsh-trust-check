@@ -245,6 +245,55 @@
   margin-right: 6px;
 }
 
+.destRowHigh code {
+  font-weight: 500;
+}
+
+.destMain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 0;
+}
+
+.destNote {
+  margin: 2px 0 0 4.5em;
+  font-size: 11px;
+  opacity: 0.65;
+  line-height: 1.35;
+}
+
+.destBadge {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  vertical-align: baseline;
+}
+
+.destBadgePlain {
+  color: #e06c4a;
+  background: color-mix(in srgb, #e06c4a 14%, transparent);
+}
+
+.destBadgePrivate {
+  color: #d9a53a;
+  background: color-mix(in srgb, #d9a53a 14%, transparent);
+}
+
+.destBadgePublic {
+  color: #c97a2e;
+  background: color-mix(in srgb, #c97a2e 12%, transparent);
+}
+
+.destBadgeSafe {
+  color: #5a9e6f;
+  background: color-mix(in srgb, #5a9e6f 14%, transparent);
+}
+
 .evidenceMeta {
   font-size: 11px;
   opacity: 0.65;

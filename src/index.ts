@@ -8,7 +8,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import { readAckStore, removeAck, setAck } from './core/ack.ts'
 import { auditPlugin } from './core/audit.ts'
-import { buildExplainPrompt, EXPLAIN_SYSTEM } from './core/explain.ts'
+import { explainWithLlm } from './host/llm-explain.ts'
+import { buildExplainPrompt } from './core/explain.ts'
 import { collectPlugin, readInstalled, resolveProfileDir } from './fs.ts'
 import type { AuditReport, AuditResponse } from './core/types.ts'
 
@@ -27,6 +28,15 @@ export {
   topCapabilities,
   verdict,
 } from './core/present.ts'
+export {
+  DEST_WHITELIST,
+  destinationHighlight,
+  destinationTier,
+  destinationWhitelistReason,
+  isPrivateIp,
+  matchDestWhitelist,
+  partitionDestinations,
+} from './core/destination-priority.ts'
 export { fingerprintFromReport, readAckStore, removeAck, setAck } from './core/ack.ts'
 export {
   ackMatchesReport,
@@ -34,10 +44,14 @@ export {
   normalizeAuditResponse,
 } from './core/ack-fingerprint.ts'
 export { buildExplainPrompt, EXPLAIN_SYSTEM } from './core/explain.ts'
+export { explainWithLlm, resolveExplainRoute } from './host/llm-explain.ts'
 export type { Concern, ConcernCode, RedLineCode, Verdict } from './core/present.ts'
 export { collectPlugin, readInstalled, resolveProfileDir } from './fs.ts'
 
 export const name = 'dsh-trust-check'
+
+/** Host services required for audit routes and optional LLM explanation. */
+export const inject = ['webServer', 'loader', 'llm', 'agents']
 
 /** Optional cordis.yml configuration; profile defaults to `web`. */
 export type Config = {
@@ -52,20 +66,11 @@ interface WebServerService {
   }): () => void
 }
 
-interface LlmFace {
-  complete?(input: {
-    system?: string
-    prompt?: string
-    messages?: { role: string; content: string }[]
-  }): Promise<string | { text?: string; content?: string }> | string | { text?: string; content?: string }
-}
-
 interface Host {
   webServer: WebServerService
   loader: { entries(): Iterable<unknown> }
   effect(callback: () => (() => void | Promise<void>) | void, label: string): void
   logger?: { warn(message: string): void; info?(message: string): void }
-  llm?: LlmFace
 }
 
 function argvProfile(): string | undefined {
@@ -145,25 +150,8 @@ export function runAudit(profile: string): AuditResponse {
   return { profile, generatedAt: new Date().toISOString(), plugins, errors, acks }
 }
 
-async function llmExplain(host: Host, prompt: string): Promise<string> {
-  const llm = host.llm
-  if (llm?.complete === undefined) {
-    throw new Error('host llm service is not available')
-  }
-  const result = await llm.complete({
-    system: EXPLAIN_SYSTEM,
-    prompt,
-    messages: [
-      { role: 'system', content: EXPLAIN_SYSTEM },
-      { role: 'user', content: prompt },
-    ],
-  })
-  if (typeof result === 'string') return result
-  if (typeof result === 'object' && result !== null) {
-    const text = 'text' in result ? result.text : 'content' in result ? result.content : undefined
-    if (typeof text === 'string') return text
-  }
-  throw new Error('llm returned empty response')
+async function llmExplain(ctx: Context, prompt: string): Promise<string> {
+  return explainWithLlm(ctx, prompt)
 }
 
 function guard(request: IncomingMessage, response: ServerResponse): boolean {
@@ -175,7 +163,7 @@ function guard(request: IncomingMessage, response: ServerResponse): boolean {
 }
 
 export function apply(ctx: Context, config?: Config): void {
-  ctx.inject(['webServer', 'loader'], (hostCtx: Context) => {
+  ctx.inject(['webServer', 'loader', 'llm', 'agents'], (hostCtx: Context) => {
     const host = hostCtx as unknown as Host
     const profile = config?.profile ?? argvProfile() ?? 'web'
 
@@ -260,11 +248,11 @@ export function apply(ctx: Context, config?: Config): void {
                 return
               }
               const prompt = buildExplainPrompt(report, body.locale)
-              const text = await llmExplain(host, prompt)
+              const text = await llmExplain(hostCtx, prompt)
               sendJson(response, 200, { name: body.name, text, disclaimer: 'explanation only, not a security verdict' })
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error)
-              if (message.includes('not available')) {
+              if (message.includes('not available') || message.includes('no model configured')) {
                 sendJson(response, 503, { error: message })
                 return
               }

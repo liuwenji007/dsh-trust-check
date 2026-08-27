@@ -18,6 +18,7 @@ import {
   concerns,
   countVerdicts,
   formatInjectionDetail,
+  partitionDestinations,
   readAckStore,
   readInstalled,
   resolveProfileDir,
@@ -86,8 +87,12 @@ function printPlugin(p, ack) {
     : p.capabilities.join(', ')
   console.log(`  capabilities: ${caps}`)
   if (p.destinations?.length > 0) {
+    const { priority, safe } = partitionDestinations(p.destinations)
     console.log('  destinations (literal):')
-    for (const d of p.destinations.slice(0, 8)) console.log(`    ${d.kind}: ${d.value}`)
+    for (const d of priority.slice(0, 8)) console.log(`    ${d.kind}: ${d.value}`)
+    if (safe.length > 0) {
+      console.log(`    … + ${safe.length} allowlisted/relative/loopback destination(s)`)
+    }
   }
   if (p.secretTouches?.length > 0) {
     console.log('  secret touches:')

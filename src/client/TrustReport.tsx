@@ -19,6 +19,11 @@ import {
   type Verdict,
 } from '../core/present.ts'
 import { normalizeAuditReport, normalizeAuditResponse } from '../core/ack-fingerprint.ts'
+import {
+  destinationHighlight,
+  destinationWhitelistReason,
+  partitionDestinations,
+} from '../core/destination-priority.ts'
 import type { TrustKey } from './locales.ts'
 import type { createTrustStore } from './stores.ts'
 import css from './TrustReport.module.css'
@@ -108,6 +113,11 @@ function CapabilityChips({
 
 function DestinationsPanel({ report, t }: { report: AuditReport; t: T }) {
   const destinations = report.destinations ?? []
+  const { priority, safe } = useMemo(
+    () => partitionDestinations(destinations),
+    [destinations],
+  )
+
   if (destinations.length === 0) {
     return (
       <div className={css.scanRow}>
@@ -116,18 +126,55 @@ function DestinationsPanel({ report, t }: { report: AuditReport; t: T }) {
       </div>
     )
   }
+
+  const renderRow = (d: AuditReport['destinations'][number], key: string, showWhitelistNote: boolean) => {
+    const highlight = destinationHighlight(d)
+    const whitelist = showWhitelistNote ? destinationWhitelistReason(d) : undefined
+    return (
+      <li key={key} className={highlight !== undefined ? css.destRowHigh : undefined}>
+        <div className={css.destMain}>
+          <span className={css.shapeKind}>{t(destKindKey(d.kind))}</span>
+          {highlight === 'plaintext' && (
+            <span className={`${css.destBadge} ${css.destBadgePlain}`}>{t('destinations.plaintext')}</span>
+          )}
+          {highlight === 'private-ip' && (
+            <span className={`${css.destBadge} ${css.destBadgePrivate}`}>{t('destinations.private')}</span>
+          )}
+          {highlight === 'public-ip' && (
+            <span className={`${css.destBadge} ${css.destBadgePublic}`}>{t('destinations.publicIp')}</span>
+          )}
+          {whitelist !== undefined && (
+            <span className={`${css.destBadge} ${css.destBadgeSafe}`}>{t('destinations.allowlisted')}</span>
+          )}
+          <code>{d.value}</code>
+        </div>
+        {whitelist !== undefined && (
+          <div className={css.destNote}>{t(`destWhitelist.${whitelist}` as TrustKey)}</div>
+        )}
+      </li>
+    )
+  }
+
   return (
     <div className={css.scanRow}>
       <div className={css.subTitle}>{t('destinations')}</div>
       <div className={css.muted}>{t('destinations.literal')}</div>
-      <ul className={css.shapeList}>
-        {destinations.map((d, i) => (
-          <li key={i}>
-            <span className={css.shapeKind}>{t(destKindKey(d.kind))}</span>
-            <code>{d.value}</code>
-          </li>
-        ))}
-      </ul>
+      {priority.length > 0 && (
+        <ul className={css.shapeList}>
+          {priority.map((d, i) => renderRow(d, `p-${i}`, false))}
+        </ul>
+      )}
+      {safe.length > 0 && (
+        <details className={css.fold} open={priority.length === 0}>
+          <summary className={css.foldSummary}>
+            {t('destinations.safeFold').replace('{count}', String(safe.length))}
+          </summary>
+          <div className={css.muted}>{t('destinations.safeHint')}</div>
+          <ul className={css.shapeList}>
+            {safe.map((d, i) => renderRow(d, `s-${i}`, true))}
+          </ul>
+        </details>
+      )}
     </div>
   )
 }
