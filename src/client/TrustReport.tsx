@@ -504,7 +504,7 @@ function PluginCardBody({
               <span className={`${css.tag} ${css.tagWarn}`}>{t('noRepo')}</span>
             )}
             {report.hasBuildScript && (
-              <span className={`${css.tag} ${css.tagWarn}`}>{t('buildScript')}</span>
+              <span className={`${css.tag} ${css.tagPlain}`}>{t('buildScript')}</span>
             )}
             {report.repository !== undefined && (
               <a className={css.repoLink} href={report.repository} target="_blank" rel="noreferrer">
@@ -512,6 +512,21 @@ function PluginCardBody({
               </a>
             )}
           </div>
+          {report.hasBuildScript && (
+            <div className={css.sourceRisk}>
+              <p className={css.sourceRiskHint}>{t('buildScript.hint')}</p>
+              {report.buildScripts.length > 0 && (
+                <div className={css.sourceScripts}>
+                  <span className={css.sourceScriptsLabel}>{t('buildScript.scripts')}</span>
+                  <ul className={css.injPackages}>
+                    {report.buildScripts.map(name => (
+                      <li key={name}><code>{name}</code></li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         <EvidencePanel report={report} t={t} focusCap={evidenceFocus} />

@@ -801,6 +801,35 @@ details[open] > .foldSummary::before {
   align-items: center;
 }
 
+.sourceRisk {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--trust-red-soft) 55%, transparent);
+  background: color-mix(in srgb, var(--trust-red) 3.5%, transparent);
+}
+
+.sourceRiskHint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--trust-ink);
+}
+
+.sourceScripts {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.sourceScriptsLabel {
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--trust-muted);
+}
+
 .repoLink {
   color: var(--trust-ink);
   opacity: 0.82;
