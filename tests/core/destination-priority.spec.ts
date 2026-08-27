@@ -33,7 +33,24 @@ describe('destination priority', () => {
     expect(matchDestWhitelist('api.github.com')?.reason).toBe('github')
     expect(matchDestWhitelist('registry.npmjs.org')?.reason).toBe('npm')
     expect(matchDestWhitelist('registry.npmmirror.com')?.reason).toBe('npm-mirror')
+    expect(matchDestWhitelist('api.anthropic.com')?.reason).toBe('anthropic')
+    expect(matchDestWhitelist('generativelanguage.googleapis.com')?.reason).toBe('google-ai')
+    expect(matchDestWhitelist('api.openai.com')?.reason).toBe('openai')
     expect(matchDestWhitelist('evil.example')).toBeUndefined()
+  })
+
+  it('collapses model vendor APIs into the safe fold', () => {
+    const { priority, safe } = partitionDestinations([
+      d('https-host', 'api.anthropic.com'),
+      d('https-host', 'generativelanguage.googleapis.com'),
+      d('https-host', 'evil.zxyz'),
+    ])
+    expect(priority.map(x => x.value)).toEqual(['evil.zxyz'])
+    expect(safe.map(x => x.value)).toEqual([
+      'api.anthropic.com',
+      'generativelanguage.googleapis.com',
+    ])
+    expect(destinationWhitelistReason(d('https-host', 'api.anthropic.com'))).toBe('anthropic')
   })
 
   it('treats whitelisted https as safe, but never plaintext http', () => {

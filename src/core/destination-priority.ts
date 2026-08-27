@@ -18,6 +18,9 @@ export type DestWhitelistReason =
   | 'npm'
   | 'npm-mirror'
   | 'deepseek'
+  | 'openai'
+  | 'anthropic'
+  | 'google-ai'
   | 'jsdelivr'
   | 'unpkg'
 
@@ -28,7 +31,7 @@ export interface DestWhitelistEntry {
 }
 
 /**
- * Built-in allowlist of common package / source hosts.
+ * Built-in allowlist of common package / source / model API hosts.
  * Only applies to `https-host` (never downgrades plaintext http).
  */
 export const DEST_WHITELIST: readonly DestWhitelistEntry[] = [
@@ -45,6 +48,13 @@ export const DEST_WHITELIST: readonly DestWhitelistEntry[] = [
   { host: 'unpkg.com', reason: 'unpkg' },
   { host: 'api.deepseek.com', reason: 'deepseek' },
   { host: 'chat.deepseek.com', reason: 'deepseek' },
+  { host: 'api.openai.com', reason: 'openai' },
+  { host: 'openai.com', reason: 'openai' },
+  { host: 'api.anthropic.com', reason: 'anthropic' },
+  { host: 'anthropic.com', reason: 'anthropic' },
+  { host: 'generativelanguage.googleapis.com', reason: 'google-ai' },
+  { host: 'aiplatform.googleapis.com', reason: 'google-ai' },
+  { host: 'aistudio.google.com', reason: 'google-ai' },
 ]
 
 function normalizeHost(value: string): string {

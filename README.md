@@ -37,7 +37,7 @@ npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 | **能力如预期** | 你已确认当前能力与去向指纹 | 本机 `trust-ack.json` 与本次扫描一致 |
 | **无红线** | 未见红线或特权能力 | 其余 |
 
-**形状层（代码判定）**：除能力芯片外，报告会列出源码中的**字面量去向**（URL/host/IP/相对路径）和**密钥触摸**（路径、敏感 env 名）。这不代表「地址安全」，只代表「在源码里看到了什么」；运行时拼接的 URL 看不到。常见托管/registry 域名（GitHub、npm、npmmirror 等）有内置白名单：默认收起并附简短说明，明文 HTTP 永远不会因白名单降级。扫描器会跳过网段边界表（如 SSRF 私网判定）、`http://local` 一类占位 base、cmd 开关（`/c`）以及 `/usr` `/opt` 等文件系统路径，避免误判。
+**形状层（代码判定）**：除能力芯片外，报告会列出源码中的**字面量去向**（URL/host/IP/相对路径）和**密钥触摸**（路径、敏感 env 名）。这不代表「地址安全」，只代表「在源码里看到了什么」；运行时拼接的 URL 看不到。常见托管/registry 域名（GitHub、npm、npmmirror 等）以及常见模型厂商 API（DeepSeek、OpenAI、Anthropic、Google Gemini）有内置白名单：默认收起并附简短说明，明文 HTTP 永远不会因白名单降级。扫描器会跳过网段边界表（如 SSRF 私网判定）、`http://local` 一类占位 base、cmd 开关（`/c`）以及 `/usr` `/opt` 等文件系统路径，避免误判。
 
 **记为预期**：在设置页确认「这些能力符合我装它的目的」后，写入 `~/.dsh/profiles/<profile>/trust-ack.json`。升级后能力/去向/密钥触摸变化会回到「需确认」。
 
