@@ -47,7 +47,7 @@ export const CAPABILITY_RULES: readonly CapabilityRule[] = [
   // --- network -----------------------------------------------------------
   {
     capability: 'network',
-    pattern: /(?:require\(|from\s+|import\s*\(\s*)['"](?:node:)?(?:http2|http|https|net|tls|dgram|dns2?)['"]|\bfetch\s*\(|\bnew\s+WebSocket\b|\bhttp\.request\b|\bhttps\.request\b|(?:require\(|from\s+)['"](?:axios|undici|node-fetch)['"]|\bctx\.web\b/,
+    pattern: /(?:require\(|from\s+|import\s*\(\s*)['"](?:node:)?(?:http2|http|https|net|tls|dgram|dns2?)['"]|\bfetch\s*\(|\bnew\s+WebSocket\b|\bhttp\.request\b|\bhttps\.request\b|(?:require\(|from\s+|import\s*\(\s*)['"](?:axios|undici|node-fetch|got|ws|superagent|ky|request|phin)['"]|\bctx\.web\b/,
     label: 'Network access',
   },
   // --- credentials -------------------------------------------------------
@@ -78,6 +78,13 @@ export const CAPABILITY_RULES: readonly CapabilityRule[] = [
     pattern: /\bctx\.llm\b|\bcreateChatCompletion\s*\(|\bchat\.completions\b|\bgenerateText\s*\(|\binvokeModel\s*\(/,
     label: 'Model (LLM) calls',
   },
+  // --- dynamic code ------------------------------------------------------
+  // Call-site / import form only, so this table does not match itself.
+  {
+    capability: 'dynamic-code',
+    pattern: /\beval\s*\(|\bnew\s+Function\s*\(|(?:require\(|from\s+|import\s*\(\s*)['"](?:node:)?vm['"]/,
+    label: 'Dynamic code execution',
+  },
 ]
 
 /** npm/package specifiers that imply a host-side (server) bundle. */
@@ -97,4 +104,5 @@ export const CAPABILITY_LABELS: Readonly<Record<Capability, string>> = {
   subagent: 'Sub-agent spawning',
   'host-runtime': 'Host runtime',
   llm: 'Model (LLM) calls',
+  'dynamic-code': 'Dynamic code execution',
 }

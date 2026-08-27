@@ -24,6 +24,7 @@ const CAPABILITY_SHORT: Readonly<Record<Capability, string>> = {
   subagent: 'sub-agents',
   'host-runtime': 'host runtime',
   llm: 'LLM calls',
+  'dynamic-code': 'dynamic code',
 }
 
 function buildSummary(report: Omit<AuditReport, 'summary'>): string {

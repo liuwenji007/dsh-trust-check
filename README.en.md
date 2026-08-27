@@ -36,7 +36,7 @@ The settings UI and CLI use a **decision-first** layout: verdict, then capabilit
 | **Risk accepted** | You confirmed the current red-line risk | Has red lines, and local `trust-ack.json` matches this scan |
 | **Review** | No hard red lines, but privileged capabilities or patch changes | Has capabilities or override/disable, no red lines |
 | **As expected** | You acknowledged the current capability/shape fingerprint | Local `trust-ack.json` matches this scan (no red lines) |
-| **Clear** | No red lines or privileged capabilities | Everything else |
+| **Nothing detected** | Static scan found no red lines or privileged capabilities — not a safety guarantee | Everything else |
 
 **Shape layer (code-judged)**: besides capability chips, the report lists **literal destinations** (URL/host/IP), **workspace path escapes** (absolute paths, home directory, traversal, …), and **secret touches** (paths, sensitive env names) found in source. Same-origin HTTP routes (e.g. `/dsh-market/check`) are no longer shown as destinations. This is not “address/path safety” — only “we saw this string in source”; runtime-built URLs are invisible. Common host / registry domains (GitHub, npm, npmmirror, Tencent Cloud mirrors, …), the curated DSH catalog and GitHub proxies, and common model-vendor APIs (DeepSeek, OpenAI, Anthropic, Google Gemini) have a built-in allowlist: collapsed by default with a short note; plaintext HTTP is never downgraded by the allowlist. The scanner also skips IP range tables (e.g. SSRF private-IP checks), placeholder bases like `http://local`, and shell switches (`/c`) to reduce noise. Comments are blanked before the scan, so an example URL in a JSDoc block is not a destination (bundlers usually keep those comments), and namespace identifiers such as `xmlns="http://www.w3.org/2000/svg"` are excluded by exact host — an attacker cannot register those domains, so the exemption cannot be borrowed. When findings exceed the cap, the riskiest are kept: plaintext HTTP and literal IPs cannot be crowded out by harmless addresses.
 
@@ -109,9 +109,9 @@ Parse `--json` uniformly: `plugins[0]` for single `--dir`, or the full `plugins`
 ## Known limits
 
 - **Post-install checkup**: profile mode audits plugins **already installed**; install/postinstall/prepare may have run before your first scan. `--dir` can scan an extracted tree before install (but install scripts may still run during market extract/install).
-- Static scans miss/false-positive (runtime-loaded capabilities are invisible; dynamic `import('node:' + …)`, `eval`, `Function`, third-party HTTP libs like `got`/`ws` are not in the rule table).
+- Static scans miss/false-positive (runtime-loaded capabilities are invisible; dynamic `import('node:' + …)`, string concatenation, and obfuscated `eval`/`Function` can still bypass the rule table).
 - **Does not scan `node_modules`**: dependency behavior is out of scope.
-- Client-side `fetch('/api')` same-origin calls are also flagged as network, not separated from outbound access.
+- Client-side `fetch('/api')` same-origin calls are still flagged as network; the chip is labelled same-origin or outbound, but a missing outbound literal is not a proof of no outbound access, and the score is unchanged.
 - Injected tokens are a byte / 4 estimate, not exact billing.
 - `link:` / `file:` installs can't infer source from the spec; if the package.json lacks `repository`, it shows "no repository declared".
 - The `repository` field is self-declared; it is not cross-checked against the npm package name, and a non-`http(s)` scheme is never rendered as a clickable link.

@@ -5,6 +5,7 @@ import {
   countVerdicts,
   formatInjectionDetail,
   groupEvidence,
+  networkReach,
   presentInjection,
   repositoryHref,
   topCapabilities,
@@ -246,5 +247,29 @@ describe('repositoryHref', () => {
   it('refuses values that are not URLs at all', () => {
     expect(repositoryHref('x/y')).toBeUndefined()
     expect(repositoryHref(undefined)).toBeUndefined()
+  })
+})
+
+describe('networkReach', () => {
+  it('is none when the plugin has no network capability', () => {
+    expect(networkReach(baseReport())).toBe('none')
+  })
+
+  it('is same-origin when network is present but every literal destination is loopback', () => {
+    const report = {
+      ...baseReport(),
+      capabilities: ['network'] as Capability[],
+      destinations: [{ kind: 'loopback' as const, value: '127.0.0.1', file: 'a.js', line: 1 }],
+    }
+    expect(networkReach(report)).toBe('same-origin')
+  })
+
+  it('is outbound when a non-loopback literal destination is present', () => {
+    const report = {
+      ...baseReport(),
+      capabilities: ['network'] as Capability[],
+      destinations: [{ kind: 'https-host' as const, value: 'api.example.com', file: 'a.js', line: 1 }],
+    }
+    expect(networkReach(report)).toBe('outbound')
   })
 })

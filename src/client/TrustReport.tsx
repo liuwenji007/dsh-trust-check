@@ -13,6 +13,7 @@ import {
   formatInjectionDetail,
   groupEvidence,
   groupInjections,
+  networkReach,
   presentInjection,
   repositoryHref,
   topCapabilities,
@@ -114,7 +115,7 @@ function EvidencePanel({
               <div key={cap} className={css.evidenceGroup}>
                 <div className={css.evidenceGroupHead}>
                   <span className={`${css.chip} ${css[`tier-${capabilityTier(cap)}`]}`}>
-                    {t(capLabelKey(cap))}
+                    {capChipText(cap, t, networkReach(report))}
                   </span>
                   <span className={css.countPill}>{rows.length}</span>
                 </div>
@@ -195,6 +196,14 @@ function capLabelKey(cap: Capability): TrustKey {
   return `cap.${cap}` as TrustKey
 }
 
+function capChipText(cap: Capability, t: T, reach: ReturnType<typeof networkReach>): string {
+  const label = t(capLabelKey(cap))
+  if (cap !== 'network') return label
+  if (reach === 'outbound') return `${label} · ${t('cap.network.outbound')}`
+  if (reach === 'same-origin') return `${label} · ${t('cap.network.sameOrigin')}`
+  return label
+}
+
 function concernLabel(concern: Concern, t: T): string {
   if (concern.code === 'raw') return concern.detail ?? ''
   const key = `concern.${concern.code}` as TrustKey
@@ -216,10 +225,12 @@ function secretKindKey(kind: AuditReport['secretTouches'][number]['kind']): Trus
 function CapabilityChips({
   caps,
   t,
+  reach,
   onSelect,
 }: {
   caps: Capability[]
   t: T
+  reach: ReturnType<typeof networkReach>
   onSelect?: (cap: Capability) => void
 }) {
   if (caps.length === 0) return <div className={css.muted}>{t('none')}</div>
@@ -233,7 +244,7 @@ function CapabilityChips({
           onClick={onSelect !== undefined ? () => onSelect(cap) : undefined}
           disabled={onSelect === undefined}
         >
-          {t(capLabelKey(cap))}
+          {capChipText(cap, t, reach)}
         </button>
       ))}
     </div>
@@ -558,7 +569,7 @@ function PluginCardBody({
           <header className={css.sectionHead}>
             <h3 className={css.sectionTitle}>{t('capabilities')}</h3>
           </header>
-          <CapabilityChips caps={report.capabilities} t={t} onSelect={cap => setEvidenceFocus(cap)} />
+          <CapabilityChips caps={report.capabilities} t={t} reach={networkReach(report)} onSelect={cap => setEvidenceFocus(cap)} />
         </section>
 
         <DestinationsPanel report={report} t={t} />
@@ -631,6 +642,7 @@ function PluginRow({
 }) {
   const v = verdict(report, ack)
   const previewCaps = topCapabilities(report, 3)
+  const reach = networkReach(report)
 
   return (
     <article className={`${css.plugin} ${css[`verdict-${v}`]}`}>
@@ -646,7 +658,7 @@ function PluginRow({
           <span className={css.previewChips}>
             {previewCaps.map(cap => (
               <span key={cap} className={`${css.chip} ${css[`tier-${capabilityTier(cap)}`]}`}>
-                {t(capLabelKey(cap))}
+                {capChipText(cap, t, reach)}
               </span>
             ))}
           </span>

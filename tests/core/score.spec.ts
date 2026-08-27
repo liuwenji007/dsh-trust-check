@@ -25,6 +25,13 @@ describe('scoreTrust', () => {
     expect(result.score).toBe(65)
   })
 
+  it('deducts dynamic-code without treating it as a red line', () => {
+    const result = scoreTrust({ ...base, capabilities: ['dynamic-code'] })
+    expect(result.score).toBe(82)
+    expect(result.redLines).toEqual([])
+    expect(result.band).toBe('green')
+  })
+
   it('forces red on install scripts', () => {
     const result = scoreTrust({ ...base, hasBuildScript: true, buildScripts: ['postinstall'] })
     expect(result.band).toBe('red')

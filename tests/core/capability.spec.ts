@@ -99,4 +99,39 @@ describe('scanCapabilities', () => {
     }))
     expect(web.capabilities).toContain('network')
   })
+
+  it('detects common third-party HTTP clients as network', () => {
+    for (const line of [
+      "import got from 'got'",
+      "const { WebSocket } = require('ws')",
+      "import ky from 'ky'",
+    ]) {
+      const result = scanCapabilities(input({ 'lib/index.js': `${line}\n` }))
+      expect(result.capabilities, line).toContain('network')
+    }
+  })
+
+  it('detects eval, new Function, and vm as dynamic-code', () => {
+    expect(scanCapabilities(input({
+      'lib/index.js': 'eval(payload)\n',
+    })).capabilities).toContain('dynamic-code')
+
+    expect(scanCapabilities(input({
+      'lib/index.js': 'const f = new Function("return 1")\n',
+    })).capabilities).toContain('dynamic-code')
+
+    expect(scanCapabilities(input({
+      'lib/index.js': "import vm from 'node:vm'\nvm.runInNewContext(code)\n",
+    })).capabilities).toContain('dynamic-code')
+  })
+
+  it('does not treat the dynamic-code rule table as a hit', () => {
+    const result = scanCapabilities(input({
+      'seams.ts': [
+        String.raw`pattern: /\beval\s*\(|\bnew\s+Function\s*\(/,`,
+        String.raw`pattern: /(?:require\(|from\s+|import\s*\(\s*)['"](?:node:)?vm['"]/,`,
+      ].join('\n'),
+    }))
+    expect(result.capabilities).not.toContain('dynamic-code')
+  })
 })

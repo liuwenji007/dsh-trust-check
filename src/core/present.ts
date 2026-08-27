@@ -248,9 +248,26 @@ export function countVerdicts(
 
 /** Chip severity tier for styling: high / medium / neutral. */
 export function capabilityTier(cap: Capability): 'high' | 'medium' | 'neutral' {
-  if (cap === 'shell' || cap === 'credentials') return 'high'
+  if (cap === 'shell' || cap === 'credentials' || cap === 'dynamic-code') return 'high'
   if (cap === 'fs-write') return 'medium'
   return 'neutral'
+}
+
+/** How far a `network` capability appears to reach, from literal destinations only. */
+export type NetworkReach = 'outbound' | 'same-origin' | 'none'
+
+/**
+ * Presentation-only split of the `network` capability.
+ *
+ * `same-origin` means no non-loopback literal destination was found — not that
+ * the plugin cannot talk to the internet. Runtime-built URLs are invisible, so
+ * this never changes the numeric score.
+ */
+export function networkReach(report: AuditReport): NetworkReach {
+  if (!report.capabilities.includes('network')) return 'none'
+  const destinations = (report.destinations ?? []).filter(d => d.kind !== 'relative')
+  if (destinations.some(d => d.kind !== 'loopback')) return 'outbound'
+  return 'same-origin'
 }
 
 /**

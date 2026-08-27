@@ -36,7 +36,7 @@ npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 | **风险已确认** | 你已确认当前红线风险 | 有红线，且 `trust-ack.json` 与本次扫描一致 |
 | **需确认** | 未见硬红线，但有特权能力或 patch 改动 | 有能力或 override/disable，且无红线 |
 | **能力如预期** | 你已确认当前能力与去向指纹 | 本机 `trust-ack.json` 与本次扫描一致（无红线） |
-| **无红线** | 未见红线或特权能力 | 其余 |
+| **静态未见风险信号** | 静态扫描未见红线或特权能力；不是安全保证 | 其余 |
 
 **形状层（代码判定）**：除能力芯片外，报告会列出源码中的**字面量去向**（URL/host/IP）、**工作区外路径**（绝对路径、家目录、路径穿越等）和**密钥触摸**（路径、敏感 env 名）。同源 HTTP 相对路由（如 `/dsh-market/check`）不再当作去向展示。这不代表「地址/路径安全」，只代表「在源码里看到了什么」；运行时拼接的 URL 看不到。常见托管/registry 域名（GitHub、npm、npmmirror、腾讯云镜像等）、DSH 精选目录与 GitHub 代理，以及常见模型厂商 API（DeepSeek、OpenAI、Anthropic、Google Gemini）有内置白名单：默认收起并附简短说明，明文 HTTP 永远不会因白名单降级。扫描器会跳过网段边界表（如 SSRF 私网判定）、`http://local` 一类占位 base、cmd 开关（`/c`）等误判噪音；注释在扫描前被抹掉，所以 JSDoc 里的示例 URL 不会算作去向（打包产物通常保留注释），而 `xmlns="http://www.w3.org/2000/svg"` 一类命名空间标识按主机名精确排除——攻击者注册不到这些域名，因此这条豁免无法被借用。超出上限时按风险高低截断，明文 HTTP 与字面量 IP 不会被无害地址挤掉。
 
@@ -109,9 +109,9 @@ npx dsh-trust-check --dir "$EXTRACTED_DIR" --spec "$INSTALL_SPEC" --json
 ## 已知局限
 
 - **装后体检**：profile 模式审计的是**已经安装**的插件；install/postinstall/prepare 在你第一次扫描前就可能已经跑过。`--dir` 模式可在安装前对解压目录扫描（但安装脚本本身仍可能在 market 解包/安装阶段已执行）。
-- 静态扫描有漏判/误判（运行时才加载的能力看不到；动态 `import('node:' + …)`、`eval`、`Function`、第三方 HTTP 库如 `got`/`ws` 等不在规则表内）。
+- 静态扫描有漏判/误判（运行时才加载的能力看不到；动态 `import('node:' + …)`、字符串拼接、混淆后的 `eval`/`Function` 仍可能绕过规则表）。
 - **不扫 `node_modules`**：依赖里的行为不在审计范围内。
-- 客户端 `fetch('/api')` 等同源调用也会记为 network，与真正的出网访问未分层。
+- 客户端 `fetch('/api')` 等同源调用仍记为 network；芯片会标「同源」或「外连」，但没有字面量外连不等于不出网，评分不变。
 - 注入 token 是字节 / 4 的粗估，不是精确计费。
 - `link:` / `file:` 本地安装的插件无法从 spec 推断来源，若其 `package.json` 未声明 `repository`，会显示"未声明仓库"。
 - `repository` 字段是插件自述，不与 npm 包名交叉验证；非 `http(s)` 协议不会渲染成可点击链接。

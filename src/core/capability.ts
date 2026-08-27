@@ -89,6 +89,7 @@ export function scanCapabilities(input: PluginInput): CapabilityScan {
 
   const ORDER: Capability[] = [
     'shell',
+    'dynamic-code',
     'fs-write',
     'fs-read',
     'network',

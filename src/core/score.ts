@@ -8,6 +8,7 @@ import { shapeRedLines } from './shape.ts'
 
 export const CAPABILITY_WEIGHT: Readonly<Record<Capability, number>> = {
   shell: 25,
+  'dynamic-code': 18,
   'fs-write': 15,
   network: 10,
   credentials: 20,

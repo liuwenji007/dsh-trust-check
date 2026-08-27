@@ -1,0 +1,65 @@
+name: release
+#
+# Every publish goes through THIS file, and it has to.
+#
+# npm trusted publishing (OIDC) is registered against one repository and one
+# workflow FILENAME. A second workflow — even in the same repo, with the same
+# `id-token: write` — gets an OIDC token npm does not recognise and the
+# publish fails as `E404 ... you do not have permission`, which reads like a
+# missing package rather than an untrusted publisher.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # GitHub Release creation
+  id-token: write # npm trusted publishing (OIDC)
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      # trusted publishing needs npm >= 11.5
+      - run: npm install -g npm@latest
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+      - name: tag must match package.json version
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          TAG=${GITHUB_REF_NAME#v}
+          if [ "$PKG" != "$TAG" ]; then
+            echo "tag v$TAG != package.json $PKG" >&2
+            exit 1
+          fi
+
+      - name: choose the npm dist-tag
+        id: channel
+        run: |
+          TAG=${GITHUB_REF_NAME#v}
+          case "$TAG" in
+            *-*) echo "dist=beta" >> "$GITHUB_OUTPUT"; echo "pre=true" >> "$GITHUB_OUTPUT" ;;
+            *)   echo "dist=latest" >> "$GITHUB_OUTPUT"; echo "pre=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - run: npm publish --tag ${{ steps.channel.outputs.dist }}
+
+      - name: create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "dsh-trust-check ${GITHUB_REF_NAME#v}" \
+            --generate-notes \
+            ${{ steps.channel.outputs.pre == 'true' && '--prerelease' || '' }} \
+            --notes "npm: https://www.npmjs.com/package/dsh-trust-check/v/${GITHUB_REF_NAME#v} · dist-tag: ${{ steps.channel.outputs.dist }}"

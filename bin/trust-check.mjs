@@ -19,6 +19,7 @@ import {
   countVerdicts,
   formatInjectionDetail,
   partitionDestinations,
+  networkReach,
   readAckStore,
   readInstalled,
   resolveProfileDir,
@@ -85,7 +86,13 @@ function printPlugin(p, ack) {
   }
   const caps = p.capabilities.length === 0
     ? 'none'
-    : p.capabilities.join(', ')
+    : p.capabilities.map(c => {
+      if (c !== 'network') return c
+      const reach = networkReach(p)
+      if (reach === 'outbound') return 'network (outbound)'
+      if (reach === 'same-origin') return 'network (same-origin)'
+      return c
+    }).join(', ')
   console.log(`  capabilities: ${caps}`)
   if (p.destinations?.length > 0) {
     const { priority, safe } = partitionDestinations(p.destinations)

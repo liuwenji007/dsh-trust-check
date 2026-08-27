@@ -26,6 +26,7 @@ export {
   groupEvidence,
   groupEvidenceByFile,
   groupInjections,
+  networkReach,
   repositoryHref,
   topCapabilities,
   verdict,
@@ -49,7 +50,7 @@ export { injectionFingerprint } from './core/injection.ts'
 export { isCodeFile, stripComments } from './core/strip-comments.ts'
 export { buildExplainPrompt, EXPLAIN_SYSTEM } from './core/explain.ts'
 export { explainWithLlm, resolveExplainRoute } from './host/llm-explain.ts'
-export type { Concern, ConcernCode, RedLineCode, Verdict } from './core/present.ts'
+export type { Concern, ConcernCode, NetworkReach, RedLineCode, Verdict } from './core/present.ts'
 export { collectPlugin, readInstalled, resolveProfileDir } from './fs.ts'
 
 export const name = 'dsh-trust-check'

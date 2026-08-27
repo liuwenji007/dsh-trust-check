@@ -14,6 +14,7 @@ export type Capability =
   | 'subagent'
   | 'host-runtime'
   | 'llm'
+  | 'dynamic-code'
 
 /** One located piece of evidence for a capability. */
 export interface Evidence {
