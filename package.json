@@ -1,0 +1,113 @@
+{
+  "name": "dsh-trust-check",
+  "version": "0.1.0",
+  "description": "Static trust audit for DeepSeek Harness plugins: capabilities, injected prompts, token cost, provenance, and a reproducible 0-100 trust score",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liuwenji007/dsh-trust-check.git"
+  },
+  "homepage": "https://github.com/liuwenji007/dsh-trust-check#readme",
+  "bugs": {
+    "url": "https://github.com/liuwenji007/dsh-trust-check/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "audit",
+    "security",
+    "trust",
+    "supply-chain"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "main": "lib/index.js",
+  "types": "./lib/index.d.ts",
+  "bin": {
+    "dsh-trust-check": "./bin/trust-check.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js"
+    },
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/index.d.ts",
+    "lib/client.js",
+    "lib/client.js.map",
+    "bin/trust-check.mjs",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "prepare": "tsdown --config tsdown.config.ts",
+    "prepublishOnly": "tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.0-rc.7",
+    "@deepseek-ai/dsh-client-locale": ">=0.1.0-rc.5",
+    "@deepseek-ai/dsh-client-runtime": ">=0.1.0-rc.5",
+    "@deepseek-ai/dsh-client-ui-settings": ">=0.1.0-rc.5",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.0-rc.5",
+    "react": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-locale": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-runtime": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-settings": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-slots": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.5",
+    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-client-ui-settings": "^0.1.0-rc.5",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.5",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^26.2.0",
+    "@types/react": "~18.3.1",
+    "lightningcss": "^1.32.0",
+    "react": "^18.2.0",
+    "tsdown": "^0.22.2",
+    "typescript": "^5.8.0",
+    "vitest": "^4.1.8"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  }
+}

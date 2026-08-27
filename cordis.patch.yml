@@ -1,0 +1,4 @@
+# dsh-trust-check: insert the trust report page into the Web client roster.
+- insert:
+    - id: dsh-trust-check
+      name: dsh-trust-check
