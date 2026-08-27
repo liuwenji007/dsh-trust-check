@@ -21,6 +21,8 @@ export type DestWhitelistReason =
   | 'openai'
   | 'anthropic'
   | 'google-ai'
+  | 'dsh-catalog'
+  | 'gh-proxy'
   | 'jsdelivr'
   | 'unpkg'
 
@@ -44,6 +46,7 @@ export const DEST_WHITELIST: readonly DestWhitelistEntry[] = [
   { host: 'npmjs.org', reason: 'npm' },
   { host: 'registry.npmmirror.com', reason: 'npm-mirror' },
   { host: 'npmmirror.com', reason: 'npm-mirror' },
+  { host: 'mirrors.cloud.tencent.com', reason: 'npm-mirror' },
   { host: 'cdn.jsdelivr.net', reason: 'jsdelivr' },
   { host: 'unpkg.com', reason: 'unpkg' },
   { host: 'api.deepseek.com', reason: 'deepseek' },
@@ -55,6 +58,8 @@ export const DEST_WHITELIST: readonly DestWhitelistEntry[] = [
   { host: 'generativelanguage.googleapis.com', reason: 'google-ai' },
   { host: 'aiplatform.googleapis.com', reason: 'google-ai' },
   { host: 'aistudio.google.com', reason: 'google-ai' },
+  { host: 'awesome-dsh-plugin.com', reason: 'dsh-catalog' },
+  { host: 'gh-proxy.com', reason: 'gh-proxy' },
 ]
 
 function normalizeHost(value: string): string {

@@ -36,6 +36,9 @@ describe('destination priority', () => {
     expect(matchDestWhitelist('api.anthropic.com')?.reason).toBe('anthropic')
     expect(matchDestWhitelist('generativelanguage.googleapis.com')?.reason).toBe('google-ai')
     expect(matchDestWhitelist('api.openai.com')?.reason).toBe('openai')
+    expect(matchDestWhitelist('awesome-dsh-plugin.com')?.reason).toBe('dsh-catalog')
+    expect(matchDestWhitelist('gh-proxy.com')?.reason).toBe('gh-proxy')
+    expect(matchDestWhitelist('mirrors.cloud.tencent.com')?.reason).toBe('npm-mirror')
     expect(matchDestWhitelist('evil.example')).toBeUndefined()
   })
 

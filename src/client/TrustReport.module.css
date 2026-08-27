@@ -111,7 +111,7 @@
 .verdict-red { border-left: 3px solid #e05b5b; }
 .verdict-review { border-left: 3px solid #d9a53a; }
 .verdict-expected { border-left: 3px solid #2fae66; }
-.verdict-clear { border-left: 3px solid color-mix(in srgb, currentColor 25%, transparent); }
+.verdict-clear { border-left: 3px solid #2fae66; }
 
 .pluginToggle {
   width: 100%;
@@ -170,7 +170,7 @@
 .badge-red { color: #e05b5b; border-color: color-mix(in srgb, #e05b5b 45%, transparent); }
 .badge-review { color: #d9a53a; border-color: color-mix(in srgb, #d9a53a 45%, transparent); }
 .badge-expected { color: #2fae66; border-color: color-mix(in srgb, #2fae66 45%, transparent); }
-.badge-clear { color: inherit; opacity: 0.75; border-color: color-mix(in srgb, currentColor 22%, transparent); }
+.badge-clear { color: #2fae66; border-color: color-mix(in srgb, #2fae66 45%, transparent); }
 
 .drift {
   margin-top: 8px;
