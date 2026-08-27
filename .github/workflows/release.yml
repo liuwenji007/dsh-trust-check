@@ -52,7 +52,15 @@ jobs:
             *)   echo "dist=latest" >> "$GITHUB_OUTPUT"; echo "pre=false" >> "$GITHUB_OUTPUT" ;;
           esac
 
-      - run: npm publish --tag ${{ steps.channel.outputs.dist }}
+      - name: publish to npm
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          PUBLISHED=$(npm view "dsh-trust-check@$PKG" version 2>/dev/null || true)
+          if [ "$PUBLISHED" = "$PKG" ]; then
+            echo "dsh-trust-check@$PKG is already on the registry; skip publish"
+          else
+            npm publish --tag "${{ steps.channel.outputs.dist }}"
+          fi
 
       - name: create GitHub release
         env:
