@@ -2,7 +2,7 @@
 
 [English](README.en.md)
 
-DeepSeek Harness 插件「装前体检」：静态审计已装插件的能力面、注入面、成本、来源与更新风险，输出一个**代码判定、可复现、零 token** 的 0–100 信任分。
+DeepSeek Harness 插件静态信任审计：对已安装插件的能力面、注入面、成本、来源与更新风险做体检，输出一个**代码判定、可复现、零 token** 的 0–100 信任分。
 
 > 不是"杀毒软件"，也不做安全承诺。它只做能证明的事：把插件**真实会碰什么、注入了什么、来源可不可信**摊开给你看，结论每一条都附证据（文件 + 行号 + 片段），你可以自己复核。
 
@@ -24,11 +24,11 @@ npx dsh-trust-check --json          # 机器可读输出
 
 | 维度 | 读什么 | 判定 |
 |---|---|---|
-| **能力面** | `package.json` 的依赖 scope + 静态扫 `lib/*.js` | shell / 文件读写 / 网络 / 凭据 / 子代理 / LLM 调用 / 环境变量 |
-| **注入面** | `cordis.patch.yml` + 源码里的 `systemPrompt` 注册 + 技能文本 | override / disable 了谁、注入了什么 |
-| **成本** | 技能/指令文本字节数 | 估算每请求注入 token（字节 / 4，仅估算） |
+| **能力面** | `package.json` 依赖 scope + 静态扫 `lib/`、`dist/`、`bin/`、`scripts/`、技能目录，以及 `main` / `exports` / `bin` 入口文件 | shell / 文件读写 / 网络 / 凭据 / 子代理 / LLM 调用 / 环境变量 |
+| **注入面** | `cordis.patch.yml` + `systemPrompt` / `ctx.skills.register` / `system-prompt/assemble` + 技能文本 | override / disable 了谁（`id` 或 `name`）、注入了什么 |
+| **成本** | 技能文本 + system-prompt 行内字面量字节数 | 估算每请求注入 token（字节 / 4，仅估算） |
 | **来源** | `package.json` 的 `repository`（缺失回退到 git 安装源）+ 安装 spec | 是否锁版本/锁 commit |
-| **更新风险** | 安装脚本（install/postinstall/preinstall） | 是否在安装时执行任意代码 |
+| **更新风险** | 安装脚本（install/postinstall/preinstall/prepare） | 是否在安装时执行任意代码 |
 
 ## 信任分
 
@@ -40,10 +40,12 @@ npx dsh-trust-check --json          # 机器可读输出
 - **50–79 黄**：有权限或注入，列出"具体要什么"。
 - **< 50 红**：命中红线或高风险。
 
+**红线会把数值分封顶到 49**（避免「100 分 + 高风险」的误导卡片）。
+
 红线（直接判红）：
 
-1. 声明 install/postinstall/preinstall 安装脚本；
-2. `cordis.patch.yml` override / disable 了 `@deepseek-ai/*` 核心 bundle；
+1. 声明 install/postinstall/preinstall/**prepare** 安装脚本；
+2. `cordis.patch.yml` override / disable 了 `@deepseek-ai/*` 核心 bundle（匹配 `id` **或** `name`）；
 3. 读取凭据/密钥材料（keychain / keytar / dotenv / `~/.ssh` / `.aws/credentials` 等）**且**有网络访问。
 
 ## 判定原则
@@ -55,9 +57,13 @@ npx dsh-trust-check --json          # 机器可读输出
 
 ## 已知局限
 
-- 静态扫描有漏判/误判（运行时才加载的能力看不到；字符串里恰好出现规则词）。已用"精确 pattern + 注释剥离 + 只证有"尽量压低误报，但请把结果当"体检参考"而非"裁决"。
+- **装后体检**：审计的是 profile 里**已经安装**的插件；install/postinstall/prepare 在你第一次扫描前就可能已经跑过。
+- 静态扫描有漏判/误判（运行时才加载的能力看不到；动态 `import('node:' + …)`、`eval`、`Function`、第三方 HTTP 库如 `got`/`ws` 等不在规则表内）。已用"精确 pattern + 注释剥离 + 只证有"尽量压低误报，但请把结果当"体检参考"而非"裁决"。
+- **不扫 `node_modules`**：依赖里的行为不在审计范围内。
+- 客户端 `fetch('/api')` 等同源调用也会记为 network，与真正的出网访问未分层。
 - 注入 token 是字节 / 4 的粗估，不是精确计费。
 - `link:` / `file:` 本地安装的插件无法从 spec 推断来源，若其 `package.json` 未声明 `repository`，会显示"未声明仓库"。
+- `repository` 字段是插件自述，不与 npm 包名交叉验证。
 
 ## 开发
 

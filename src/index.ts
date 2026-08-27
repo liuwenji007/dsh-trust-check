@@ -12,7 +12,7 @@ import { collectPlugin, readInstalled, resolveProfileDir } from './fs.ts'
 import type { AuditReport, AuditResponse } from './core/types.ts'
 
 export type { AuditReport, AuditResponse } from './core/types.ts'
-export { auditPlugin } from './core/audit.ts'
+export { auditPlugin, MAX_EVIDENCE } from './core/audit.ts'
 export { collectPlugin, readInstalled, resolveProfileDir } from './fs.ts'
 
 export const name = 'dsh-trust-check'
@@ -53,6 +53,33 @@ function sendJson(response: ServerResponse, status: number, payload: unknown): v
   response.end(JSON.stringify(payload))
 }
 
+/** Whether the request came from a loopback peer (not a forwarded remote client). */
+export function isLoopbackRequest(request: IncomingMessage): boolean {
+  const address = request.socket.remoteAddress
+  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1'
+}
+
+/**
+ * Audit-route origin policy: missing Origin is allowed (same-machine curl);
+ * when present it must match Host.
+ */
+export function trustedAuditRequest(request: IncomingMessage): boolean {
+  if (!isLoopbackRequest(request)) return false
+  if (request.headers.forwarded !== undefined
+    || request.headers['x-forwarded-for'] !== undefined
+    || request.headers['x-real-ip'] !== undefined) return false
+  const origin = request.headers.origin
+  const host = request.headers.host
+  if (host === undefined) return false
+  if (origin === undefined) return true
+  try {
+    const parsed = new URL(origin)
+    return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.host === host
+  } catch {
+    return false
+  }
+}
+
 function runAudit(profile: string): AuditResponse {
   const profileDir = resolveProfileDir(profile)
   const installed = readInstalled(profileDir)
@@ -82,7 +109,16 @@ export function apply(ctx: Context, config?: Config): void {
       return host.webServer.register({
         kind: 'exact',
         path: '/dsh-trust-check/audit',
-        handler: (_request, response) => {
+        handler: (request, response) => {
+          if (request.method !== undefined && request.method !== 'GET') {
+            response.writeHead(405, { allow: 'GET' })
+            response.end()
+            return
+          }
+          if (!trustedAuditRequest(request)) {
+            sendJson(response, 403, { error: 'audit is limited to same-origin loopback requests' })
+            return
+          }
           sendJson(response, 200, runAudit(profile))
         },
       })

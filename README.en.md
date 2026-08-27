@@ -2,7 +2,7 @@
 
 [中文](README.md)
 
-A "pre-install checkup" for DeepSeek Harness plugins: statically audit an installed plugin's capabilities, injections, token cost, source, and update risk, and produce a **code-judged, reproducible, zero-token** 0–100 trust score.
+Static trust audit for DeepSeek Harness plugins: audit installed plugins for capabilities, injections, token cost, source, and update risk, and produce a **code-judged, reproducible, zero-token** 0–100 trust score.
 
 > Not an antivirus, and it makes no safety promises. It proves only what is provable: what a plugin really touches, what it injects, and whether its source is trustworthy — with evidence (file + line + snippet) for every claim, so you can verify it yourself.
 
@@ -24,11 +24,11 @@ npx dsh-trust-check --json          # machine-readable output
 
 | Dimension | Reads | Judgement |
 |---|---|---|
-| **Capabilities** | `package.json` dependency scopes + static scan of `lib/*.js` | shell / file read / file write / network / credentials / sub-agents / LLM calls / env reads |
-| **Injections** | `cordis.patch.yml` + `systemPrompt` registration + skill text | who it overrides/disables, what it injects |
-| **Cost** | skill/instruction text bytes | estimated injected tokens per request (bytes / 4, estimate only) |
+| **Capabilities** | `package.json` dependency scopes + static scan of `lib/`, `dist/`, `bin/`, `scripts/`, skill dirs, and `main` / `exports` / `bin` entry files | shell / file read / file write / network / credentials / sub-agents / LLM calls / env reads |
+| **Injections** | `cordis.patch.yml` + `systemPrompt` / `ctx.skills.register` / `system-prompt/assemble` + skill text | who it overrides/disables (`id` or `name`), what it injects |
+| **Cost** | skill text + system-prompt inline literal bytes | estimated injected tokens per request (bytes / 4, estimate only) |
 | **Source** | `package.json` `repository` (falls back to the git install source) + install spec | pinned version / pinned commit |
-| **Update risk** | install scripts (install/postinstall/preinstall) | arbitrary code at install time |
+| **Update risk** | install scripts (install/postinstall/preinstall/**prepare**) | arbitrary code at install time |
 
 ## Trust score
 
@@ -40,10 +40,12 @@ score = 100 − capability weights − injection cost − source risk − update
 - **50–79 yellow**: privileged or injecting — lists exactly what it wants.
 - **< 50 red**: red line hit, or high risk.
 
+**Red lines cap the numeric score at 49** (so a card never shows "100 + high risk").
+
 Red lines (force red):
 
-1. declares install/postinstall/preinstall scripts;
-2. `cordis.patch.yml` overrides/disables an `@deepseek-ai/*` core bundle;
+1. declares install/postinstall/preinstall/**prepare** scripts;
+2. `cordis.patch.yml` overrides/disables an `@deepseek-ai/*` core bundle (matched by `id` **or** `name`);
 3. reads credential/secret material (keychain / keytar / dotenv / `~/.ssh` / `.aws/credentials` …) **and** has network access.
 
 ## Principles
@@ -55,9 +57,13 @@ Red lines (force red):
 
 ## Known limits
 
-- Static scans miss/false-positive (runtime-loaded capabilities are invisible; a rule word inside a string can match). Precision patterns + comment stripping + presence-only keep false positives low, but treat results as a checkup, not a verdict.
+- **Post-install checkup**: it audits plugins **already installed** in a profile; install/postinstall/prepare may have run before your first scan.
+- Static scans miss/false-positive (runtime-loaded capabilities are invisible; dynamic `import('node:' + …)`, `eval`, `Function`, third-party HTTP libs like `got`/`ws` are not in the rule table). Precision patterns + comment stripping + presence-only keep false positives low, but treat results as a checkup, not a verdict.
+- **Does not scan `node_modules`**: dependency behavior is out of scope.
+- Client-side `fetch('/api')` same-origin calls are also flagged as network, not separated from outbound access.
 - Injected tokens are a byte / 4 estimate, not exact billing.
 - `link:` / `file:` installs can't infer source from the spec; if the package.json lacks `repository`, it shows "no repository declared".
+- The `repository` field is self-declared; it is not cross-checked against the npm package name.
 
 ## Development
 

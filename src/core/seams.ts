@@ -30,7 +30,7 @@ export const CAPABILITY_RULES: readonly CapabilityRule[] = [
   // --- shell ------------------------------------------------------------
   {
     capability: 'shell',
-    pattern: /(?:require\(|from\s+|import\s*\(\s*)['"](?:node:)?child_process['"]|\bexecSync\s*\(|\bspawnSync\s*\(|\bexecFileSync\s*\(|\bexecFile\s*\(|\bspawn\s*\(|\bctx\.bash\b/,
+    pattern: /(?:require\(|from\s+|import\s*\(\s*)['"](?:node:)?child_process(?:\/promises)?['"]|\bexecSync\s*\(|\bspawnSync\s*\(|\bexecFileSync\s*\(|\bexecFile\s*\(|\bspawn\s*\(|\bctx\.bash\b/,
     label: 'Shell execution',
   },
   // --- filesystem --------------------------------------------------------
@@ -41,13 +41,13 @@ export const CAPABILITY_RULES: readonly CapabilityRule[] = [
   },
   {
     capability: 'fs-read',
-    pattern: /(?:require\(|from\s+|import\s*\(\s*)['"](?:node:)?fs['"]|\breadFileSync\s*\(|\breadFile\s*\(|\breaddirSync\s*\(|\breaddir\s*\(|\bstatSync\s*\(|\bexistsSync\s*\(|\bcreateReadStream\s*\(|\bctx\.fs\b/,
+    pattern: /(?:require\(|from\s+|import\s*\(\s*)['"](?:node:)?fs(?:\/promises)?['"]|\breadFileSync\s*\(|\breadFile\s*\(|\breaddirSync\s*\(|\breaddir\s*\(|\bstatSync\s*\(|\bexistsSync\s*\(|\bcreateReadStream\s*\(|\bctx\.fs\b/,
     label: 'Filesystem read',
   },
   // --- network -----------------------------------------------------------
   {
     capability: 'network',
-    pattern: /(?:require\(|from\s+|import\s*\(\s*)['"](?:node:)?(?:http|https|net|tls|dgram|dns2?)['"]|\bfetch\s*\(|\bnew\s+WebSocket\b|\bhttp\.request\b|\bhttps\.request\b|(?:require\(|from\s+)['"](?:axios|undici|node-fetch)['"]/,
+    pattern: /(?:require\(|from\s+|import\s*\(\s*)['"](?:node:)?(?:http2|http|https|net|tls|dgram|dns2?)['"]|\bfetch\s*\(|\bnew\s+WebSocket\b|\bhttp\.request\b|\bhttps\.request\b|(?:require\(|from\s+)['"](?:axios|undici|node-fetch)['"]|\bctx\.web\b/,
     label: 'Network access',
   },
   // --- credentials -------------------------------------------------------

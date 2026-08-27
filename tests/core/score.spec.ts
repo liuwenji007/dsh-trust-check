@@ -28,12 +28,21 @@ describe('scoreTrust', () => {
     const result = scoreTrust({ ...base, hasBuildScript: true, buildScripts: ['postinstall'] })
     expect(result.band).toBe('red')
     expect(result.redLines).toContain('runs code at install time (postinstall)')
+    expect(result.score).toBe(49)
+  })
+
+  it('forces red on prepare scripts', () => {
+    const result = scoreTrust({ ...base, hasBuildScript: true, buildScripts: ['prepare'] })
+    expect(result.band).toBe('red')
+    expect(result.redLines).toContain('runs code at install time (prepare)')
+    expect(result.score).toBe(49)
   })
 
   it('forces red when secrets and network combine', () => {
     const result = scoreTrust({ ...base, capabilities: ['credentials', 'network'] })
     expect(result.band).toBe('red')
     expect(result.redLines).toContain('reads credentials/secrets AND has network access')
+    expect(result.score).toBe(49)
   })
 
   it('treats overriding a core bundle as a red line, community bundles as a deduction', () => {
@@ -42,6 +51,14 @@ describe('scoreTrust', () => {
       injections: [{ kind: 'override', detail: 'overrides bundle @deepseek-ai/dsh-base', bytes: 0 }],
     })
     expect(core.redLines).toContain('tampers with a core bundle (overrides bundle @deepseek-ai/dsh-base)')
+    expect(core.score).toBe(49)
+
+    const byName = scoreTrust({
+      ...base,
+      injections: [{ kind: 'override', detail: 'overrides bundle @deepseek-ai/dsh-base', bytes: 0 }],
+    })
+    expect(byName.redLines.length).toBeGreaterThan(0)
+    expect(byName.score).toBe(49)
 
     const community = scoreTrust({
       ...base,

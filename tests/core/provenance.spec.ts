@@ -13,6 +13,7 @@ describe('isPinned', () => {
   it('treats npm aliases by their version', () => {
     expect(isPinned('npm:dsh-muyu@0.1.4')).toBe(true)
     expect(isPinned('npm:dsh-muyu@latest')).toBe(false)
+    expect(isPinned('npm:@scope/pkg@1.2.3')).toBe(true)
   })
 
   it('treats a bare package name as unpinned', () => {

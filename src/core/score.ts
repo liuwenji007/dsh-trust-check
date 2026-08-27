@@ -41,8 +41,13 @@ export interface ScoreResult {
 
 function bundleIdOf(finding: InjectionFinding): string | undefined {
   const match = /(?:overrides|disables) bundle ([^\s]+)/.exec(finding.detail)
-  return match?.[1]
+  const id = match?.[1]
+  if (id === undefined || id === '(unknown)') return undefined
+  return id
 }
+
+/** When any red line fires, the numeric score cannot exceed this value. */
+export const RED_LINE_SCORE_CAP = 49
 
 export function scoreTrust(input: ScoreInput): ScoreResult {
   const redLines: string[] = []
@@ -101,7 +106,11 @@ export function scoreTrust(input: ScoreInput): ScoreResult {
     deductions.push({ reason: 'install spec is not pinned (moving target)', amount: 10 })
   }
 
-  const score = Math.max(0, Math.min(100, 100 - total))
+  let score = Math.max(0, Math.min(100, 100 - total))
+  if (redLines.length > 0 && score > RED_LINE_SCORE_CAP) {
+    deductions.push({ reason: 'red line cap', amount: score - RED_LINE_SCORE_CAP })
+    score = RED_LINE_SCORE_CAP
+  }
   const band: Band = redLines.length > 0 || score < 50 ? 'red' : score < 80 ? 'yellow' : 'green'
 
   return { score, band, redLines, deductions }

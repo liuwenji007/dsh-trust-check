@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { auditPlugin } from '../../src/core/audit.ts'
-import type { PluginInput } from '../../src/core/types.ts'
+import { auditPlugin, MAX_EVIDENCE } from '../../src/core/audit.ts'
+import type { Evidence, PluginInput } from '../../src/core/types.ts'
 
 function input(partial: Partial<PluginInput>): PluginInput {
   return {
@@ -34,6 +34,7 @@ describe('auditPlugin', () => {
     }))
     expect(report.band).toBe('red')
     expect(report.redLines).toContain('runs code at install time (postinstall)')
+    expect(report.score).toBeLessThanOrEqual(49)
     expect(report.capabilities).toEqual(expect.arrayContaining(['shell', 'network']))
     expect(report.pinned).toBe(false)
   })
@@ -51,5 +52,29 @@ describe('auditPlugin', () => {
     const report = auditPlugin(input({ manifest: {}, spec: 'github:owner/repo' }))
     expect(report.name).toBe('unknown')
     expect(report.band).toBeDefined()
+  })
+
+  it('includes system-prompt bytes in injected token estimate', () => {
+    const report = auditPlugin(input({
+      manifest: { name: 'prompt-plugin', version: '1.0.0', repository: 'https://github.com/x/y' },
+      sources: {
+        'lib/index.js': `ctx.systemPrompt.section({ text: \`${'A'.repeat(400)}\` })\n`,
+      },
+    }))
+    expect(report.injectedTokensEstimate).toBeGreaterThan(0)
+  })
+
+  it('caps evidence rows in the report', () => {
+    const evidence: Evidence[] = Array.from({ length: MAX_EVIDENCE + 10 }, (_, i) => ({
+      capability: 'network',
+      file: 'lib/index.js',
+      line: i + 1,
+      snippet: `fetch(${i})`,
+    }))
+    const sources: Record<string, string> = {
+      'lib/index.js': evidence.map(e => e.snippet).join('\n'),
+    }
+    const report = auditPlugin(input({ sources }))
+    expect(report.evidence.length).toBe(MAX_EVIDENCE)
   })
 })

@@ -14,7 +14,7 @@ export interface Provenance {
   pinned: boolean
 }
 
-const DANGEROUS_SCRIPTS = ['preinstall', 'install', 'postinstall'] as const
+const DANGEROUS_SCRIPTS = ['preinstall', 'install', 'postinstall', 'prepare'] as const
 
 function repoOf(manifest: Record<string, unknown>): string | undefined {
   const repo = manifest.repository
@@ -59,8 +59,8 @@ export function isPinned(spec: string): boolean {
   // Local / workspace targets never move.
   if (s.startsWith('link:') || s.startsWith('file:') || s.startsWith('workspace:')) return true
 
-  // npm aliases: npm:name@version
-  const npmAlias = /^npm:[^@]+@(.+)$/.exec(s)
+  // npm aliases: npm:name@version (including scoped names)
+  const npmAlias = /^npm:(?:@[^/]+\/)?[^@]+@(.+)$/.exec(s)
   if (npmAlias !== null) return isExactVersion(npmAlias[1])
 
   // git targets: github:owner/repo[#ref] or git+https://…[#ref]

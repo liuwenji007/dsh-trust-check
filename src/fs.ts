@@ -17,7 +17,7 @@ export const INBOX_BUNDLES = new Set([
   '@deepseek-ai/dsh-headless',
 ])
 
-const CODE_EXT = new Set(['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts'])
+const CODE_EXT = new Set(['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts', '.jsx', '.tsx'])
 const SKIP_DIRS = new Set([
   'node_modules',
   '.git',
@@ -31,7 +31,6 @@ const SKIP_DIRS = new Set([
   'docs',
   'examples',
   '.github',
-  'scripts',
 ])
 const MAX_TOTAL_BYTES = 8 * 1024 * 1024
 const MAX_FILES = 4000
@@ -39,7 +38,6 @@ const MAX_FILE_BYTES = 512 * 1024
 
 /** Files that are build/test artifacts, never runtime code worth auditing. */
 const SKIP_FILE_RE = /(?:^|\/)(?:tsdown|vitest|jest|eslint|prettier)\.config\.|(?:^|\/)tsconfig[^/]*\.json$|\.spec\.|\.test\.|\.d\.ts$|\.map$|\.snap$/
-
 
 interface WalkBudget {
   bytes: number
@@ -49,6 +47,55 @@ interface WalkBudget {
 function extOf(path: string): string {
   const idx = path.lastIndexOf('.')
   return idx === -1 ? '' : path.slice(idx).toLowerCase()
+}
+
+/** True when `target` resolves to a regular file inside `packageDir`. */
+function isInsidePackage(packageDir: string, target: string): boolean {
+  const rel = relative(packageDir, target)
+  return rel !== '' && !rel.startsWith('..') && !rel.startsWith('/')
+}
+
+function collectExportTarget(value: unknown, out: Set<string>): void {
+  if (typeof value === 'string') {
+    out.add(value)
+    return
+  }
+  if (typeof value === 'object' && value !== null) {
+    const obj = value as Record<string, unknown>
+    for (const key of ['import', 'default', 'require', 'node', 'types']) {
+      const entry = obj[key]
+      if (typeof entry === 'string') out.add(entry)
+    }
+  }
+}
+
+/** Relative paths declared by package.json entry points (main / exports / bin). */
+export function manifestEntryPaths(manifest: Record<string, unknown>): string[] {
+  const paths = new Set<string>()
+
+  const main = manifest.main
+  if (typeof main === 'string') paths.add(main)
+
+  const bin = manifest.bin
+  if (typeof bin === 'string') {
+    paths.add(bin)
+  } else if (typeof bin === 'object' && bin !== null && !Array.isArray(bin)) {
+    for (const value of Object.values(bin as Record<string, unknown>)) {
+      if (typeof value === 'string') paths.add(value)
+    }
+  }
+
+  const exports = manifest.exports
+  if (typeof exports === 'string') {
+    paths.add(exports)
+  } else if (typeof exports === 'object' && exports !== null && !Array.isArray(exports)) {
+    for (const [key, value] of Object.entries(exports as Record<string, unknown>)) {
+      if (key === './package.json') continue
+      collectExportTarget(value, paths)
+    }
+  }
+
+  return [...paths]
 }
 
 function walk(
@@ -80,23 +127,62 @@ function walk(
       continue
     }
     if (!stat.isFile()) continue
-    const rel = relative(root, abs)
-    if (SKIP_FILE_RE.test(rel)) continue
-    const ext = extOf(rel)
-    const isSkill = isSkillFile(rel) && (ext === '.md' || ext === '.prompt' || ext === '.txt')
-    if (ext !== '' && !CODE_EXT.has(ext) && !isSkill) continue
-    let content: string
-    try {
-      content = readFileSync(abs, 'utf8')
-    } catch {
-      continue
-    }
-    const bytes = Buffer.byteLength(content, 'utf8')
-    if (bytes > MAX_FILE_BYTES) continue
-    budget.bytes += bytes
-    budget.files += 1
-    if (isSkill) skillFiles[rel] = content
-    else sources[rel] = content
+    readScannedFile(abs, root, sources, skillFiles, budget)
+  }
+}
+
+function readScannedFile(
+  abs: string,
+  root: string,
+  sources: Record<string, string>,
+  skillFiles: Record<string, string>,
+  budget: WalkBudget,
+): void {
+  if (budget.files >= MAX_FILES || budget.bytes >= MAX_TOTAL_BYTES) return
+  const rel = relative(root, abs)
+  if (SKIP_FILE_RE.test(rel)) return
+  const ext = extOf(rel)
+  const isSkill = isSkillFile(rel) && (ext === '.md' || ext === '.prompt' || ext === '.txt')
+  if (ext !== '' && !CODE_EXT.has(ext) && !isSkill) return
+  let content: string
+  try {
+    content = readFileSync(abs, 'utf8')
+  } catch {
+    return
+  }
+  const bytes = Buffer.byteLength(content, 'utf8')
+  if (bytes > MAX_FILE_BYTES) return
+  budget.bytes += bytes
+  budget.files += 1
+  if (isSkill) skillFiles[rel] = content
+  else sources[rel] = content
+}
+
+/** Resolve a manifest entry path to an in-package file, if any. */
+function resolveManifestEntry(packageDir: string, raw: string): string | undefined {
+  const resolved = resolve(packageDir, raw)
+  if (!isInsidePackage(packageDir, resolved)) return undefined
+  let stat
+  try {
+    stat = lstatSync(resolved)
+  } catch {
+    return undefined
+  }
+  if (!stat.isFile()) return undefined
+  return resolved
+}
+
+function scanManifestEntries(
+  packageDir: string,
+  manifest: Record<string, unknown>,
+  sources: Record<string, string>,
+  skillFiles: Record<string, string>,
+  budget: WalkBudget,
+): void {
+  for (const raw of manifestEntryPaths(manifest)) {
+    const abs = resolveManifestEntry(packageDir, raw)
+    if (abs === undefined) continue
+    readScannedFile(abs, packageDir, sources, skillFiles, budget)
   }
 }
 
@@ -136,9 +222,19 @@ function readPatch(manifest: Record<string, unknown>, dir: string): { text: stri
     ? [resolve(dir, declared)]
     : [join(dir, 'cordis.patch.yml')]
   for (const candidate of candidates) {
+    if (!isInsidePackage(dir, candidate)) continue
     if (!existsSync(candidate)) continue
+    let stat
     try {
-      return { text: readFileSync(candidate, 'utf8'), path: relative(dir, candidate) }
+      stat = lstatSync(candidate)
+    } catch {
+      continue
+    }
+    if (!stat.isFile()) continue
+    try {
+      const text = readFileSync(candidate, 'utf8')
+      if (Buffer.byteLength(text, 'utf8') > MAX_FILE_BYTES) continue
+      return { text, path: relative(dir, candidate) }
     } catch {
       return undefined
     }
@@ -148,9 +244,10 @@ function readPatch(manifest: Record<string, unknown>, dir: string): { text: stri
 
 /**
  * Directories to scan inside a plugin. Compiled output is the runtime truth,
- * so `lib/`/`dist/` win over `src/` when present; `bin/` and shipped skill
- * dirs are always scanned. When nothing compiled exists, fall back to the
- * package root (a `link:`/source install still gets a useful read).
+ * so `lib/`/`dist/` win over `src/` when present; `bin/`, `scripts/`, and
+ * shipped skill dirs are always scanned. When nothing compiled exists, fall
+ * back to the package root (a `link:`/source install still gets a useful read).
+ * Manifest entry files (`main` / `exports` / `bin`) are always read too.
  */
 function scanRoots(dir: string): string[] {
   const roots: string[] = []
@@ -158,6 +255,7 @@ function scanRoots(dir: string): string[] {
   if (existsSync(join(dir, 'dist'))) roots.push('dist')
   if (roots.length === 0) roots.push('.')
   if (existsSync(join(dir, 'bin'))) roots.push('bin')
+  if (existsSync(join(dir, 'scripts'))) roots.push('scripts')
   for (const skillDir of ['skills', 'prompts']) {
     if (existsSync(join(dir, skillDir))) roots.push(skillDir)
   }
@@ -179,6 +277,7 @@ export function collectPlugin(dir: string, spec: string): PluginInput {
   for (const root of scanRoots(dir)) {
     walk(join(dir, root), dir, sources, skillFiles, budget)
   }
+  scanManifestEntries(dir, manifest, sources, skillFiles, budget)
 
   const patch = readPatch(manifest, dir)
 

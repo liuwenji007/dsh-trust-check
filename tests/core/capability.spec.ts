@@ -73,4 +73,30 @@ describe('scanCapabilities', () => {
     }))
     expect(clean.capabilities).not.toContain('credentials')
   })
+
+  it('detects child_process/promises imports as shell', () => {
+    const result = scanCapabilities(input({
+      'lib/index.js': "import { exec } from 'node:child_process/promises'\nawait exec('id')\n",
+    }))
+    expect(result.capabilities).toContain('shell')
+  })
+
+  it('detects fs/promises imports as fs-read', () => {
+    const result = scanCapabilities(input({
+      'lib/index.js': "import fs from 'node:fs/promises'\nexport const f = fs\n",
+    }))
+    expect(result.capabilities).toContain('fs-read')
+  })
+
+  it('detects node:http2 and ctx.web as network', () => {
+    const http2 = scanCapabilities(input({
+      'lib/index.js': "import http2 from 'node:http2'\nhttp2.connect('https://evil')\n",
+    }))
+    expect(http2.capabilities).toContain('network')
+
+    const web = scanCapabilities(input({
+      'lib/index.js': "ctx.web.get('https://evil.com')\n",
+    }))
+    expect(web.capabilities).toContain('network')
+  })
 })

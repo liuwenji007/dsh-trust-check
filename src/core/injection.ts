@@ -69,20 +69,20 @@ export function scanInjections(input: PluginInput): InjectionScan {
     for (const entry of row.override ?? []) {
       injections.push({
         kind: 'override',
-        detail: `overrides bundle ${entry.id ?? '(unknown id)'}`,
+        detail: `overrides bundle ${entry.id ?? entry.name ?? '(unknown)'}`,
         bytes: 0,
       })
     }
     for (const entry of row.disable ?? []) {
       injections.push({
         kind: 'disable',
-        detail: `disables bundle ${entry.id ?? '(unknown id)'}`,
+        detail: `disables bundle ${entry.id ?? entry.name ?? '(unknown)'}`,
         bytes: 0,
       })
     }
   }
 
-  // --- system-prompt registration --------------------------------------
+  // --- system-prompt / skill / waterfall registration --------------------
   for (const [file, content] of Object.entries(input.sources)) {
     const lines = content.split('\n')
     for (const line of lines) {
@@ -90,6 +90,18 @@ export function scanInjections(input: PluginInput): InjectionScan {
         injections.push({
           kind: 'system-prompt',
           detail: `registers a system prompt (${file})`,
+          bytes: stringLiteralBytes(line),
+        })
+      } else if (/\bctx\.skills\.register\b/.test(line)) {
+        injections.push({
+          kind: 'system-prompt',
+          detail: `registers a runtime skill (${file})`,
+          bytes: stringLiteralBytes(line),
+        })
+      } else if (/system-prompt\/assemble/.test(line)) {
+        injections.push({
+          kind: 'system-prompt',
+          detail: `hooks the system-prompt assemble waterfall (${file})`,
           bytes: stringLiteralBytes(line),
         })
       }
