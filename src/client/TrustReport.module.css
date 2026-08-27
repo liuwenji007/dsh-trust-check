@@ -156,6 +156,11 @@
   box-shadow: inset 2px 0 0 var(--trust-red);
 }
 
+.verdict-accepted {
+  border-color: color-mix(in srgb, var(--trust-amber-soft) 55%, transparent);
+  box-shadow: inset 2px 0 0 var(--trust-amber);
+}
+
 .verdict-review {
   border-color: color-mix(in srgb, var(--trust-amber-soft) 55%, transparent);
   box-shadow: inset 2px 0 0 var(--trust-amber);
@@ -235,6 +240,12 @@
   border: 1px solid color-mix(in srgb, var(--trust-red-soft) 65%, transparent);
 }
 
+.badge-accepted {
+  color: var(--trust-amber);
+  background: color-mix(in srgb, var(--trust-amber) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--trust-amber-soft) 60%, transparent);
+}
+
 .badge-review {
   color: var(--trust-amber);
   background: color-mix(in srgb, var(--trust-amber) 8%, transparent);
@@ -275,6 +286,11 @@
 .decision-red {
   border-color: color-mix(in srgb, var(--trust-red-soft) 50%, transparent);
   background: color-mix(in srgb, var(--trust-red) 3.5%, transparent);
+}
+
+.decision-accepted {
+  border-color: color-mix(in srgb, var(--trust-amber-soft) 50%, transparent);
+  background: color-mix(in srgb, var(--trust-amber) 4%, transparent);
 }
 
 .decision-review {
@@ -385,6 +401,32 @@
 
 .actionBtn:hover:not(:disabled) {
   background: color-mix(in srgb, var(--trust-teal) 11%, transparent);
+}
+
+.actionBtnRisk {
+  padding: 7px 12px;
+  border-radius: var(--trust-radius-sm);
+  font-size: 12px;
+  font-weight: 550;
+  cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--trust-red-soft) 70%, transparent);
+  background: color-mix(in srgb, var(--trust-red) 6%, transparent);
+  color: var(--trust-red);
+  transition: background 180ms ease, border-color 180ms ease, opacity 180ms ease;
+}
+
+.actionBtnRisk:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--trust-red) 12%, transparent);
+}
+
+.actionBtnRisk:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.actionBtnRisk:focus-visible {
+  outline: 2px solid color-mix(in srgb, currentColor 45%, transparent);
+  outline-offset: 2px;
 }
 
 .actionBtnSecondary {
@@ -871,6 +913,25 @@ details[open] > .foldSummary::before {
   font-size: 12px;
   font-weight: 550;
   color: var(--trust-ink);
+}
+
+.evidenceWeak {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.evidenceWeak summary {
+  cursor: pointer;
+  color: var(--trust-muted);
+  list-style: none;
+}
+
+.evidenceWeak summary::-webkit-details-marker {
+  display: none;
+}
+
+.evidenceWeak .evidenceList {
+  margin-top: 6px;
 }
 
 .evidenceList {

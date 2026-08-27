@@ -4,14 +4,14 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
-import type { AuditReport, AuditResponse, Capability, InjectionKind, TrustAckEntry } from '../core/types.ts'
+import type { AuditReport, AuditResponse, Capability, Evidence, InjectionKind, TrustAckEntry } from '../core/types.ts'
 import {
   ackDrifted,
   capabilityTier,
   concerns,
   countVerdicts,
   formatInjectionDetail,
-  groupEvidenceByFile,
+  groupEvidence,
   groupInjections,
   presentInjection,
   topCapabilities,
@@ -19,6 +19,7 @@ import {
   type Concern,
   type Verdict,
 } from '../core/present.ts'
+import { CAPABILITY_WEIGHT } from '../core/score.ts'
 import { normalizeAuditReport, normalizeAuditResponse } from '../core/ack-fingerprint.ts'
 import {
   destinationHighlight,
@@ -37,6 +38,130 @@ type T = (key: TrustKey) => string
 
 const EVIDENCE_PREVIEW = 2
 
+/** Existence/stat checks prove fs-read capability but are low-signal for review. */
+function isPresenceOnlyFsRead(snippet: string): boolean {
+  return /\bexistsSync\s*\(/.test(snippet) || /\bstatSync\s*\(/.test(snippet)
+}
+
+function sortEvidenceRows(rows: Evidence[]): Evidence[] {
+  return [...rows].sort((a, b) => {
+    const wa = isPresenceOnlyFsRead(a.snippet) ? 1 : 0
+    const wb = isPresenceOnlyFsRead(b.snippet) ? 1 : 0
+    if (wa !== wb) return wa - wb
+    return a.line - b.line
+  })
+}
+
+function EvidencePanel({
+  report,
+  t,
+  focusCap,
+  onClearFocus,
+}: {
+  report: AuditReport
+  t: T
+  focusCap: Capability | null
+  onClearFocus: () => void
+}) {
+  const filtered = focusCap === null
+    ? report.evidence
+    : report.evidence.filter(e => e.capability === focusCap)
+
+  const capGroups = useMemo(() => {
+    const map = groupEvidence(filtered)
+    const caps = [...map.keys()].sort(
+      (a, b) => (CAPABILITY_WEIGHT[b] ?? 0) - (CAPABILITY_WEIGHT[a] ?? 0),
+    )
+    return caps.map(cap => ({
+      cap,
+      rows: sortEvidenceRows(map.get(cap) ?? []),
+    }))
+  }, [filtered])
+
+  const [expandedCaps, setExpandedCaps] = useState<Set<Capability>>(new Set())
+
+  useEffect(() => {
+    if (focusCap !== null) setExpandedCaps(new Set([focusCap]))
+  }, [focusCap])
+
+  if (report.evidence.length === 0) return null
+
+  return (
+    <section className={css.section}>
+      <details className={css.fold} open={focusCap !== null}>
+        <summary className={css.foldSummary}>
+          <span className={css.sectionTitleInline}>{t('evidence')}</span>
+          <span className={css.countPill}>{filtered.length}</span>
+          <span className={css.foldMeta}>
+            {focusCap !== null ? t(capLabelKey(focusCap)) : t('evidence.grouped')}
+          </span>
+        </summary>
+        <p className={css.sectionHint}>{t('evidence.hint')}</p>
+        {focusCap !== null && (
+          <button type="button" className={css.linkBtn} onClick={onClearFocus}>
+            {t('evidence.clearFilter')}
+          </button>
+        )}
+        <div className={css.evidenceGroups}>
+          {capGroups.map(({ cap, rows }) => {
+            const showAll = expandedCaps.has(cap) || focusCap === cap
+            const primary = rows.filter(r => !isPresenceOnlyFsRead(r.snippet))
+            const weak = rows.filter(r => isPresenceOnlyFsRead(r.snippet))
+            const main = primary.length > 0 ? primary : rows
+            const visible = showAll ? main : main.slice(0, EVIDENCE_PREVIEW)
+            return (
+              <div key={cap} className={css.evidenceGroup}>
+                <div className={css.evidenceGroupHead}>
+                  <span className={`${css.chip} ${css[`tier-${capabilityTier(cap)}`]}`}>
+                    {t(capLabelKey(cap))}
+                  </span>
+                  <span className={css.countPill}>{rows.length}</span>
+                </div>
+                <ul className={css.evidenceList}>
+                  {visible.map((ev, i) => (
+                    <li key={`${ev.file}:${ev.line}:${i}`} className={css.evidenceItem}>
+                      <span className={css.evidenceMeta}>
+                        <code>{ev.file}</code>:{ev.line}
+                      </span>
+                      <span className={css.evidenceSnippet}>{ev.snippet}</span>
+                    </li>
+                  ))}
+                </ul>
+                {main.length > EVIDENCE_PREVIEW && !showAll && (
+                  <button
+                    type="button"
+                    className={css.linkBtn}
+                    onClick={() => setExpandedCaps(prev => new Set(prev).add(cap))}
+                  >
+                    {t('evidence.showAll')} ({main.length})
+                  </button>
+                )}
+                {weak.length > 0 && primary.length > 0 && (
+                  <details className={css.evidenceWeak}>
+                    <summary>
+                      {t('evidence.presenceOnly')} ({weak.length})
+                    </summary>
+                    <ul className={css.evidenceList}>
+                      {weak.map((ev, i) => (
+                        <li key={`w-${ev.file}:${ev.line}:${i}`} className={css.evidenceItem}>
+                          <span className={css.evidenceMeta}>
+                            <code>{ev.file}</code>:{ev.line}
+                          </span>
+                          <span className={css.evidenceSnippet}>{ev.snippet}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </details>
+    </section>
+  )
+}
+
 function defaultExpandedNames(plugins: AuditReport[], acks?: Record<string, TrustAckEntry>): Set<string> {
   const names = new Set<string>()
   for (const plugin of plugins) {
@@ -51,6 +176,7 @@ function defaultExpandedNames(plugins: AuditReport[], acks?: Record<string, Trus
 
 function verdictKey(v: Verdict): TrustKey {
   if (v === 'red') return 'verdict.red'
+  if (v === 'accepted') return 'verdict.accepted'
   if (v === 'review') return 'verdict.review'
   if (v === 'expected') return 'verdict.expected'
   return 'verdict.clear'
@@ -58,6 +184,7 @@ function verdictKey(v: Verdict): TrustKey {
 
 function actionKey(v: Verdict): TrustKey {
   if (v === 'red') return 'action.red'
+  if (v === 'accepted') return 'action.accepted'
   if (v === 'review') return 'action.review'
   if (v === 'expected') return 'action.expected'
   return 'action.clear'
@@ -239,73 +366,6 @@ function SecretTouchesPanel({ report, t }: { report: AuditReport; t: T }) {
   )
 }
 
-function EvidencePanel({
-  report,
-  t,
-  focusCap,
-}: {
-  report: AuditReport
-  t: T
-  focusCap: Capability | null
-}) {
-  const filtered = focusCap === null
-    ? report.evidence
-    : report.evidence.filter(e => e.capability === focusCap)
-  const fileGroups = useMemo(() => groupEvidenceByFile(filtered), [filtered])
-  const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set())
-
-  useEffect(() => {
-    if (focusCap !== null && fileGroups.length > 0) {
-      setExpandedFiles(new Set(fileGroups.map(g => g.file)))
-    }
-  }, [focusCap, fileGroups])
-
-  if (report.evidence.length === 0) return null
-
-  return (
-    <section className={css.section}>
-      <details className={css.fold} open={focusCap !== null}>
-        <summary className={css.foldSummary}>
-          <span className={css.sectionTitleInline}>{t('evidence')}</span>
-          <span className={css.countPill}>{report.evidence.length}</span>
-          <span className={css.foldMeta}>{t('evidence.byFile')}</span>
-        </summary>
-        <div className={css.evidenceGroups}>
-          {fileGroups.map(({ file, rows }) => {
-            const showAll = expandedFiles.has(file)
-            const visible = showAll ? rows : rows.slice(0, EVIDENCE_PREVIEW)
-            return (
-              <div key={file} className={css.evidenceGroup}>
-                <div className={css.evidenceGroupHead}>
-                  <code>{file}</code>
-                  <span className={css.countPill}>{rows.length}</span>
-                </div>
-                <ul className={css.evidenceList}>
-                  {visible.map((ev, i) => (
-                    <li key={i} className={css.evidenceItem}>
-                      <span className={css.evidenceMeta}>{ev.line} · {t(capLabelKey(ev.capability))}</span>
-                      <span className={css.evidenceSnippet}>{ev.snippet}</span>
-                    </li>
-                  ))}
-                </ul>
-                {rows.length > EVIDENCE_PREVIEW && !showAll && (
-                  <button
-                    type="button"
-                    className={css.linkBtn}
-                    onClick={() => setExpandedFiles(prev => new Set(prev).add(file))}
-                  >
-                    {t('evidence.showAll')} ({rows.length})
-                  </button>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      </details>
-    </section>
-  )
-}
-
 function InjectionPanel({ report, t }: { report: AuditReport; t: T }) {
   const grouped = groupInjections(report)
   const count = report.injections.length
@@ -460,7 +520,12 @@ function PluginCardBody({
               {ackLoading ? t('ack.saving') : t('ack.accept')}
             </button>
           )}
-          {v === 'expected' && (
+          {v === 'red' && (
+            <button type="button" className={css.actionBtnRisk} disabled={ackLoading} onClick={() => void postAck()}>
+              {ackLoading ? t('ack.saving') : t('ack.acceptRisk')}
+            </button>
+          )}
+          {(v === 'expected' || v === 'accepted') && (
             <button type="button" className={css.actionBtnSecondary} disabled={ackLoading} onClick={() => void revokeAck()}>
               {t('ack.revoke')}
             </button>
@@ -529,7 +594,7 @@ function PluginCardBody({
           )}
         </section>
 
-        <EvidencePanel report={report} t={t} focusCap={evidenceFocus} />
+        <EvidencePanel report={report} t={t} focusCap={evidenceFocus} onClearFocus={() => setEvidenceFocus(null)} />
       </div>
     </div>
   )
@@ -619,7 +684,7 @@ export function TrustReport({ useStore, actions, t }: TrustReportProps) {
   const overview = useMemo(() => {
     if (normalizedReport === null || normalizedReport.plugins.length === 0) return null
     const counts = countVerdicts(normalizedReport.plugins, normalizedReport.acks)
-    return `${normalizedReport.plugins.length} ${t('overview.plugins')} · ${counts.red} ${t('verdict.red')} · ${counts.review} ${t('verdict.review')} · ${counts.expected} ${t('verdict.expected')} · ${counts.clear} ${t('verdict.clear')}`
+    return `${normalizedReport.plugins.length} ${t('overview.plugins')} · ${counts.red} ${t('verdict.red')} · ${counts.accepted} ${t('verdict.accepted')} · ${counts.review} ${t('verdict.review')} · ${counts.expected} ${t('verdict.expected')} · ${counts.clear} ${t('verdict.clear')}`
   }, [normalizedReport, t])
 
   const togglePlugin = (name: string) => {

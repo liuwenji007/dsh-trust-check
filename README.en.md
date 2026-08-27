@@ -32,9 +32,10 @@ The settings UI and CLI use a **decision-first** layout: verdict, then capabilit
 
 | Verdict | Meaning | When |
 |---|---|---|
-| **Red line(s)** | Hard red line hit; stop by default | Only when `redLines.length > 0` |
+| **Red line(s)** | Hard red line hit; stop by default — or confirm risk to keep using | Only when `redLines.length > 0` and the current fingerprint is not acknowledged |
+| **Risk accepted** | You confirmed the current red-line risk | Has red lines, and local `trust-ack.json` matches this scan |
 | **Review** | No hard red lines, but privileged capabilities or patch changes | Has capabilities or override/disable, no red lines |
-| **As expected** | You acknowledged the current capability/shape fingerprint | Local `trust-ack.json` matches this scan |
+| **As expected** | You acknowledged the current capability/shape fingerprint | Local `trust-ack.json` matches this scan (no red lines) |
 | **Clear** | No red lines or privileged capabilities | Everything else |
 
 **Shape layer (code-judged)**: besides capability chips, the report lists **literal destinations** (URL/host/IP), **workspace path escapes** (absolute paths, home directory, traversal, …), and **secret touches** (paths, sensitive env names) found in source. Same-origin HTTP routes (e.g. `/dsh-market/check`) are no longer shown as destinations. This is not “address/path safety” — only “we saw this string in source”; runtime-built URLs are invisible. Common host / registry domains (GitHub, npm, npmmirror, Tencent Cloud mirrors, …), the curated DSH catalog and GitHub proxies, and common model-vendor APIs (DeepSeek, OpenAI, Anthropic, Google Gemini) have a built-in allowlist: collapsed by default with a short note; plaintext HTTP is never downgraded by the allowlist. The scanner also skips IP range tables (e.g. SSRF private-IP checks), placeholder bases like `http://local`, and shell switches (`/c`) to reduce noise.

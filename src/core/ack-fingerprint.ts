@@ -41,6 +41,7 @@ export function fingerprintFromReport(report: AuditReport): TrustAckEntry {
     destinations: destinationFingerprint(normalized.destinations),
     secretTouches: secretTouchFingerprint(normalized.secretTouches),
     pathEscapes: pathEscapeFingerprint(normalized.pathEscapes),
+    redLines: [...normalized.redLines].sort(),
     at: new Date().toISOString(),
   }
 }
@@ -59,4 +60,5 @@ export function ackMatchesReport(report: AuditReport, ack: TrustAckEntry): boole
     && sortedEqual(current.destinations, ack.destinations ?? [])
     && sortedEqual(current.secretTouches, ack.secretTouches ?? [])
     && sortedEqual(current.pathEscapes ?? [], ack.pathEscapes ?? [])
+    && sortedEqual(current.redLines ?? [], ack.redLines ?? [])
 }

@@ -70,6 +70,25 @@ describe('verdict', () => {
     expect(verdict(report)).toBe('red')
   })
 
+  it('returns accepted when red lines are acknowledged', () => {
+    const report = {
+      ...baseReport(),
+      redLines: ['runs code at install time (postinstall)'],
+      capabilities: ['shell'] as Capability[],
+      band: 'red' as const,
+      score: 49,
+    }
+    const ack = {
+      capabilities: ['shell'] as Capability[],
+      destinations: [],
+      secretTouches: [],
+      pathEscapes: [],
+      redLines: ['runs code at install time (postinstall)'],
+      at: '2026-01-01T00:00:00.000Z',
+    }
+    expect(verdict(report, ack)).toBe('accepted')
+  })
+
   it('returns review for override injection without capabilities', () => {
     const report = {
       ...baseReport(),
@@ -183,7 +202,7 @@ describe('countVerdicts', () => {
       { ...baseReport(), capabilities: ['network'] as Capability[], band: 'yellow' as const },
       baseReport(),
     ]
-    expect(countVerdicts(reports)).toEqual({ red: 1, review: 1, expected: 0, clear: 1 })
+    expect(countVerdicts(reports)).toEqual({ red: 1, accepted: 0, review: 1, expected: 0, clear: 1 })
   })
 
   it('returns expected when ack fingerprint matches', () => {

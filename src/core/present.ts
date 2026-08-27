@@ -8,7 +8,7 @@ import { destinationTier } from './destination-priority.ts'
 import { CAPABILITY_WEIGHT } from './score.ts'
 import type { AuditReport, Capability, Evidence, InjectionKind, TrustAckEntry } from './types.ts'
 
-export type Verdict = 'red' | 'review' | 'expected' | 'clear'
+export type Verdict = 'red' | 'accepted' | 'review' | 'expected' | 'clear'
 
 export type RedLineCode =
   | 'install-script'
@@ -38,10 +38,12 @@ export function classifyRedLine(line: string): RedLineCode {
 
 /**
  * User-facing verdict. Unlike `band`, low scores without red lines are `review`, not `red`.
+ * Red-line plugins can be marked `accepted` after the user confirms the current risk fingerprint.
  */
 export function verdict(report: AuditReport, ack?: TrustAckEntry): Verdict {
-  if (report.redLines.length > 0) return 'red'
-  if (ack !== undefined && ackMatchesReport(report, ack)) return 'expected'
+  const matched = ack !== undefined && ackMatchesReport(report, ack)
+  if (report.redLines.length > 0) return matched ? 'accepted' : 'red'
+  if (matched) return 'expected'
   const hasPatchChange = report.injections.some(
     inj => inj.kind === 'override' || inj.kind === 'disable',
   )
@@ -239,7 +241,7 @@ export function countVerdicts(
   reports: AuditReport[],
   acks?: Record<string, TrustAckEntry>,
 ): Record<Verdict, number> {
-  const counts: Record<Verdict, number> = { red: 0, review: 0, expected: 0, clear: 0 }
+  const counts: Record<Verdict, number> = { red: 0, accepted: 0, review: 0, expected: 0, clear: 0 }
   for (const report of reports) counts[verdict(report, acks?.[report.name])]++
   return counts
 }
@@ -254,6 +256,5 @@ export function capabilityTier(cap: Capability): 'high' | 'medium' | 'neutral' {
 /** Whether ack exists but fingerprint drifted from current scan. */
 export function ackDrifted(report: AuditReport, ack?: TrustAckEntry): boolean {
   if (ack === undefined) return false
-  if (report.redLines.length > 0) return false
   return !ackMatchesReport(report, ack)
 }

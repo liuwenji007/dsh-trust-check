@@ -26,7 +26,8 @@ import {
 } from '../lib/index.js'
 
 const ACTION_EN = {
-  red: 'Stop by default; confirm the risk before continuing.',
+  red: 'Stop by default; confirm the risk in Settings if you still want to keep it.',
+  accepted: 'Red-line risk acknowledged in Settings; upgrade may prompt again.',
   review: 'No hard red lines; if capabilities match why you installed it, mark as expected in Settings.',
   expected: 'Capabilities marked as expected in Settings.',
   clear: 'No red lines or privileged capabilities detected.',
@@ -78,7 +79,7 @@ function printPlugin(p, ack) {
   console.log(`${p.name} ${p.version} — ${v}`)
   console.log(`  ${ACTION_EN[v] ?? ''}`)
   const list = concerns(p)
-  if (list.length > 0 && v !== 'expected') {
+  if (list.length > 0 && v !== 'expected' && v !== 'accepted') {
     console.log('  why be careful:')
     for (const item of list) console.log(`    · ${concernText(item)}`)
   }
@@ -122,7 +123,7 @@ function printPlugin(p, ack) {
 function humanReport(contextLabel, plugins, errors, acks) {
   const counts = countVerdicts(plugins, acks)
   console.log(contextLabel)
-  console.log(`${plugins.length} plugin(s) · ${counts.red} red · ${counts.review} review · ${counts.expected} expected · ${counts.clear} clear`)
+  console.log(`${plugins.length} plugin(s) · ${counts.red} red · ${counts.accepted} accepted · ${counts.review} review · ${counts.expected} expected · ${counts.clear} clear`)
   console.log('')
   for (const p of plugins) printPlugin(p, acks?.[p.name])
   if (errors.length > 0) {
