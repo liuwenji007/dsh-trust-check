@@ -98,7 +98,10 @@ export interface PluginInput {
 
 /** The payload the audit route returns to the client. */
 export interface AuditResponse {
+  /** Profile name; empty when the scan target was `--dir` only. */
   profile: string
+  /** Set when auditing a single package directory via CLI `--dir`. */
+  dir?: string
   generatedAt: string
   plugins: AuditReport[]
   errors: { name: string; spec: string; message: string }[]

@@ -96,27 +96,23 @@
   opacity: 0.55;
 }
 
-.score {
+.statusBadge {
   flex: none;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  line-height: 1.1;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(127, 127, 127, 0.35);
 }
 
-.scoreNum {
-  font-size: 22px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
+.status-green { color: #2fae66; border-color: rgba(47, 174, 102, 0.45); }
+.status-yellow { color: #d9a53a; border-color: rgba(217, 165, 58, 0.45); }
+.status-red { color: #e05b5b; border-color: rgba(224, 91, 91, 0.45); }
 
-.score-green .scoreNum { color: #2fae66; }
-.score-yellow .scoreNum { color: #d9a53a; }
-.score-red .scoreNum { color: #e05b5b; }
-
-.scoreLabel {
+.scoreMeta {
   font-size: 11px;
-  opacity: 0.6;
+  opacity: 0.5;
+  font-variant-numeric: tabular-nums;
 }
 
 .summary {

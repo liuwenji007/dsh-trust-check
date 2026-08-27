@@ -16,10 +16,10 @@ export type TrustReportProps =
 
 type T = (key: TrustKey) => string
 
-const BAND_LABEL_KEY: Record<AuditReport['band'], TrustKey> = {
-  green: 'green',
-  yellow: 'yellow',
-  red: 'red',
+function statusKey(report: AuditReport): TrustKey {
+  if (report.redLines.length > 0 || report.band === 'red') return 'statusRed'
+  if (report.capabilities.length > 0 || report.band === 'yellow') return 'statusReview'
+  return 'statusClear'
 }
 
 function CapabilityChips({ report, t }: { report: AuditReport; t: T }) {
@@ -37,6 +37,7 @@ function CapabilityChips({ report, t }: { report: AuditReport; t: T }) {
 
 function PluginCard({ report, t }: { report: AuditReport; t: T }) {
   const band = report.band
+  const status = statusKey(report)
   return (
     <section className={`${css.card} ${css[`card-${band}`]}`}>
       <div className={css.cardHead}>
@@ -44,13 +45,13 @@ function PluginCard({ report, t }: { report: AuditReport; t: T }) {
           <span className={css.name}>{report.name}</span>
           <span className={css.version}>{report.version}</span>
         </div>
-        <div className={`${css.score} ${css[`score-${band}`]}`}>
-          <span className={css.scoreNum}>{report.score}</span>
-          <span className={css.scoreLabel}>{t(BAND_LABEL_KEY[band])}</span>
-        </div>
+        <span className={`${css.statusBadge} ${css[`status-${band}`]}`}>{t(status)}</span>
       </div>
 
       <div className={css.summary}>{report.summary}</div>
+      <div className={css.scoreMeta}>
+        {t('score.label')}: {report.score}
+      </div>
 
       {report.redLines.length > 0 && (
         <div className={css.redLines}>

@@ -2,9 +2,9 @@
 
 [English](README.en.md)
 
-DeepSeek Harness 插件静态信任审计：对已安装插件的能力面、注入面、成本、来源与更新风险做体检，输出一个**代码判定、可复现、零 token** 的 0–100 信任分。
+DeepSeek Harness 插件静态信任审计：对已安装插件做**能力披露**——权限、注入、来源、安装脚本——代码判定、可复现、零 token。
 
-> 不是"杀毒软件"，也不做安全承诺。它只做能证明的事：把插件**真实会碰什么、注入了什么、来源可不可信**摊开给你看，结论每一条都附证据（文件 + 行号 + 片段），你可以自己复核。
+> 不是"杀毒软件"，也不做安全承诺。它只做能证明的事：把插件**真实会碰什么、注入了什么、来源是否可核对**摊开给你看，结论每一条都附证据（文件 + 行号 + 片段），你可以自己复核。
 
 ## 安装
 
@@ -18,7 +18,36 @@ dsh plugin --profile web add dsh-trust-check
 npx dsh-trust-check                 # 审计默认 profile `web`
 npx dsh-trust-check --profile work  # 审计其他 profile
 npx dsh-trust-check --json          # 机器可读输出
+
+# 审计任意已解压的包目录（无需 profile、无需 DSH）
+npx dsh-trust-check --dir ./path/to/plugin
+npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 ```
+
+`--dir` 与 `--profile` 互斥。单目录 `--json` 输出与 profile 模式相同的 `AuditResponse` 形状：`{ profile, dir?, generatedAt, plugins, errors }`（单目录时 `profile` 为空字符串，`dir` 为绝对路径）。
+
+## 怎么读报告
+
+报告以**四个维度**为主，不要把 0–100 分数当作第一结论。设置页与 CLI 均按同一顺序呈现：
+
+| 维度 | 看什么 | 怎么读 |
+|---|---|---|
+| **红线** | 安装脚本、核心 bundle override、凭据+网络组合 | 有则置顶；标签为「有红线 / 需确认 / 无红线」 |
+| **能力** | shell / 文件 / 网络 / 凭据 / 子代理 / LLM / 环境变量 | 芯片列表；只证「检测到了」，不证「保证没有」 |
+| **注入** | patch override/disable、system-prompt、技能注册 | 谁被改、注入了什么 |
+| **来源** | 锁版本、仓库、安装脚本 | 是否 pinned；`repository` 为插件自述 |
+
+**排序分**（`score` 字段）保留在 JSON 与卡片次要位置，仅用于列表排序（红线在前）。`summary` 不再以 `green · 83` 开头，例如：`有红线 · shell+network · 未锁版本` 或 `需确认 · file reads+network · 已锁版本`。
+
+注入 token 估算留在注入块，**仅作成本参考**，不是信任依据。
+
+### 红线（有则默认应挡住）
+
+1. 声明 install/postinstall/preinstall/**prepare** 安装脚本；
+2. `cordis.patch.yml` override / disable 了 `@deepseek-ai/*` 核心 bundle（匹配 `id` **或** `name`）；
+3. 读取凭据/密钥材料（keychain / keytar / dotenv / `~/.ssh` / `.aws/credentials` 等）**且**有网络访问。
+
+命中红线时数值分封顶 49（避免「100 分 + 高风险」的误导），但 UI/CLI 以红线标签为准，不以分数作裁决。
 
 ## 审计什么
 
@@ -30,35 +59,43 @@ npx dsh-trust-check --json          # 机器可读输出
 | **来源** | `package.json` 的 `repository`（缺失回退到 git 安装源）+ 安装 spec | 是否锁版本/锁 commit |
 | **更新风险** | 安装脚本（install/postinstall/preinstall/prepare） | 是否在安装时执行任意代码 |
 
-## 信任分
+## 给集成方（如 dsh-market）
 
+本包导出稳定 API，供安装前确认弹窗或 CI 闸门使用：
+
+```ts
+import { auditPlugin, collectPlugin } from 'dsh-trust-check'
+
+// extractedDir：已解压的包目录；spec：安装 spec 标签（如 npm:foo@1.0.0）
+const report = auditPlugin(collectPlugin(extractedDir, spec))
+
+// 闸门语义（写死，可直接抄进 market 确认弹窗）：
+// report.redLines.length > 0  → 默认挡住，允许用户确认后继续
+// 有能力、无红线（band yellow）→ 展示能力清单，建议用户确认
+// 无红线、无特权能力（band green）→ 可静默通过
 ```
-信任分 = 100 − 能力加权 − 注入成本 − 来源风险 − 更新风险
+
+CLI 等价调用（market 也可 spawn，无需 DSH）：
+
+```sh
+npx dsh-trust-check --dir "$EXTRACTED_DIR" --spec "$INSTALL_SPEC" --json
 ```
 
-- **≥ 80 绿**：纯 UI / 只读 / 来源可信。
-- **50–79 黄**：有权限或注入，列出"具体要什么"。
-- **< 50 红**：命中红线或高风险。
+解析 `--json` 时统一读 `plugins[0]`（单目录）或 `plugins` 数组（profile 模式）；`errors` 非空表示目录不可读。
 
-**红线会把数值分封顶到 49**（避免「100 分 + 高风险」的误导卡片）。
-
-红线（直接判红）：
-
-1. 声明 install/postinstall/preinstall/**prepare** 安装脚本；
-2. `cordis.patch.yml` override / disable 了 `@deepseek-ai/*` 核心 bundle（匹配 `id` **或** `name`）；
-3. 读取凭据/密钥材料（keychain / keytar / dotenv / `~/.ssh` / `.aws/credentials` 等）**且**有网络访问。
+**本期不做**：远程 tarball 下载（拉包是 market 的职责）。独立验证姿势：先把包解到临时目录，再 `--dir`。
 
 ## 判定原则
 
 - **代码判定，不是 LLM 打分**：判断全在代码里，不烧 token、结果可复现。
 - **只证"有"，不证"无"**：静态分析只下"检测到了某能力"的结论，从不说"保证没有某能力"。
-- **证据可复核**：每个能力命中都带 `文件:行号` 和原文片段；分数有异议，看证据就能定位。
+- **证据可复核**：每个能力命中都带 `文件:行号` 和原文片段。
 - **seam 表可热更**：能力判定规则是一张数据表（`src/core/seams.ts`），DSH 接口变了改表不改引擎。
 
 ## 已知局限
 
-- **装后体检**：审计的是 profile 里**已经安装**的插件；install/postinstall/prepare 在你第一次扫描前就可能已经跑过。
-- 静态扫描有漏判/误判（运行时才加载的能力看不到；动态 `import('node:' + …)`、`eval`、`Function`、第三方 HTTP 库如 `got`/`ws` 等不在规则表内）。已用"精确 pattern + 注释剥离 + 只证有"尽量压低误报，但请把结果当"体检参考"而非"裁决"。
+- **装后体检**：profile 模式审计的是**已经安装**的插件；install/postinstall/prepare 在你第一次扫描前就可能已经跑过。`--dir` 模式可在安装前对解压目录扫描（但安装脚本本身仍可能在 market 解包/安装阶段已执行）。
+- 静态扫描有漏判/误判（运行时才加载的能力看不到；动态 `import('node:' + …)`、`eval`、`Function`、第三方 HTTP 库如 `got`/`ws` 等不在规则表内）。
 - **不扫 `node_modules`**：依赖里的行为不在审计范围内。
 - 客户端 `fetch('/api')` 等同源调用也会记为 network，与真正的出网访问未分层。
 - 注入 token 是字节 / 4 的粗估，不是精确计费。
@@ -76,9 +113,8 @@ pnpm typecheck   # tsc --noEmit
 
 ## 路线图
 
-- v1（当前）：已装插件体检 + CLI + Web 报告视图
-- v1.1：审计任意目标（`npm:xxx` / `github:owner/repo`，下载 tarball 扫描）
-- v2：向 dsh-market 提议安装确认弹窗集成（安装前展示审计摘要）
+- v1（当前）：已装插件体检 + CLI `--dir` + Web 分项报告
+- v2：向 dsh-market 提安装确认 PR（本包已提供 `--dir` / `auditPlugin` 契约）
 - v3：作为 Agent CI 的数据层——"插件升级后行为是否漂移"的回归断言
 
 ## License

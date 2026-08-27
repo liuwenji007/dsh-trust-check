@@ -23,7 +23,7 @@ describe('auditPlugin', () => {
     expect(report.band).toBe('green')
     expect(report.score).toBe(100)
     expect(report.capabilities).toEqual([])
-    expect(report.summary).toContain('green')
+    expect(report.summary).toContain('no red lines')
   })
 
   it('reports a shell+network+install-script plugin as red with red lines', () => {

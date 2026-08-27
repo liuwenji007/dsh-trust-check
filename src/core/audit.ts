@@ -26,8 +26,14 @@ const CAPABILITY_SHORT: Readonly<Record<Capability, string>> = {
 }
 
 function buildSummary(report: Omit<AuditReport, 'summary'>): string {
-  const parts: string[] = [`${report.band} · ${report.score}`]
-  if (report.redLines.length > 0) parts.push(`${report.redLines.length} red line(s)`)
+  const parts: string[] = []
+  if (report.redLines.length > 0) {
+    parts.push(`${report.redLines.length} red line(s)`)
+  } else if (report.capabilities.length > 0) {
+    parts.push('review suggested')
+  } else {
+    parts.push('no red lines')
+  }
   if (report.capabilities.length === 0) {
     parts.push('no privileged capabilities')
   } else {
