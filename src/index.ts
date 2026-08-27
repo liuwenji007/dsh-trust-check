@@ -26,6 +26,7 @@ export {
   groupEvidence,
   groupEvidenceByFile,
   groupInjections,
+  repositoryHref,
   topCapabilities,
   verdict,
 } from './core/present.ts'
@@ -44,6 +45,8 @@ export {
   normalizeAuditReport,
   normalizeAuditResponse,
 } from './core/ack-fingerprint.ts'
+export { injectionFingerprint } from './core/injection.ts'
+export { isCodeFile, stripComments } from './core/strip-comments.ts'
 export { buildExplainPrompt, EXPLAIN_SYSTEM } from './core/explain.ts'
 export { explainWithLlm, resolveExplainRoute } from './host/llm-explain.ts'
 export type { Concern, ConcernCode, RedLineCode, Verdict } from './core/present.ts'
@@ -109,6 +112,14 @@ export function trustedAuditRequest(request: IncomingMessage): boolean {
   } catch {
     return false
   }
+}
+
+/**
+ * Red lines take a deliberate opt-in, so a plain ack call — replayed, or made
+ * by anything else on the loopback origin — cannot quietly silence one.
+ */
+export function ackAllowed(report: AuditReport, acceptRisk: boolean): boolean {
+  return report.redLines.length === 0 || acceptRisk
 }
 
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {
@@ -191,7 +202,7 @@ export function apply(ctx: Context, config?: Config): void {
             const method = request.method ?? 'GET'
             if (method === 'POST') {
               try {
-                const body = await readJsonBody(request) as { name?: string }
+                const body = await readJsonBody(request) as { name?: string; acceptRisk?: boolean }
                 if (typeof body.name !== 'string' || body.name === '') {
                   sendJson(response, 400, { error: 'name is required' })
                   return
@@ -199,6 +210,12 @@ export function apply(ctx: Context, config?: Config): void {
                 const report = findPluginReport(profile, body.name)
                 if (report === undefined) {
                   sendJson(response, 404, { error: 'plugin not found' })
+                  return
+                }
+                if (!ackAllowed(report, body.acceptRisk === true)) {
+                  sendJson(response, 400, {
+                    error: 'acknowledging a plugin with red lines requires acceptRisk: true',
+                  })
                   return
                 }
                 const entry = setAck(resolveProfileDir(profile), report)

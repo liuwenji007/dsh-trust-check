@@ -60,6 +60,15 @@ export interface InjectionScan {
   skillBytes: number
 }
 
+/**
+ * Fingerprint tokens for ack comparison. Size is part of the token because a
+ * rewritten skill file keeps its path: without it, an acknowledged plugin
+ * could swap its injected instructions without re-prompting.
+ */
+export function injectionFingerprint(injections: InjectionFinding[]): string[] {
+  return injections.map(inj => `${inj.kind}:${inj.detail}:${inj.bytes}`).sort()
+}
+
 export function scanInjections(input: PluginInput): InjectionScan {
   const injections: InjectionFinding[] = []
   let skillBytes = 0

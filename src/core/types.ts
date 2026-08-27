@@ -142,6 +142,8 @@ export interface TrustAckEntry {
   secretTouches: string[]
   /** Optional for older ack files written before path-escape scanning. */
   pathEscapes?: string[]
+  /** Optional for older ack files; absence re-prompts once so injections get reviewed. */
+  injections?: string[]
   /** Optional for older ack files; required for red-line risk acceptance to re-prompt on change. */
   redLines?: string[]
   at: string

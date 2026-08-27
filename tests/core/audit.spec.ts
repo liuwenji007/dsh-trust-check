@@ -77,4 +77,13 @@ describe('auditPlugin', () => {
     const report = auditPlugin(input({ sources }))
     expect(report.evidence.length).toBe(MAX_EVIDENCE)
   })
+
+  it('keeps riskier capability evidence when a noisy one overflows the cap', () => {
+    const noise = Array.from({ length: MAX_EVIDENCE * 2 }, () => 'await ctx.llm.chat(msg)')
+    const report = auditPlugin(input({
+      sources: { 'lib/index.js': [...noise, 'execSync(cmd)'].join('\n') },
+    }))
+    expect(report.evidence.length).toBe(MAX_EVIDENCE)
+    expect(report.evidence.some(e => e.capability === 'shell')).toBe(true)
+  })
 })

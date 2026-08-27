@@ -45,9 +45,38 @@ function buildSummary(report: Omit<AuditReport, 'summary'>): string {
   return parts.join(' · ')
 }
 
-function capEvidence(evidence: Evidence[]): Evidence[] {
+/**
+ * Cap evidence round-robin across capabilities, riskiest first, so a plugin
+ * cannot bury its `shell` rows under forty harmless `llm` ones. `capabilities`
+ * arrives pre-sorted by risk.
+ */
+function capEvidence(evidence: Evidence[], capabilities: Capability[]): Evidence[] {
   if (evidence.length <= MAX_EVIDENCE) return evidence
-  return evidence.slice(0, MAX_EVIDENCE)
+
+  const byCapability = new Map<Capability, Evidence[]>()
+  for (const row of evidence) {
+    const rows = byCapability.get(row.capability)
+    if (rows === undefined) byCapability.set(row.capability, [row])
+    else rows.push(row)
+  }
+
+  const queues = capabilities
+    .map(capability => byCapability.get(capability) ?? [])
+    .filter(queue => queue.length > 0)
+
+  const kept = new Set<Evidence>()
+  for (let round = 0; kept.size < MAX_EVIDENCE; round++) {
+    let progressed = false
+    for (const queue of queues) {
+      if (round >= queue.length) continue
+      kept.add(queue[round])
+      progressed = true
+      if (kept.size >= MAX_EVIDENCE) break
+    }
+    if (!progressed) break
+  }
+
+  return evidence.filter(row => kept.has(row))
 }
 
 export function auditPlugin(input: PluginInput): AuditReport {
@@ -79,7 +108,7 @@ export function auditPlugin(input: PluginInput): AuditReport {
     version: provenance.version,
     spec: input.spec,
     capabilities,
-    evidence: capEvidence(evidence),
+    evidence: capEvidence(evidence, capabilities),
     destinations,
     pathEscapes,
     secretTouches,

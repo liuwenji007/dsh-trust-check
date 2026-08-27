@@ -3,11 +3,15 @@
  * Proves presence only; runtime-constructed URLs are invisible.
  */
 
+import { isCodeFile, stripComments } from './strip-comments.ts'
 import type {
   DestinationFinding,
+  DestinationKind,
   PathEscapeFinding,
+  PathEscapeKind,
   PluginInput,
   SecretTouchFinding,
+  SecretTouchKind,
 } from './types.ts'
 
 export const MAX_DESTINATIONS = 20
@@ -35,7 +39,14 @@ const SHELL_SWITCH_PATHS = new Set([
 /** Absolute filesystem roots that leave a typical project workspace. */
 const FS_ROOT_PREFIX = /^\/(?:etc|usr|opt|home|Users|var|tmp|private|root|System|Library|Windows|Program Files|Applications)\b/
 
-/** RFC 2606 / 6761 reserved documentation hosts — not real outbound targets. */
+/**
+ * RFC 2606 / 6761 reserved documentation hosts — not real outbound targets.
+ *
+ * Generic single-label names (`proxy`, `server`) do NOT belong here: they
+ * resolve for real on a LAN with a DNS search domain, so listing them would
+ * hide both the destination and its plaintext-HTTP red line. Doc examples are
+ * excluded by blanking comments before the scan instead.
+ */
 const PLACEHOLDER_HOST_EXACT = new Set([
   'localhost',
   'local',
@@ -43,16 +54,24 @@ const PLACEHOLDER_HOST_EXACT = new Set([
   'example.com',
   'example.org',
   'example.net',
-  // Common doc / comment placeholders (not real outbound hosts).
-  'host',
-  'hostname',
-  'proxy',
-  'server',
-  'domain',
 ])
 
 /** Documentation TLD only (`.test` / `.invalid` still count as outbound literals). */
 const PLACEHOLDER_TLD = /\.example$/i
+
+/**
+ * Standards-body hosts that appear as XML/SVG namespace identifiers
+ * (`xmlns="http://www.w3.org/2000/svg"`) rather than as requests. Matching on
+ * the host rather than on nearby `xmlns` text is deliberate: an attacker
+ * cannot register these, so the exemption cannot be borrowed, whereas a
+ * syntactic check could be by writing `xmlns` beside an exfil URL.
+ */
+const IDENTIFIER_HOST_EXACT = new Set([
+  'www.w3.org',
+  'www.sitemaps.org',
+  'schemas.xmlsoap.org',
+  'purl.org',
+])
 
 function isLoopbackHost(host: string): boolean {
   const h = host.toLowerCase()
@@ -78,6 +97,33 @@ function destinationKey(kind: DestinationFinding['kind'], value: string): string
   return `${kind}:${value}`
 }
 
+/**
+ * Truncation order. A hostile plugin can pad the top of its first file with
+ * harmless literals, so the cap must drop the least interesting rows rather
+ * than whatever comes last in source order — red lines are derived from the
+ * capped list.
+ */
+const DESTINATION_RANK: Readonly<Record<DestinationKind, number>> = {
+  ip: 0,
+  'http-host': 1,
+  'https-host': 2,
+  loopback: 3,
+  relative: 4,
+}
+
+const PATH_ESCAPE_RANK: Readonly<Record<PathEscapeKind, number>> = {
+  home: 0,
+  absolute: 1,
+  'windows-abs': 2,
+  traversal: 3,
+}
+
+const SECRET_TOUCH_RANK: Readonly<Record<SecretTouchKind, number>> = {
+  path: 0,
+  'env-key': 1,
+  api: 2,
+}
+
 function dedupeByKey<T>(rows: T[], keyOf: (row: T) => string, max: number): T[] {
   const seen = new Set<string>()
   const out: T[] = []
@@ -89,6 +135,20 @@ function dedupeByKey<T>(rows: T[], keyOf: (row: T) => string, max: number): T[] 
     if (out.length >= max) break
   }
   return out
+}
+
+/** Dedupe riskiest-first, keeping source order within one rank. */
+function rankedDedupe<T>(
+  rows: T[],
+  keyOf: (row: T) => string,
+  rankOf: (row: T) => number,
+  max: number,
+): T[] {
+  const ordered = rows
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) => rankOf(a.row) - rankOf(b.row) || a.index - b.index)
+    .map(entry => entry.row)
+  return dedupeByKey(ordered, keyOf, max)
 }
 
 /** Line looks like a private/special IP range table, not an outbound target. */
@@ -107,6 +167,11 @@ export function isPlaceholderHost(host: string): boolean {
   if (PLACEHOLDER_HOST_EXACT.has(h)) return true
   if (PLACEHOLDER_TLD.test(h)) return true
   return false
+}
+
+/** Namespace/schema hosts that name a vocabulary instead of a request target. */
+export function isIdentifierHost(host: string): boolean {
+  return IDENTIFIER_HOST_EXACT.has(host.trim().toLowerCase().replace(/:\d+$/, ''))
 }
 
 export function isPlaceholderUrl(url: string): boolean {
@@ -165,7 +230,8 @@ export function scanShape(input: PluginInput): ShapeScan {
   const secretTouches: SecretTouchFinding[] = []
 
   for (const [file, content] of Object.entries(input.sources)) {
-    const lines = content.split('\n')
+    const scanned = isCodeFile(file) ? stripComments(content) : content
+    const lines = scanned.split('\n')
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]
       const lineNo = i + 1
@@ -185,7 +251,7 @@ export function scanShape(input: PluginInput): ShapeScan {
             value = url
           }
         }
-        if (isPlaceholderHost(value)) continue
+        if (isPlaceholderHost(value) || isIdentifierHost(value)) continue
         destinations.push({ kind, value, file, line: lineNo })
       }
 
@@ -257,9 +323,24 @@ export function scanShape(input: PluginInput): ShapeScan {
   }
 
   return {
-    destinations: dedupeByKey(destinations, d => destinationKey(d.kind, d.value), MAX_DESTINATIONS),
-    pathEscapes: dedupeByKey(pathEscapes, p => `${p.kind}:${p.value}`, MAX_PATH_ESCAPES),
-    secretTouches: dedupeByKey(secretTouches, s => `${s.kind}:${s.value}`, MAX_SECRET_TOUCHES),
+    destinations: rankedDedupe(
+      destinations,
+      d => destinationKey(d.kind, d.value),
+      d => DESTINATION_RANK[d.kind],
+      MAX_DESTINATIONS,
+    ),
+    pathEscapes: rankedDedupe(
+      pathEscapes,
+      p => `${p.kind}:${p.value}`,
+      p => PATH_ESCAPE_RANK[p.kind],
+      MAX_PATH_ESCAPES,
+    ),
+    secretTouches: rankedDedupe(
+      secretTouches,
+      s => `${s.kind}:${s.value}`,
+      s => SECRET_TOUCH_RANK[s.kind],
+      MAX_SECRET_TOUCHES,
+    ),
   }
 }
 
@@ -289,7 +370,10 @@ export function shapeRedLines(
   if (!capabilities.includes('network')) return lines
 
   for (const dest of destinations) {
-    if (dest.kind === 'http-host' && !isLoopbackHost(dest.value) && !isPlaceholderHost(dest.value)) {
+    if (dest.kind === 'http-host'
+      && !isLoopbackHost(dest.value)
+      && !isPlaceholderHost(dest.value)
+      && !isIdentifierHost(dest.value)) {
       lines.push(`uses plaintext http:// to ${dest.value}`)
       break
     }

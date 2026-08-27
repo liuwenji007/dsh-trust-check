@@ -891,6 +891,14 @@ details[open] > .foldSummary::before {
   opacity: 1;
 }
 
+/* Repository value with a scheme we refuse to link. */
+.repoPlain {
+  color: var(--trust-muted);
+  word-break: break-all;
+  text-decoration: line-through;
+  text-decoration-color: var(--trust-red-soft);
+}
+
 .evidenceGroups {
   margin-top: 10px;
   display: flex;

@@ -14,6 +14,7 @@ import {
   groupEvidence,
   groupInjections,
   presentInjection,
+  repositoryHref,
   topCapabilities,
   verdict,
   type Concern,
@@ -444,6 +445,7 @@ function PluginCardBody({
   const v = verdict(report, ack)
   const concernList = concerns(report)
   const drift = ackDrifted(report, ack)
+  const repoHref = repositoryHref(report.repository)
   const [evidenceFocus, setEvidenceFocus] = useState<Capability | null>(null)
   const [ackLoading, setAckLoading] = useState(false)
   const [ackError, setAckError] = useState(false)
@@ -451,14 +453,14 @@ function PluginCardBody({
   const [explainText, setExplainText] = useState<string | null>(null)
   const [explainError, setExplainError] = useState(false)
 
-  const postAck = async () => {
+  const postAck = async (acceptRisk = false) => {
     setAckLoading(true)
     setAckError(false)
     try {
       const res = await fetch('/dsh-trust-check/ack', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: report.name }),
+        body: JSON.stringify({ name: report.name, acceptRisk }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       onAckChange()
@@ -528,7 +530,7 @@ function PluginCardBody({
             </button>
           )}
           {v === 'red' && (
-            <button type="button" className={css.actionBtnRisk} disabled={ackLoading} onClick={() => void postAck()}>
+            <button type="button" className={css.actionBtnRisk} disabled={ackLoading} onClick={() => void postAck(true)}>
               {ackLoading ? t('ack.saving') : t('ack.acceptRisk')}
             </button>
           )}
@@ -580,9 +582,13 @@ function PluginCardBody({
               <span className={`${css.tag} ${css.tagPlain}`}>{t('buildScript')}</span>
             )}
             {report.repository !== undefined && (
-              <a className={css.repoLink} href={report.repository} target="_blank" rel="noreferrer">
-                {report.repository}
-              </a>
+              repoHref !== undefined
+                ? (
+                    <a className={css.repoLink} href={repoHref} target="_blank" rel="noreferrer">
+                      {report.repository}
+                    </a>
+                  )
+                : <span className={css.repoPlain}>{report.repository}</span>
             )}
           </div>
           {report.hasBuildScript && (

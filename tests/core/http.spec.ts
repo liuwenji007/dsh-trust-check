@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { isLoopbackRequest, trustedAuditRequest } from '../../src/index.ts'
+import { ackAllowed, isLoopbackRequest, trustedAuditRequest } from '../../src/index.ts'
+import type { AuditReport } from '../../src/core/types.ts'
 
 function requestOf(overrides: {
   method?: string
@@ -45,5 +46,18 @@ describe('trustedAuditRequest', () => {
 
   it('rejects forwarded proxy headers', () => {
     expect(trustedAuditRequest(requestOf({ forwarded: 'for=1.2.3.4' }))).toBe(false)
+  })
+})
+
+describe('ackAllowed', () => {
+  const reportWith = (redLines: string[]) => ({ redLines } as AuditReport)
+
+  it('accepts an ordinary plugin without an opt-in', () => {
+    expect(ackAllowed(reportWith([]), false)).toBe(true)
+  })
+
+  it('requires the opt-in before a red line can be acknowledged', () => {
+    expect(ackAllowed(reportWith(['runs install scripts']), false)).toBe(false)
+    expect(ackAllowed(reportWith(['runs install scripts']), true)).toBe(true)
   })
 })

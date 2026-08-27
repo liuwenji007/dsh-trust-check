@@ -253,6 +253,25 @@ export function capabilityTier(cap: Capability): 'high' | 'medium' | 'neutral' {
   return 'neutral'
 }
 
+/**
+ * Safe `href` for a repository value, or undefined when it must not be linked.
+ *
+ * The value is copied verbatim from the audited package's manifest, so a
+ * hostile plugin controls it — and this panel is where users inspect exactly
+ * such plugins. Only http(s) survives; anything else is shown as plain text.
+ */
+export function repositoryHref(repository: string | undefined): string | undefined {
+  if (repository === undefined) return undefined
+  const raw = repository.startsWith('git+') ? repository.slice('git+'.length) : repository
+  try {
+    const parsed = new URL(raw)
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return undefined
+    return parsed.href
+  } catch {
+    return undefined
+  }
+}
+
 /** Whether ack exists but fingerprint drifted from current scan. */
 export function ackDrifted(report: AuditReport, ack?: TrustAckEntry): boolean {
   if (ack === undefined) return false

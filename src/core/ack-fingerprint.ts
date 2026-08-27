@@ -2,6 +2,7 @@
  * Pure ack fingerprint helpers — safe for browser bundles (no filesystem).
  */
 
+import { injectionFingerprint } from './injection.ts'
 import {
   destinationFingerprint,
   pathEscapeFingerprint,
@@ -41,6 +42,7 @@ export function fingerprintFromReport(report: AuditReport): TrustAckEntry {
     destinations: destinationFingerprint(normalized.destinations),
     secretTouches: secretTouchFingerprint(normalized.secretTouches),
     pathEscapes: pathEscapeFingerprint(normalized.pathEscapes),
+    injections: injectionFingerprint(normalized.injections),
     redLines: [...normalized.redLines].sort(),
     at: new Date().toISOString(),
   }
@@ -60,5 +62,6 @@ export function ackMatchesReport(report: AuditReport, ack: TrustAckEntry): boole
     && sortedEqual(current.destinations, ack.destinations ?? [])
     && sortedEqual(current.secretTouches, ack.secretTouches ?? [])
     && sortedEqual(current.pathEscapes ?? [], ack.pathEscapes ?? [])
+    && sortedEqual(current.injections ?? [], ack.injections ?? [])
     && sortedEqual(current.redLines ?? [], ack.redLines ?? [])
 }

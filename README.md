@@ -38,9 +38,9 @@ npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 | **能力如预期** | 你已确认当前能力与去向指纹 | 本机 `trust-ack.json` 与本次扫描一致（无红线） |
 | **无红线** | 未见红线或特权能力 | 其余 |
 
-**形状层（代码判定）**：除能力芯片外，报告会列出源码中的**字面量去向**（URL/host/IP）、**工作区外路径**（绝对路径、家目录、路径穿越等）和**密钥触摸**（路径、敏感 env 名）。同源 HTTP 相对路由（如 `/dsh-market/check`）不再当作去向展示。这不代表「地址/路径安全」，只代表「在源码里看到了什么」；运行时拼接的 URL 看不到。常见托管/registry 域名（GitHub、npm、npmmirror、腾讯云镜像等）、DSH 精选目录与 GitHub 代理，以及常见模型厂商 API（DeepSeek、OpenAI、Anthropic、Google Gemini）有内置白名单：默认收起并附简短说明，明文 HTTP 永远不会因白名单降级。扫描器会跳过网段边界表（如 SSRF 私网判定）、`http://local` 一类占位 base、以及 cmd 开关（`/c`）等误判噪音。
+**形状层（代码判定）**：除能力芯片外，报告会列出源码中的**字面量去向**（URL/host/IP）、**工作区外路径**（绝对路径、家目录、路径穿越等）和**密钥触摸**（路径、敏感 env 名）。同源 HTTP 相对路由（如 `/dsh-market/check`）不再当作去向展示。这不代表「地址/路径安全」，只代表「在源码里看到了什么」；运行时拼接的 URL 看不到。常见托管/registry 域名（GitHub、npm、npmmirror、腾讯云镜像等）、DSH 精选目录与 GitHub 代理，以及常见模型厂商 API（DeepSeek、OpenAI、Anthropic、Google Gemini）有内置白名单：默认收起并附简短说明，明文 HTTP 永远不会因白名单降级。扫描器会跳过网段边界表（如 SSRF 私网判定）、`http://local` 一类占位 base、cmd 开关（`/c`）等误判噪音；注释在扫描前被抹掉，所以 JSDoc 里的示例 URL 不会算作去向（打包产物通常保留注释），而 `xmlns="http://www.w3.org/2000/svg"` 一类命名空间标识按主机名精确排除——攻击者注册不到这些域名，因此这条豁免无法被借用。超出上限时按风险高低截断，明文 HTTP 与字面量 IP 不会被无害地址挤掉。
 
-**记为预期**：在设置页确认「这些能力符合我装它的目的」后，写入 `~/.dsh/profiles/<profile>/trust-ack.json`。升级后能力/去向/工作区外路径/密钥触摸变化会回到「需确认」。
+**记为预期**：在设置页确认「这些能力符合我装它的目的」后，写入 `~/.dsh/profiles/<profile>/trust-ack.json`。升级后能力/去向/工作区外路径/密钥触摸/注入（含技能文本大小）变化会回到「需确认」。确认红线走单独的「确认风险」按钮，普通的记为预期请求无法顶替。
 
 **AI 解释**：可选按钮，通过 DSH 已配置的模型解释报告摘要，**不改裁决**；未配置模型时不可用。
 
@@ -114,7 +114,7 @@ npx dsh-trust-check --dir "$EXTRACTED_DIR" --spec "$INSTALL_SPEC" --json
 - 客户端 `fetch('/api')` 等同源调用也会记为 network，与真正的出网访问未分层。
 - 注入 token 是字节 / 4 的粗估，不是精确计费。
 - `link:` / `file:` 本地安装的插件无法从 spec 推断来源，若其 `package.json` 未声明 `repository`，会显示"未声明仓库"。
-- `repository` 字段是插件自述，不与 npm 包名交叉验证。
+- `repository` 字段是插件自述，不与 npm 包名交叉验证；非 `http(s)` 协议不会渲染成可点击链接。
 
 ## 开发
 
