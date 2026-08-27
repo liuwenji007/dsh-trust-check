@@ -26,6 +26,21 @@ describe('collectPlugin', () => {
     }
   })
 
+  it('stores source keys with forward slashes on every platform', () => {
+    const root = mkdtempSync(join(tmpdir(), 'trust-fs-'))
+    try {
+      mkdirSync(join(root, 'lib'))
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'slash-keys', version: '1' }))
+      writeFileSync(join(root, 'lib', 'index.js'), 'export const x = 1\n')
+      const collected = collectPlugin(root, 'npm:x@1')
+      for (const key of Object.keys(collected.sources)) {
+        expect(key.includes('\\')).toBe(false)
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('scans scripts/ payloads referenced from lib/', () => {
     const root = mkdtempSync(join(tmpdir(), 'trust-fs-'))
     try {

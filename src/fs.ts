@@ -6,7 +6,7 @@
 
 import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, relative, resolve } from 'node:path'
+import { isAbsolute, join, relative, resolve } from 'node:path'
 import { isSkillFile } from './core/injection.ts'
 import type { PluginInput } from './core/types.ts'
 
@@ -44,6 +44,11 @@ interface WalkBudget {
   files: number
 }
 
+/** Relative path with `/` separators so reports and skip rules are OS-stable. */
+function posixRel(from: string, to: string): string {
+  return relative(from, to).split('\\').join('/')
+}
+
 function extOf(path: string): string {
   const idx = path.lastIndexOf('.')
   return idx === -1 ? '' : path.slice(idx).toLowerCase()
@@ -52,7 +57,7 @@ function extOf(path: string): string {
 /** True when `target` resolves to a regular file inside `packageDir`. */
 function isInsidePackage(packageDir: string, target: string): boolean {
   const rel = relative(packageDir, target)
-  return rel !== '' && !rel.startsWith('..') && !rel.startsWith('/')
+  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)
 }
 
 function collectExportTarget(value: unknown, out: Set<string>): void {
@@ -139,7 +144,7 @@ function readScannedFile(
   budget: WalkBudget,
 ): void {
   if (budget.files >= MAX_FILES || budget.bytes >= MAX_TOTAL_BYTES) return
-  const rel = relative(root, abs)
+  const rel = posixRel(root, abs)
   if (SKIP_FILE_RE.test(rel)) return
   const ext = extOf(rel)
   const isSkill = isSkillFile(rel) && (ext === '.md' || ext === '.prompt' || ext === '.txt')
@@ -234,7 +239,7 @@ function readPatch(manifest: Record<string, unknown>, dir: string): { text: stri
     try {
       const text = readFileSync(candidate, 'utf8')
       if (Buffer.byteLength(text, 'utf8') > MAX_FILE_BYTES) continue
-      return { text, path: relative(dir, candidate) }
+      return { text, path: posixRel(dir, candidate) }
     } catch {
       return undefined
     }
