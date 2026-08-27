@@ -1,0 +1,51 @@
+name: False positive / 误报
+description: The scanner flagged something that is not a real capability, destination, or red line.
+title: "[false-positive] "
+labels: ["false-positive"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A false-positive report is a test case. Paste the smallest snippet that still flags. Do not ask to "tune sensitivity" without a snippet.
+
+        误报报告本质是一个测试用例。贴上仍会命中的最小片段。没有片段就不要提「调灵敏度」。
+  - type: dropdown
+    id: surface
+    attributes:
+      label: What was flagged / 命中了什么
+      options:
+        - capability (shell / fs / network / credentials / …)
+        - destination (URL / host / IP)
+        - path escape
+        - secret touch
+        - red line
+        - other
+    validations:
+      required: true
+  - type: textarea
+    id: snippet
+    attributes:
+      label: Minimal snippet / 最小片段
+      description: The file as the scanner would see it (comments included). One file, as few lines as possible.
+      render: typescript
+    validations:
+      required: true
+  - type: input
+    id: file
+    attributes:
+      label: File path in the scanned plugin / 被扫插件里的路径
+      placeholder: lib/index.js
+  - type: textarea
+    id: why
+    attributes:
+      label: Why this is not a real hit / 为什么这不是真实命中
+      description: e.g. documentation URL in a comment, XML namespace, RegExp.prototype.exec, this scanner's own rule table.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected / 期望
+      description: What the report should contain instead (empty capabilities, identifier-host exemption, etc.).
+    validations:
+      required: true

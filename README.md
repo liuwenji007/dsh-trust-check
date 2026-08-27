@@ -140,6 +140,8 @@ pnpm test        # vitest，覆盖 core 引擎
 pnpm typecheck   # tsc --noEmit
 ```
 
+规则表与白名单的贡献流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。白名单 PR 与规则 PR 不同权：白名单削弱检测，且明文 HTTP 永远不会因白名单降级。
+
 ## 路线图
 
 - v1（当前）：已装插件体检 + CLI `--dir` + Web 分项报告

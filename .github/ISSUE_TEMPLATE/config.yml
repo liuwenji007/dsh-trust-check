@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Integrator contract / 集成方契约
+    url: https://github.com/liuwenji007/dsh-trust-check/blob/main/README.md#%E7%BB%99%E9%9B%86%E6%88%90%E6%96%B9%E5%A6%82-dsh-market
+    about: auditPlugin / --dir JSON shape. Open an issue only if the contract itself is wrong.

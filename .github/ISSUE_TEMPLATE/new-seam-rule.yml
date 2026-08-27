@@ -1,0 +1,55 @@
+name: New seam rule / 新 seam 规则
+description: DSH or Node gained an API that should map to an existing capability.
+title: "[seam] "
+labels: ["seam"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Detection rules live in `src/core/seams.ts` as a data table. DSH is still v0.1; seam names change. Updating a pattern updates CLI, the settings view, and any future CI gate at once.
+
+        检测规则是 `src/core/seams.ts` 里的数据表。DSH 仍是 v0.1，接口名会变。改表即改 CLI、设置页和未来的 CI 闸门。
+  - type: dropdown
+    id: capability
+    attributes:
+      label: Capability to map onto / 映射到哪项能力
+      options:
+        - shell
+        - fs-read
+        - fs-write
+        - network
+        - credentials
+        - env
+        - subagent
+        - llm
+        - dynamic-code
+        - host-runtime
+        - new capability (explain below — this is a heavier change)
+    validations:
+      required: true
+  - type: textarea
+    id: api
+    attributes:
+      label: API / import to match / 要匹配的 API 或 import
+      description: "Call-site form (`ctx.foo.bar(`) or import form (`from 'node:xyz'`). Bare identifiers are rejected. See CONTRIBUTING.md."
+      render: typescript
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why this is a capability, not a mention / 为什么这是能力使用而不是提到这个词
+      description: Where it appears in DSH, what a plugin can do with it, and a snippet that must NOT match (the word in a string, a type union, or this repo's own rule table).
+    validations:
+      required: true
+  - type: checkboxes
+    id: discipline
+    attributes:
+      label: Rule discipline / 规则纪律
+      options:
+        - label: Matches a call site or import form, not a bare identifier
+          required: true
+        - label: Does not use `\bexec\s*\(`
+          required: true
+        - label: A test will hit the new construct AND a test will show the old false-positive shape still stays clean
+          required: true

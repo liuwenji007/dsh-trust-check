@@ -140,6 +140,8 @@ pnpm test        # vitest, covers the core engine
 pnpm typecheck   # tsc --noEmit
 ```
 
+Rule-table and allowlist contributions: [CONTRIBUTING.md](CONTRIBUTING.md). Allowlist PRs are reviewed harder than rule PRs — an allowlist entry weakens detection, and plaintext HTTP is never downgraded by the allowlist.
+
 ## Roadmap
 
 - v1 (current): installed-plugin audit + CLI `--dir` + Web dimension-first report

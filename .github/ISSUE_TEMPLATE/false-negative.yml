@@ -1,0 +1,48 @@
+name: False negative / 漏报
+description: A real capability, destination, or red line the scanner did not report.
+title: "[false-negative] "
+labels: ["false-negative"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Static analysis proves presence, never absence — a miss is still worth a rule if the construct is a call site or import the table can name.
+
+        静态分析只证有、不证无。如果漏掉的是规则表能叫出名字的调用点或 import，仍然值得补一条。
+  - type: dropdown
+    id: surface
+    attributes:
+      label: What was missed / 漏了什么
+      options:
+        - capability (shell / fs / network / credentials / dynamic-code / …)
+        - destination (URL / host / IP)
+        - path escape
+        - secret touch
+        - red line
+        - other
+    validations:
+      required: true
+  - type: textarea
+    id: snippet
+    attributes:
+      label: Code that should have been detected / 应当被检测到的代码
+      description: The construct as it appears in a published plugin. Dynamic `import('node:' + x)` and obfuscated `eval` are known limits — still file them, but say so.
+      render: typescript
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Current rule (if any) / 现有规则
+      description: Quote the pattern in `src/core/seams.ts` or `src/core/shape.ts` that almost matches, or write "none".
+    validations:
+      required: true
+  - type: checkboxes
+    id: bypass-class
+    attributes:
+      label: Bypass class / 绕过类型
+      options:
+        - label: Call site or import the current regex should have matched (scanner bug)
+        - label: New library / DSH seam not in the table (rule gap)
+        - label: Dynamic import, string concat, or obfuscation (known limit; still useful as documentation)
+        - label: Behavior only in `node_modules` (out of scope by design)
