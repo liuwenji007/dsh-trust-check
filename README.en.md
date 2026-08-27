@@ -37,7 +37,7 @@ The settings UI and CLI use a **decision-first** layout: verdict, then capabilit
 | **As expected** | You acknowledged the current capability/shape fingerprint | Local `trust-ack.json` matches this scan |
 | **Clear** | No red lines or privileged capabilities | Everything else |
 
-**Shape layer (code-judged)**: besides capability chips, the report lists **literal destinations** (URL/host/IP/relative paths) and **secret touches** (paths, sensitive env names) found in source. This is not “address safety” — only “we saw this string in source”; runtime-built URLs are invisible. Common host / registry domains (GitHub, npm, npmmirror, …) have a built-in allowlist: collapsed by default with a short note; plaintext HTTP is never downgraded by the allowlist.
+**Shape layer (code-judged)**: besides capability chips, the report lists **literal destinations** (URL/host/IP/relative paths) and **secret touches** (paths, sensitive env names) found in source. This is not “address safety” — only “we saw this string in source”; runtime-built URLs are invisible. Common host / registry domains (GitHub, npm, npmmirror, …) have a built-in allowlist: collapsed by default with a short note; plaintext HTTP is never downgraded by the allowlist. The scanner also skips IP range tables (e.g. SSRF private-IP checks), placeholder bases like `http://local`, shell switches (`/c`), and filesystem roots (`/usr`, `/opt`) to avoid false destinations.
 
 **Mark as expected**: after you confirm capabilities match why you installed the plugin, the fingerprint is stored in `~/.dsh/profiles/<profile>/trust-ack.json`. Upgrades that change capabilities/destinations/secrets return to **review**.
 

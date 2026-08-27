@@ -48,6 +48,54 @@ describe('scanShape', () => {
     expect(lines.some(l => l.startsWith('uses literal IP'))).toBe(true)
   })
 
+  it('skips private IP range-table boundaries (SSRF denylist)', () => {
+    const { destinations } = scanShape(input({
+      'a.js': 'return inRange(value, "10.0.0.0", "10.255.255.255") || inRange(value, "192.168.0.0", "192.168.255.255")',
+    }))
+    expect(destinations.filter(d => d.kind === 'ip')).toEqual([])
+    expect(shapeRedLines(['network'], destinations)).toEqual([])
+  })
+
+  it('still records a lone literal IP used as a destination', () => {
+    const { destinations } = scanShape(input({
+      'a.js': 'fetch("http://203.0.113.50/x")',
+    }))
+    // http URL takes host path; also ensure raw IP on its own line is kept
+    const alone = scanShape(input({ 'b.js': 'const host = "203.0.113.50"' }))
+    expect(alone.destinations.some(d => d.kind === 'ip' && d.value === '203.0.113.50')).toBe(true)
+    expect(destinations.some(d => d.kind === 'http-host' && d.value === '203.0.113.50')).toBe(true)
+  })
+
+  it('skips placeholder URL bases and example hosts', () => {
+    const { destinations } = scanShape(input({
+      'a.js': [
+        'new URL(request.url ?? "", "http://local")',
+        'fetch("https://dav.example/x")',
+      ].join('\n'),
+    }))
+    expect(destinations.some(d => d.value === 'local' || d.value.includes('example'))).toBe(false)
+  })
+
+  it('skips shell switches and filesystem absolute paths', () => {
+    const { destinations } = scanShape(input({
+      'a.js': [
+        "spawn(COMSPEC, ['/d', '/s', '/c', cmd])",
+        "dirs.push('/opt/homebrew/bin', '/usr/local/bin')",
+        'await fetch("/dsh-market/check")',
+      ].join('\n'),
+    }))
+    expect(destinations.some(d => d.value === '/c' || d.value.startsWith('/opt/') || d.value.startsWith('/usr/'))).toBe(false)
+    expect(destinations.some(d => d.kind === 'relative' && d.value === '/dsh-market/check')).toBe(true)
+  })
+
+  it('skips template http hosts that are not literals', () => {
+    const { destinations } = scanShape(input({
+      'a.js': 'fetch(`http://${host}/x`)',
+    }))
+    expect(destinations.some(d => d.kind === 'http-host')).toBe(false)
+    expect(shapeRedLines(['network'], destinations)).toEqual([])
+  })
+
   it('captures sensitive env key names', () => {
     const { secretTouches } = scanShape(input({
       'a.js': 'const k = process.env.OPENAI_API_KEY',

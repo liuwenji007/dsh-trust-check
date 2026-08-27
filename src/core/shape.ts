@@ -15,6 +15,28 @@ const ENV_SENSITIVE = /process\.env\.([A-Z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD
 const SECRET_PATH = /~\/\.ssh|\.aws\/credentials|\.netrc|\bid_rsa\b|\bid_ed25519\b/g
 const CREDENTIALS_IMPORT = /(?:require\(|from\s+|import\s*\(\s*)['"](?:keychain|keytar|dotenv)['"]|\bkeychain\.\w+|\bkeytar\.\w+|\bdotenv\.config\b|\bctx\.credentials\b/g
 
+/** Windows / cmd.exe style switches often mistaken for HTTP paths. */
+const SHELL_SWITCH_PATHS = new Set([
+  '/a', '/b', '/c', '/d', '/e', '/f', '/g', '/k', '/p', '/q', '/r', '/s', '/t', '/v', '/y',
+  '/pid', '/im', '/fi',
+])
+
+/** Absolute filesystem roots — not HTTP routes. */
+const FS_ROOT_PREFIX = /^\/(?:usr|opt|home|Users|tmp|var|etc|bin|sbin|lib|lib64|apex|System|Windows|Program Files|Applications)\b/
+
+/** RFC 2606 / 6761 reserved documentation hosts — not real outbound targets. */
+const PLACEHOLDER_HOST_EXACT = new Set([
+  'localhost',
+  'local',
+  'example',
+  'example.com',
+  'example.org',
+  'example.net',
+])
+
+/** Documentation TLD only (`.test` / `.invalid` still count as outbound literals). */
+const PLACEHOLDER_TLD = /\.example$/i
+
 function isLoopbackHost(host: string): boolean {
   const h = host.toLowerCase()
   return h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '[::1]'
@@ -65,6 +87,43 @@ function dedupeSecretTouches(rows: SecretTouchFinding[]): SecretTouchFinding[] {
   return out
 }
 
+/** Line looks like a private/special IP range table, not an outbound target. */
+export function isIpRangeTableLine(line: string): boolean {
+  const ipCount = [...line.matchAll(/['"`]((\d{1,3}\.){3}\d{1,3})['"`]/g)].length
+  if (ipCount >= 2) return true
+  return /\binRange\s*\(|\bisPrivate|\bisReserved|\bipRange|specialRanges|PRIVATE_RANGES|CIDR/i.test(line)
+}
+
+/** Documentation / parser base hosts that are not real destinations. */
+export function isPlaceholderHost(host: string): boolean {
+  const h = host.trim().toLowerCase().replace(/:\d+$/, '')
+  if (h === '') return true
+  if (PLACEHOLDER_HOST_EXACT.has(h)) return true
+  if (PLACEHOLDER_TLD.test(h)) return true
+  return false
+}
+
+export function isPlaceholderUrl(url: string): boolean {
+  try {
+    return isPlaceholderHost(new URL(url).hostname)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Relative strings that are shell switches, filesystem paths, or empty
+ * protocol-relative junk — not HTTP API routes.
+ */
+export function isNonHttpRelativePath(path: string): boolean {
+  if (path === '/' || path === '//' || path.startsWith('//')) return true
+  if (SHELL_SWITCH_PATHS.has(path.toLowerCase())) return true
+  if (FS_ROOT_PREFIX.test(path)) return true
+  // Template-only fragments like `/${part}` with no fixed route prefix.
+  if (/^\/\$\{/.test(path)) return true
+  return false
+}
+
 export interface ShapeScan {
   destinations: DestinationFinding[]
   secretTouches: SecretTouchFinding[]
@@ -79,10 +138,14 @@ export function scanShape(input: PluginInput): ShapeScan {
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]
       const lineNo = i + 1
+      const rangeTable = isIpRangeTableLine(line)
 
       for (const match of line.matchAll(URL_LITERAL)) {
         const url = match[1]
         if (url === undefined) continue
+        // Runtime-built hosts (`http://${host}`) are not literal destinations.
+        if (url.includes('${')) continue
+        if (isPlaceholderUrl(url)) continue
         const kind = classifyUrl(url)
         let value = url
         if (kind === 'https-host' || kind === 'http-host' || kind === 'loopback') {
@@ -92,24 +155,28 @@ export function scanShape(input: PluginInput): ShapeScan {
             value = url
           }
         }
+        if (isPlaceholderHost(value)) continue
         destinations.push({ kind, value, file, line: lineNo })
       }
 
       for (const match of line.matchAll(RELATIVE_PATH)) {
         const path = match[1]
         if (path === undefined) continue
+        if (isNonHttpRelativePath(path)) continue
         destinations.push({ kind: 'relative', value: path, file, line: lineNo })
       }
 
-      for (const match of line.matchAll(IPV4_LITERAL)) {
-        const ip = match[1]
-        if (ip === undefined) continue
-        destinations.push({
-          kind: isLoopbackIp(ip) ? 'loopback' : 'ip',
-          value: ip,
-          file,
-          line: lineNo,
-        })
+      if (!rangeTable) {
+        for (const match of line.matchAll(IPV4_LITERAL)) {
+          const ip = match[1]
+          if (ip === undefined) continue
+          destinations.push({
+            kind: isLoopbackIp(ip) ? 'loopback' : 'ip',
+            value: ip,
+            file,
+            line: lineNo,
+          })
+        }
       }
 
       for (const match of line.matchAll(ENV_SENSITIVE)) {
@@ -157,7 +224,7 @@ export function shapeRedLines(
   if (!capabilities.includes('network')) return lines
 
   for (const dest of destinations) {
-    if (dest.kind === 'http-host' && !isLoopbackHost(dest.value)) {
+    if (dest.kind === 'http-host' && !isLoopbackHost(dest.value) && !isPlaceholderHost(dest.value)) {
       lines.push(`uses plaintext http:// to ${dest.value}`)
       break
     }

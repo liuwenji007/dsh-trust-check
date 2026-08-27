@@ -57,6 +57,31 @@ function externalDestinations(report: AuditReport): boolean {
   })
 }
 
+const CONCERN_EN: Partial<Record<ConcernCode, string>> = {
+  'install-script': 'May run arbitrary code at install time',
+  'core-tamper': 'Tamper with a core bundle',
+  'creds-network': 'Read credentials and access the network',
+  'plaintext-http': 'Uses plaintext HTTP outbound',
+  'literal-ip': 'Uses literal IP outbound',
+  'external-dest': 'External destination literals in source',
+  'secret-touch': 'May touch secrets or sensitive env vars',
+  shell: 'Execute system commands',
+  'fs-write': 'Write local files',
+  'fs-read': 'Read local files',
+  network: 'Access the network',
+  credentials: 'Read credentials or secrets',
+  env: 'Read environment variables',
+  subagent: 'Spawn sub-agents',
+  'host-runtime': 'Call host runtime APIs',
+  llm: 'Call language models',
+}
+
+/** English one-liner for CLI / non-UI consumers. */
+export function concernText(concern: Concern): string {
+  if (concern.code === 'raw') return concern.detail ?? ''
+  return CONCERN_EN[concern.code] ?? concern.code
+}
+
 /** Up to `max` concern bullets: red lines first, then shape, then capabilities by weight. */
 export function concerns(report: AuditReport, max = 3): Concern[] {
   const result: Concern[] = []

@@ -20,6 +20,7 @@ export {
   capabilityTier,
   classifyRedLine,
   concerns,
+  concernText,
   countVerdicts,
   formatInjectionDetail,
   groupEvidence,
