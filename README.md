@@ -28,18 +28,23 @@ npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 
 ## 怎么读报告
 
-报告以**四个维度**为主，不要把 0–100 分数当作第一结论。设置页与 CLI 均按同一顺序呈现：
+设置页与 CLI 采用**决策优先**布局：先看裁决，再看能力 / 注入 / 来源，证据默认折叠。
 
-| 维度 | 看什么 | 怎么读 |
+| 裁决 | 含义 | 何时出现 |
 |---|---|---|
-| **红线** | 安装脚本、核心 bundle override、凭据+网络组合 | 有则置顶；标签为「有红线 / 需确认 / 无红线」 |
-| **能力** | shell / 文件 / 网络 / 凭据 / 子代理 / LLM / 环境变量 | 芯片列表；只证「检测到了」，不证「保证没有」 |
-| **注入** | patch override/disable、system-prompt、技能注册 | 谁被改、注入了什么 |
-| **来源** | 锁版本、仓库、安装脚本 | 是否 pinned；`repository` 为插件自述 |
+| **有红线** | 命中硬红线，默认应停用 | 仅当 `redLines.length > 0` |
+| **需确认** | 未见硬红线，但有特权能力或 patch 改动 | 有能力或 override/disable，且无红线 |
+| **无红线** | 未见红线或特权能力 | 其余 |
 
-**排序分**（`score` 字段）保留在 JSON 与卡片次要位置，仅用于列表排序（红线在前）。`summary` 不再以 `green · 83` 开头，例如：`有红线 · shell+network · 未锁版本` 或 `需确认 · file reads+network · 已锁版本`。
+**重要：`有红线` 只看 `redLines`，不看低分。** 分数低（如 9 分）可能只是因为 shell + 网络 + 未锁版本等叠加，此时应显示「需确认」而非「有红线」。JSON 里的 `band` 仍可能为 `red`（分数 &lt; 50），但 UI/CLI 用 `verdict()` 呈现，二者不要混读。
 
-注入 token 估算留在注入块，**仅作成本参考**，不是信任依据。
+阅读顺序：
+
+1. **决策**：徽章 + 动作句 +「为什么要小心」（最多 3 条）
+2. **扫描**：能力芯片 → 注入摘要（默认折叠）→ 来源
+3. **取证**：证据按能力分组，默认折叠
+
+`score` / `summary` 仍留在 JSON 里供排序与集成方使用，**设置页不再展示**。注入 token 估算标明为**成本参考**，不是信任依据。
 
 ### 红线（有则默认应挡住）
 
@@ -47,7 +52,7 @@ npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 2. `cordis.patch.yml` override / disable 了 `@deepseek-ai/*` 核心 bundle（匹配 `id` **或** `name`）；
 3. 读取凭据/密钥材料（keychain / keytar / dotenv / `~/.ssh` / `.aws/credentials` 等）**且**有网络访问。
 
-命中红线时数值分封顶 49（避免「100 分 + 高风险」的误导），但 UI/CLI 以红线标签为准，不以分数作裁决。
+命中红线时数值分封顶 49（避免「100 分 + 高风险」的误导），但 UI/CLI 以 `redLines` 裁决，不以分数或 `band` 作标签。
 
 ## 审计什么
 
@@ -64,15 +69,14 @@ npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 本包导出稳定 API，供安装前确认弹窗或 CI 闸门使用：
 
 ```ts
-import { auditPlugin, collectPlugin } from 'dsh-trust-check'
+import { auditPlugin, collectPlugin, verdict } from 'dsh-trust-check'
 
-// extractedDir：已解压的包目录；spec：安装 spec 标签（如 npm:foo@1.0.0）
 const report = auditPlugin(collectPlugin(extractedDir, spec))
 
 // 闸门语义（写死，可直接抄进 market 确认弹窗）：
-// report.redLines.length > 0  → 默认挡住，允许用户确认后继续
-// 有能力、无红线（band yellow）→ 展示能力清单，建议用户确认
-// 无红线、无特权能力（band green）→ 可静默通过
+// verdict(report) === 'red'   → 默认挡住，允许用户确认后继续
+// verdict(report) === 'review'  → 展示能力清单，建议用户确认
+// verdict(report) === 'clear'   → 可静默通过
 ```
 
 CLI 等价调用（market 也可 spawn，无需 DSH）：

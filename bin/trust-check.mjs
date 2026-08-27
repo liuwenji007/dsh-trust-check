@@ -11,7 +11,18 @@
  */
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { auditPlugin, collectPlugin, readInstalled, resolveProfileDir } from '../lib/index.js'
+import {
+  actionText,
+  auditPlugin,
+  collectPlugin,
+  concernText,
+  concerns,
+  countVerdicts,
+  formatInjectionDetail,
+  readInstalled,
+  resolveProfileDir,
+  verdict,
+} from '../lib/index.js'
 
 function parseArgs(argv) {
   const args = {
@@ -54,45 +65,40 @@ Options:
   return args
 }
 
-function statusLabel(report) {
-  if (report.redLines.length > 0 || report.band === 'red') return 'red line(s)'
-  if (report.capabilities.length > 0 || report.band === 'yellow') return 'review suggested'
-  return 'no red lines'
-}
-
 function printPlugin(p) {
-  console.log(`${p.name} ${p.version} — ${statusLabel(p)}`)
-  console.log(`  summary: ${p.summary}`)
-  console.log(`  sort score: ${p.score}`)
-  if (p.redLines.length > 0) {
-    console.log('  red lines:')
-    for (const line of p.redLines) console.log(`    ⚠ ${line}`)
+  const v = verdict(p)
+  console.log(`${p.name} ${p.version} — ${v}`)
+  console.log(`  ${actionText(v)}`)
+  const list = concerns(p)
+  if (list.length > 0) {
+    console.log('  why be careful:')
+    for (const item of list) console.log(`    · ${concernText(item)}`)
   }
-  console.log(`  capabilities: ${p.capabilities.length === 0 ? 'none' : p.capabilities.join(', ')}`)
+  const caps = p.capabilities.length === 0
+    ? 'none'
+    : p.capabilities.join(', ')
+  console.log(`  capabilities: ${caps}`)
   if (p.injections.length > 0) {
-    console.log(`  injections: ${p.injections.map(i => `${i.kind}: ${i.detail}`).join('; ')}`)
-  }
-  if (p.injectedTokensEstimate > 0) {
-    console.log(`  est. injected tokens (cost hint): ~${p.injectedTokensEstimate}`)
+    const tokenPart = p.injectedTokensEstimate > 0 ? ` · ~${p.injectedTokensEstimate} tokens (cost)` : ''
+    console.log(`  injections: ${p.injections.length} item(s)${tokenPart}`)
+    for (const inj of p.injections.slice(0, 5)) {
+      console.log(`    ${inj.kind}: ${formatInjectionDetail(inj.detail)}`)
+    }
+    if (p.injections.length > 5) console.log(`    … and ${p.injections.length - 5} more`)
   }
   const source = [p.pinned ? 'pinned' : 'unpinned']
   if (p.repository === undefined) source.push('no repository')
   else source.push(p.repository)
   if (p.hasBuildScript) source.push(`install scripts: ${p.buildScripts.join(', ')}`)
   console.log(`  source: ${source.join(' | ')}`)
+  if (p.evidence.length > 0) console.log(`  evidence: ${p.evidence.length} hit(s)`)
   console.log('')
 }
 
 function humanReport(contextLabel, plugins, errors) {
-  const counts = { clear: 0, review: 0, red: 0 }
-  for (const p of plugins) {
-    const label = statusLabel(p)
-    if (label === 'red line(s)') counts.red++
-    else if (label === 'review suggested') counts.review++
-    else counts.clear++
-  }
+  const counts = countVerdicts(plugins)
   console.log(contextLabel)
-  console.log(`${plugins.length} plugin(s) · ${counts.red} with red lines, ${counts.review} review, ${counts.clear} clear`)
+  console.log(`${plugins.length} plugin(s) · ${counts.red} red · ${counts.review} review · ${counts.clear} clear`)
   console.log('')
   for (const p of plugins) printPlugin(p)
   if (errors.length > 0) {

@@ -13,6 +13,18 @@ import type { AuditReport, AuditResponse } from './core/types.ts'
 
 export type { AuditReport, AuditResponse } from './core/types.ts'
 export { auditPlugin, MAX_EVIDENCE } from './core/audit.ts'
+export {
+  capabilityTier,
+  classifyRedLine,
+  concerns,
+  countVerdicts,
+  formatInjectionDetail,
+  groupEvidence,
+  groupInjections,
+  topCapabilities,
+  verdict,
+} from './core/present.ts'
+export type { Concern, ConcernCode, RedLineCode, Verdict } from './core/present.ts'
 export { collectPlugin, readInstalled, resolveProfileDir } from './fs.ts'
 
 export const name = 'dsh-trust-check'

@@ -28,18 +28,23 @@ npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 
 ## How to read the report
 
-Reports lead with **four dimensions** — do not treat the 0–100 score as the primary conclusion. Settings UI and CLI use the same order:
+The settings UI and CLI use a **decision-first** layout: verdict, then capabilities / injections / source, with evidence collapsed by default.
 
-| Dimension | What | How to read |
+| Verdict | Meaning | When |
 |---|---|---|
-| **Red lines** | install scripts, core bundle overrides, credentials + network | Shown first when present; badge: red line(s) / review suggested / no red lines |
-| **Capabilities** | shell / files / network / credentials / sub-agents / LLM / env | Chip list; proves presence only, never absence |
-| **Injections** | patch override/disable, system-prompt, skill registration | Who is changed, what is injected |
-| **Source** | pinned version, repository, install scripts | Whether pinned; `repository` is self-declared |
+| **Red line(s)** | Hard red line hit; stop by default | Only when `redLines.length > 0` |
+| **Review** | No hard red lines, but privileged capabilities or patch changes | Has capabilities or override/disable, no red lines |
+| **Clear** | No red lines or privileged capabilities | Everything else |
 
-**Sort score** (`score` field) stays in JSON and card meta for list ordering only (red lines first). `summary` no longer starts with `green · 83`; e.g. `2 red line(s) · shell+network · unpinned` or `review suggested · file reads+network · pinned`.
+**Important: "red line(s)" follows `redLines`, not a low score.** A low score (e.g. 9) can come from shell + network + unpinned spec stacking — the UI shows **review**, not red line(s). JSON `band` may still be `red` (score &lt; 50), but UI/CLI use `verdict()` — do not mix them.
 
-Injected token estimates stay in the injection block as a **cost hint only**, not a trust signal.
+Reading order:
+
+1. **Decision**: badge + action line + "why be careful" (up to 3 bullets)
+2. **Scan**: capability chips → injection summary (collapsed) → source
+3. **Evidence**: grouped by capability, collapsed by default
+
+`score` / `summary` stay in JSON for sorting and integrators; **the settings UI no longer shows them**. Injected token estimates are labeled as **cost hints** only.
 
 ### Red lines (default block)
 
@@ -47,7 +52,7 @@ Injected token estimates stay in the injection block as a **cost hint only**, no
 2. `cordis.patch.yml` overrides/disables an `@deepseek-ai/*` core bundle (matched by `id` **or** `name`);
 3. reads credential/secret material (keychain / keytar / dotenv / `~/.ssh` / `.aws/credentials` …) **and** has network access.
 
-Red lines cap the numeric score at 49 (avoid "100 + high risk"), but UI/CLI rely on the red-line badge, not the score, for judgement.
+Red lines cap the numeric score at 49 (avoid "100 + high risk"), but UI/CLI verdicts follow `redLines`, not score or `band`.
 
 ## What it audits
 
@@ -64,15 +69,14 @@ Red lines cap the numeric score at 49 (avoid "100 + high risk"), but UI/CLI rely
 Stable exports for pre-install confirmation or CI gates:
 
 ```ts
-import { auditPlugin, collectPlugin } from 'dsh-trust-check'
+import { auditPlugin, collectPlugin, verdict } from 'dsh-trust-check'
 
-// extractedDir: unpacked package tree; spec: install spec label (e.g. npm:foo@1.0.0)
 const report = auditPlugin(collectPlugin(extractedDir, spec))
 
 // Gate semantics (fixed — copy into market confirm dialog):
-// report.redLines.length > 0  → block by default; user may confirm to continue
-// capabilities, no red lines (band yellow) → show capability list; suggest confirm
-// no red lines, no privileged caps (band green) → may pass silently
+// verdict(report) === 'red'    → block by default; user may confirm to continue
+// verdict(report) === 'review' → show capability list; suggest confirm
+// verdict(report) === 'clear'  → may pass silently
 ```
 
 CLI equivalent (market can spawn without DSH):
