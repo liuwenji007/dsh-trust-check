@@ -18,7 +18,7 @@ export type RedLineCode =
   | 'literal-ip'
   | 'raw'
 
-export type ConcernCode = RedLineCode | Capability | 'external-dest' | 'secret-touch'
+export type ConcernCode = RedLineCode | Capability | 'external-dest' | 'secret-touch' | 'path-escape'
 
 export interface Concern {
   code: ConcernCode
@@ -65,6 +65,7 @@ const CONCERN_EN: Partial<Record<ConcernCode, string>> = {
   'literal-ip': 'Uses literal IP outbound',
   'external-dest': 'External destination literals in source',
   'secret-touch': 'May touch secrets or sensitive env vars',
+  'path-escape': 'May touch paths outside the workspace',
   shell: 'Execute system commands',
   'fs-write': 'Write local files',
   'fs-read': 'Read local files',
@@ -99,6 +100,11 @@ export function concerns(report: AuditReport, max = 3): Concern[] {
 
   if ((report.secretTouches ?? []).length > 0 && !result.some(c => c.code === 'secret-touch')) {
     result.push({ code: 'secret-touch' })
+  }
+  if (result.length >= max) return result
+
+  if ((report.pathEscapes ?? []).length > 0 && !result.some(c => c.code === 'path-escape')) {
+    result.push({ code: 'path-escape' })
   }
   if (result.length >= max) return result
 

@@ -112,7 +112,10 @@ function CapabilityChips({
 }
 
 function DestinationsPanel({ report, t }: { report: AuditReport; t: T }) {
-  const destinations = report.destinations ?? []
+  const destinations = useMemo(
+    () => (report.destinations ?? []).filter(d => d.kind !== 'relative'),
+    [report.destinations],
+  )
   const { priority, safe } = useMemo(
     () => partitionDestinations(destinations),
     [destinations],
@@ -175,6 +178,27 @@ function DestinationsPanel({ report, t }: { report: AuditReport; t: T }) {
           </ul>
         </details>
       )}
+    </div>
+  )
+}
+
+function PathEscapesPanel({ report, t }: { report: AuditReport; t: T }) {
+  const pathEscapes = report.pathEscapes ?? []
+  if (pathEscapes.length === 0) return null
+  return (
+    <div className={css.scanRow}>
+      <div className={css.subTitle}>{t('pathEscapes')}</div>
+      <div className={css.muted}>{t('pathEscapes.hint')}</div>
+      <ul className={css.shapeList}>
+        {pathEscapes.map((p, i) => (
+          <li key={i} className={css.destRowHigh}>
+            <span className={`${css.destBadge} ${css.destBadgePrivate}`}>
+              {t(`pathEscape.${p.kind}` as TrustKey)}
+            </span>
+            <code>{p.value}</code>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }
@@ -413,6 +437,7 @@ function PluginCardBody({
       </div>
 
       <DestinationsPanel report={report} t={t} />
+      <PathEscapesPanel report={report} t={t} />
       <SecretTouchesPanel report={report} t={t} />
       <InjectionPanel report={report} t={t} />
 

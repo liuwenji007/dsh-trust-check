@@ -1,19 +1,30 @@
 /**
- * Shape scanner: literal destinations and secret-touch patterns in source.
+ * Shape scanner: literal destinations, workspace path escapes, and secret touches.
  * Proves presence only; runtime-constructed URLs are invisible.
  */
 
-import type { DestinationFinding, PluginInput, SecretTouchFinding } from './types.ts'
+import type {
+  DestinationFinding,
+  PathEscapeFinding,
+  PluginInput,
+  SecretTouchFinding,
+} from './types.ts'
 
 export const MAX_DESTINATIONS = 20
 export const MAX_SECRET_TOUCHES = 20
+export const MAX_PATH_ESCAPES = 20
 
 const URL_LITERAL = /['"`](https?:\/\/[^'"`\s]+)['"`]/g
-const RELATIVE_PATH = /['"`](\/[^'"`\s]+)['"`]/g
+/** Slash-leading string literals: may be HTTP routes or absolute FS paths. */
+const SLASH_PATH = /['"`](\/[^'"`\s]+)['"`]/g
 const IPV4_LITERAL = /['"`]((\d{1,3}\.){3}\d{1,3})(?:\/[^'"`]*)?['"`]/g
 const ENV_SENSITIVE = /process\.env\.([A-Z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|PRIVATE_KEY)[A-Z0-9_]*)/g
 const SECRET_PATH = /~\/\.ssh|\.aws\/credentials|\.netrc|\bid_rsa\b|\bid_ed25519\b/g
 const CREDENTIALS_IMPORT = /(?:require\(|from\s+|import\s*\(\s*)['"](?:keychain|keytar|dotenv)['"]|\bkeychain\.\w+|\bkeytar\.\w+|\bdotenv\.config\b|\bctx\.credentials\b/g
+const HOME_ESCAPE = /['"`](~\/[^'"`]+|\$\{?HOME\}?\/[^'"`]+)['"`]/g
+const WIN_ABS = /['"`]([A-Za-z]:\\[^'"`]+)['"`]/g
+/** Two or more `../` segments — likely leaving a package/workspace tree. */
+const TRAVERSAL = /['"`]((?:\.\.\/|\.\.\\){2,}[^'"`]*)['"`]/g
 
 /** Windows / cmd.exe style switches often mistaken for HTTP paths. */
 const SHELL_SWITCH_PATHS = new Set([
@@ -21,8 +32,8 @@ const SHELL_SWITCH_PATHS = new Set([
   '/pid', '/im', '/fi',
 ])
 
-/** Absolute filesystem roots — not HTTP routes. */
-const FS_ROOT_PREFIX = /^\/(?:usr|opt|home|Users|tmp|var|etc|bin|sbin|lib|lib64|apex|System|Windows|Program Files|Applications)\b/
+/** Absolute filesystem roots that leave a typical project workspace. */
+const FS_ROOT_PREFIX = /^\/(?:etc|usr|opt|home|Users|var|tmp|private|root|System|Library|Windows|Program Files|Applications)\b/
 
 /** RFC 2606 / 6761 reserved documentation hosts — not real outbound targets. */
 const PLACEHOLDER_HOST_EXACT = new Set([
@@ -32,6 +43,12 @@ const PLACEHOLDER_HOST_EXACT = new Set([
   'example.com',
   'example.org',
   'example.net',
+  // Common doc / comment placeholders (not real outbound hosts).
+  'host',
+  'hostname',
+  'proxy',
+  'server',
+  'domain',
 ])
 
 /** Documentation TLD only (`.test` / `.invalid` still count as outbound literals). */
@@ -61,28 +78,15 @@ function destinationKey(kind: DestinationFinding['kind'], value: string): string
   return `${kind}:${value}`
 }
 
-function dedupeDestinations(rows: DestinationFinding[]): DestinationFinding[] {
+function dedupeByKey<T>(rows: T[], keyOf: (row: T) => string, max: number): T[] {
   const seen = new Set<string>()
-  const out: DestinationFinding[] = []
+  const out: T[] = []
   for (const row of rows) {
-    const key = destinationKey(row.kind, row.value)
+    const key = keyOf(row)
     if (seen.has(key)) continue
     seen.add(key)
     out.push(row)
-    if (out.length >= MAX_DESTINATIONS) break
-  }
-  return out
-}
-
-function dedupeSecretTouches(rows: SecretTouchFinding[]): SecretTouchFinding[] {
-  const seen = new Set<string>()
-  const out: SecretTouchFinding[] = []
-  for (const row of rows) {
-    const key = `${row.kind}:${row.value}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    out.push(row)
-    if (out.length >= MAX_SECRET_TOUCHES) break
+    if (out.length >= max) break
   }
   return out
 }
@@ -98,6 +102,8 @@ export function isIpRangeTableLine(line: string): boolean {
 export function isPlaceholderHost(host: string): boolean {
   const h = host.trim().toLowerCase().replace(/:\d+$/, '')
   if (h === '') return true
+  // Schema ellipsis: "https://..." in LLM prompt / docs examples.
+  if (/^\.+$/.test(h)) return true
   if (PLACEHOLDER_HOST_EXACT.has(h)) return true
   if (PLACEHOLDER_TLD.test(h)) return true
   return false
@@ -111,26 +117,51 @@ export function isPlaceholderUrl(url: string): boolean {
   }
 }
 
+export function isShellSwitchPath(path: string): boolean {
+  return SHELL_SWITCH_PATHS.has(path.toLowerCase())
+}
+
+export function isFsAbsolutePath(path: string): boolean {
+  return FS_ROOT_PREFIX.test(path)
+}
+
 /**
- * Relative strings that are shell switches, filesystem paths, or empty
- * protocol-relative junk — not HTTP API routes.
+ * Same-origin HTTP API routes (`/dsh-market/check`) are not network destinations
+ * and are not workspace escapes — omit them from the report.
  */
+export function isHttpRoutePath(path: string): boolean {
+  if (path === '/' || path === '//' || path.startsWith('//')) return false
+  if (isShellSwitchPath(path)) return false
+  if (isFsAbsolutePath(path)) return false
+  if (/^\/\$\{/.test(path)) return false
+  return path.startsWith('/')
+}
+
+/** @deprecated Use isHttpRoutePath / isFsAbsolutePath. Kept for older imports. */
 export function isNonHttpRelativePath(path: string): boolean {
   if (path === '/' || path === '//' || path.startsWith('//')) return true
-  if (SHELL_SWITCH_PATHS.has(path.toLowerCase())) return true
-  if (FS_ROOT_PREFIX.test(path)) return true
-  // Template-only fragments like `/${part}` with no fixed route prefix.
+  if (isShellSwitchPath(path)) return true
+  if (isFsAbsolutePath(path)) return true
   if (/^\/\$\{/.test(path)) return true
   return false
 }
 
+function isModulePathLine(line: string): boolean {
+  const trimmed = line.trim()
+  return /^(?:import|export)\b/.test(trimmed)
+    || /\b(?:require|import)\s*\(/.test(trimmed)
+    || /\bfrom\s+['"]/.test(trimmed)
+}
+
 export interface ShapeScan {
   destinations: DestinationFinding[]
+  pathEscapes: PathEscapeFinding[]
   secretTouches: SecretTouchFinding[]
 }
 
 export function scanShape(input: PluginInput): ShapeScan {
   const destinations: DestinationFinding[] = []
+  const pathEscapes: PathEscapeFinding[] = []
   const secretTouches: SecretTouchFinding[] = []
 
   for (const [file, content] of Object.entries(input.sources)) {
@@ -143,7 +174,6 @@ export function scanShape(input: PluginInput): ShapeScan {
       for (const match of line.matchAll(URL_LITERAL)) {
         const url = match[1]
         if (url === undefined) continue
-        // Runtime-built hosts (`http://${host}`) are not literal destinations.
         if (url.includes('${')) continue
         if (isPlaceholderUrl(url)) continue
         const kind = classifyUrl(url)
@@ -159,11 +189,37 @@ export function scanShape(input: PluginInput): ShapeScan {
         destinations.push({ kind, value, file, line: lineNo })
       }
 
-      for (const match of line.matchAll(RELATIVE_PATH)) {
+      for (const match of line.matchAll(SLASH_PATH)) {
         const path = match[1]
         if (path === undefined) continue
-        if (isNonHttpRelativePath(path)) continue
-        destinations.push({ kind: 'relative', value: path, file, line: lineNo })
+        if (isShellSwitchPath(path) || path === '/' || path.startsWith('//') || /^\/\$\{/.test(path)) {
+          continue
+        }
+        if (isFsAbsolutePath(path)) {
+          pathEscapes.push({ kind: 'absolute', value: path, file, line: lineNo })
+          continue
+        }
+        // Same-origin HTTP routes — not shown as destinations.
+      }
+
+      for (const match of line.matchAll(HOME_ESCAPE)) {
+        const value = match[1]
+        if (value === undefined) continue
+        pathEscapes.push({ kind: 'home', value, file, line: lineNo })
+      }
+
+      for (const match of line.matchAll(WIN_ABS)) {
+        const value = match[1]
+        if (value === undefined) continue
+        pathEscapes.push({ kind: 'windows-abs', value, file, line: lineNo })
+      }
+
+      if (!isModulePathLine(line)) {
+        for (const match of line.matchAll(TRAVERSAL)) {
+          const value = match[1]
+          if (value === undefined) continue
+          pathEscapes.push({ kind: 'traversal', value, file, line: lineNo })
+        }
       }
 
       if (!rangeTable) {
@@ -201,18 +257,27 @@ export function scanShape(input: PluginInput): ShapeScan {
   }
 
   return {
-    destinations: dedupeDestinations(destinations),
-    secretTouches: dedupeSecretTouches(secretTouches),
+    destinations: dedupeByKey(destinations, d => destinationKey(d.kind, d.value), MAX_DESTINATIONS),
+    pathEscapes: dedupeByKey(pathEscapes, p => `${p.kind}:${p.value}`, MAX_PATH_ESCAPES),
+    secretTouches: dedupeByKey(secretTouches, s => `${s.kind}:${s.value}`, MAX_SECRET_TOUCHES),
   }
 }
 
 /** Fingerprint tokens for ack comparison. */
 export function destinationFingerprint(destinations: DestinationFinding[]): string[] {
-  return destinations.map(d => destinationKey(d.kind, d.value)).sort()
+  // Ignore legacy same-origin HTTP routes still present in older cached reports.
+  return destinations
+    .filter(d => d.kind !== 'relative')
+    .map(d => destinationKey(d.kind, d.value))
+    .sort()
 }
 
 export function secretTouchFingerprint(secretTouches: SecretTouchFinding[]): string[] {
   return secretTouches.map(s => `${s.kind}:${s.value}`).sort()
+}
+
+export function pathEscapeFingerprint(pathEscapes: PathEscapeFinding[]): string[] {
+  return pathEscapes.map(p => `${p.kind}:${p.value}`).sort()
 }
 
 /** Whether shape findings should contribute shape-based red lines. */

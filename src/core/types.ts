@@ -31,7 +31,20 @@ export type DestinationKind = 'relative' | 'loopback' | 'https-host' | 'http-hos
 
 export interface DestinationFinding {
   kind: DestinationKind
-  /** Host, IP, or relative path string. */
+  /** Host, IP, or (legacy) relative path string. */
+  value: string
+  file: string
+  line: number
+}
+
+/**
+ * Filesystem path literals that may leave the workspace.
+ * Same-origin HTTP routes like `/dsh-market/check` are not included.
+ */
+export type PathEscapeKind = 'absolute' | 'home' | 'traversal' | 'windows-abs'
+
+export interface PathEscapeFinding {
+  kind: PathEscapeKind
   value: string
   file: string
   line: number
@@ -77,8 +90,10 @@ export interface AuditReport {
   spec: string
   capabilities: Capability[]
   evidence: Evidence[]
-  /** Literal destinations in source (URLs, IPs, relative paths). */
+  /** Literal destinations in source (URLs, IPs). Same-origin HTTP routes are omitted. */
   destinations: DestinationFinding[]
+  /** Filesystem path literals that may leave the workspace. */
+  pathEscapes: PathEscapeFinding[]
   /** Literal secret/credential touch patterns. */
   secretTouches: SecretTouchFinding[]
   injections: InjectionFinding[]
@@ -125,6 +140,8 @@ export interface TrustAckEntry {
   capabilities: Capability[]
   destinations: string[]
   secretTouches: string[]
+  /** Optional for older ack files written before path-escape scanning. */
+  pathEscapes?: string[]
   at: string
 }
 

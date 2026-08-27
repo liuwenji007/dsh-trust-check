@@ -53,7 +53,7 @@ function capEvidence(evidence: Evidence[]): Evidence[] {
 export function auditPlugin(input: PluginInput): AuditReport {
   const { capabilities, evidence } = scanCapabilities(input)
   const { injections, skillBytes } = scanInjections(input)
-  const { destinations, secretTouches } = scanShape(input)
+  const { destinations, pathEscapes, secretTouches } = scanShape(input)
   const provenance = readProvenance(input)
 
   const promptBytes = injections
@@ -81,6 +81,7 @@ export function auditPlugin(input: PluginInput): AuditReport {
     capabilities,
     evidence: capEvidence(evidence),
     destinations,
+    pathEscapes,
     secretTouches,
     injections,
     injectedTokensEstimate,

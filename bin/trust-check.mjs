@@ -91,8 +91,12 @@ function printPlugin(p, ack) {
     console.log('  destinations (literal):')
     for (const d of priority.slice(0, 8)) console.log(`    ${d.kind}: ${d.value}`)
     if (safe.length > 0) {
-      console.log(`    … + ${safe.length} allowlisted/relative/loopback destination(s)`)
+      console.log(`    … + ${safe.length} allowlisted/loopback destination(s)`)
     }
+  }
+  if (p.pathEscapes?.length > 0) {
+    console.log('  workspace path escapes:')
+    for (const pe of p.pathEscapes.slice(0, 8)) console.log(`    ${pe.kind}: ${pe.value}`)
   }
   if (p.secretTouches?.length > 0) {
     console.log('  secret touches:')

@@ -137,6 +137,8 @@ export function partitionDestinations(destinations: readonly DestinationFinding[
   const priority: DestinationFinding[] = []
   const safe: DestinationFinding[] = []
   for (const d of destinations) {
+    // Legacy same-origin HTTP routes are not shown.
+    if (d.kind === 'relative') continue
     if (destinationTier(d) === 'safe') safe.push(d)
     else priority.push(d)
   }

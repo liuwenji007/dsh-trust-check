@@ -16,11 +16,12 @@ function input(sources: Record<string, string>): PluginInput {
 }
 
 describe('scanShape', () => {
-  it('finds relative paths without red lines', () => {
-    const { destinations } = scanShape(input({
+  it('ignores same-origin HTTP relative routes as destinations', () => {
+    const { destinations, pathEscapes } = scanShape(input({
       'client.js': 'await fetch("/dsh-trust-check/audit")',
     }))
-    expect(destinations.some(d => d.kind === 'relative' && d.value === '/dsh-trust-check/audit')).toBe(true)
+    expect(destinations.some(d => d.value === '/dsh-trust-check/audit')).toBe(false)
+    expect(pathEscapes).toEqual([])
     expect(shapeRedLines(['network'], destinations)).toEqual([])
   })
 
@@ -71,21 +72,33 @@ describe('scanShape', () => {
       'a.js': [
         'new URL(request.url ?? "", "http://local")',
         'fetch("https://dav.example/x")',
+        'citations:["https://..."]',
+        '/* https://host/app/ and https://proxy/https://github.com/o/r.git */',
       ].join('\n'),
     }))
     expect(destinations.some(d => d.value === 'local' || d.value.includes('example'))).toBe(false)
+    expect(destinations.some(d => d.value === '...' || /^\.+$/.test(d.value))).toBe(false)
+    expect(destinations.some(d => d.value === 'host' || d.value === 'proxy')).toBe(false)
   })
 
-  it('skips shell switches and filesystem absolute paths', () => {
-    const { destinations } = scanShape(input({
+  it('records filesystem absolute paths as path escapes, not destinations', () => {
+    const { destinations, pathEscapes } = scanShape(input({
       'a.js': [
         "spawn(COMSPEC, ['/d', '/s', '/c', cmd])",
         "dirs.push('/opt/homebrew/bin', '/usr/local/bin')",
         'await fetch("/dsh-market/check")',
+        'readFileSync("/Users/alice/.config/secret")',
+        'open("~/Documents/x")',
+        'join("../../../etc/passwd")',
       ].join('\n'),
     }))
     expect(destinations.some(d => d.value === '/c' || d.value.startsWith('/opt/') || d.value.startsWith('/usr/'))).toBe(false)
-    expect(destinations.some(d => d.kind === 'relative' && d.value === '/dsh-market/check')).toBe(true)
+    expect(destinations.some(d => d.value === '/dsh-market/check')).toBe(false)
+    expect(pathEscapes.some(p => p.kind === 'absolute' && p.value === '/opt/homebrew/bin')).toBe(true)
+    expect(pathEscapes.some(p => p.kind === 'absolute' && p.value === '/usr/local/bin')).toBe(true)
+    expect(pathEscapes.some(p => p.kind === 'absolute' && p.value.startsWith('/Users/'))).toBe(true)
+    expect(pathEscapes.some(p => p.kind === 'home' && p.value.startsWith('~/'))).toBe(true)
+    expect(pathEscapes.some(p => p.kind === 'traversal')).toBe(true)
   })
 
   it('skips template http hosts that are not literals', () => {
@@ -105,7 +118,7 @@ describe('scanShape', () => {
 })
 
 describe('auditPlugin shape integration', () => {
-  it('does not red-line relative audit fetch', () => {
+  it('does not list relative audit fetch as destination or path escape', () => {
     const report = auditPlugin(input({
       'client.js': [
         'import { readFileSync } from "fs"',
@@ -113,8 +126,16 @@ describe('auditPlugin shape integration', () => {
       ].join('\n'),
     }))
     expect(report.capabilities).toContain('network')
-    expect(report.destinations.some(d => d.value === '/dsh-trust-check/audit')).toBe(true)
+    expect(report.destinations.some(d => d.value === '/dsh-trust-check/audit')).toBe(false)
+    expect(report.pathEscapes.some(p => p.value === '/dsh-trust-check/audit')).toBe(false)
     expect(report.redLines).toEqual([])
+  })
+
+  it('surfaces path escapes in the report', () => {
+    const report = auditPlugin(input({
+      'a.js': 'readFileSync("/etc/passwd")',
+    }))
+    expect(report.pathEscapes.some(p => p.kind === 'absolute' && p.value === '/etc/passwd')).toBe(true)
   })
 
   it('red-lines http evil host with network', () => {

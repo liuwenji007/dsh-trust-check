@@ -17,6 +17,7 @@ const baseReport = (): AuditReport => ({
   capabilities: [],
   evidence: [],
   destinations: [],
+  pathEscapes: [],
   secretTouches: [],
   injections: [],
   injectedTokensEstimate: 0,
@@ -120,6 +121,14 @@ describe('concerns', () => {
     }
     expect(concerns(report)[0]).toEqual({ code: 'raw', detail: 'custom red line message' })
   })
+
+  it('surfaces path-escape when workspace paths are present', () => {
+    const report: AuditReport = {
+      ...baseReport(),
+      pathEscapes: [{ kind: 'absolute', value: '/etc/passwd', file: 'a.js', line: 1 }],
+    }
+    expect(concerns(report).some(c => c.code === 'path-escape')).toBe(true)
+  })
 })
 
 describe('groupEvidence', () => {
@@ -166,13 +175,15 @@ describe('countVerdicts', () => {
     const report = {
       ...baseReport(),
       capabilities: ['network', 'fs-read'] as Capability[],
-      destinations: [{ kind: 'relative' as const, value: '/api', file: 'a.js', line: 1 }],
+      destinations: [{ kind: 'https-host' as const, value: 'api.example.com', file: 'a.js', line: 1 }],
+      pathEscapes: [],
       secretTouches: [],
     }
     const ack = {
       capabilities: ['fs-read', 'network'] as Capability[],
-      destinations: ['relative:/api'],
+      destinations: ['https-host:api.example.com'],
       secretTouches: [],
+      pathEscapes: [],
       at: '2026-01-01T00:00:00.000Z',
     }
     expect(verdict(report, ack)).toBe('expected')

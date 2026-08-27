@@ -10,7 +10,7 @@ Rules:
 - This is reading assistance only, NOT a security verdict.
 - Never say the plugin is safe, trusted, or harmless.
 - Never tell the user to ignore red lines or capabilities.
-- Explain what the listed capabilities, destinations, and evidence snippets likely mean.
+- Explain what the listed capabilities, destinations, workspace path escapes, and evidence snippets likely mean.
 - Acknowledge static analysis limits: runtime-built URLs and hidden behavior are invisible.
 - Be concise (under 300 words). Use the user's language if indicated in the user message.`
 
@@ -27,13 +27,21 @@ export function buildExplainPrompt(report: AuditReport, locale?: string): string
     lines.push('Red lines:')
     for (const line of report.redLines) lines.push(`- ${line}`)
   }
-  if (report.destinations.length > 0) {
+  const destinations = (report.destinations ?? []).filter(d => d.kind !== 'relative')
+  if (destinations.length > 0) {
     lines.push('Literal destinations (source only):')
-    for (const d of report.destinations.slice(0, 15)) {
+    for (const d of destinations.slice(0, 15)) {
       lines.push(`- ${d.kind}: ${d.value} (${d.file}:${d.line})`)
     }
   }
-  if (report.secretTouches.length > 0) {
+  const pathEscapes = report.pathEscapes ?? []
+  if (pathEscapes.length > 0) {
+    lines.push('Workspace path escapes (source only):')
+    for (const p of pathEscapes.slice(0, 10)) {
+      lines.push(`- ${p.kind}: ${p.value} (${p.file}:${p.line})`)
+    }
+  }
+  if ((report.secretTouches ?? []).length > 0) {
     lines.push('Secret touches:')
     for (const s of report.secretTouches.slice(0, 10)) {
       lines.push(`- ${s.kind}: ${s.value} (${s.file}:${s.line})`)

@@ -69,7 +69,7 @@ describe('destination priority', () => {
     expect(destinationHighlight(d('ip', '203.0.113.1'))).toBe('public-ip')
   })
 
-  it('partitions whitelist + relative into safe; keeps unknown https in priority', () => {
+  it('partitions whitelist into safe and drops relative HTTP routes; keeps unknown https in priority', () => {
     const rows = [
       d('relative', '/releases'),
       d('https-host', 'github.com'),
@@ -83,8 +83,6 @@ describe('destination priority', () => {
     expect(safe.map(x => x.value)).toEqual([
       'github.com',
       'registry.npmjs.org',
-      '/context',
-      '/releases',
     ])
     expect(priority.map(x => x.value)).toEqual([
       'insecure.test',

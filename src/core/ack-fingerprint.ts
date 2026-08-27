@@ -4,6 +4,7 @@
 
 import {
   destinationFingerprint,
+  pathEscapeFingerprint,
   secretTouchFingerprint,
 } from './shape.ts'
 import type { AuditReport, AuditResponse, Capability, TrustAckEntry } from './types.ts'
@@ -12,7 +13,8 @@ import type { AuditReport, AuditResponse, Capability, TrustAckEntry } from './ty
 export function normalizeAuditReport(report: AuditReport): AuditReport {
   return {
     ...report,
-    destinations: report.destinations ?? [],
+    destinations: (report.destinations ?? []).filter(d => d.kind !== 'relative'),
+    pathEscapes: report.pathEscapes ?? [],
     secretTouches: report.secretTouches ?? [],
     capabilities: report.capabilities ?? [],
     evidence: report.evidence ?? [],
@@ -38,6 +40,7 @@ export function fingerprintFromReport(report: AuditReport): TrustAckEntry {
     capabilities: [...normalized.capabilities].sort() as Capability[],
     destinations: destinationFingerprint(normalized.destinations),
     secretTouches: secretTouchFingerprint(normalized.secretTouches),
+    pathEscapes: pathEscapeFingerprint(normalized.pathEscapes),
     at: new Date().toISOString(),
   }
 }
@@ -55,4 +58,5 @@ export function ackMatchesReport(report: AuditReport, ack: TrustAckEntry): boole
   return sortedEqual(current.capabilities, ack.capabilities ?? [])
     && sortedEqual(current.destinations, ack.destinations ?? [])
     && sortedEqual(current.secretTouches, ack.secretTouches ?? [])
+    && sortedEqual(current.pathEscapes ?? [], ack.pathEscapes ?? [])
 }
