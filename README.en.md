@@ -24,35 +24,50 @@ npx dsh-trust-check --dir ./path/to/plugin
 npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 ```
 
-`--dir` and `--profile` are mutually exclusive. Single-directory `--json` uses the same `AuditResponse` shape as profile mode: `{ profile, dir?, generatedAt, plugins, errors }` (`profile` is empty, `dir` is the absolute path).
+`--dir` and `--profile` are mutually exclusive. Both modes emit the same `AuditResponse` shape for `--json`: `{ profile, dir?, generatedAt, plugins, errors }`; in single-directory mode `profile` is an empty string and `dir` is the absolute path.
 
 ## How to read the report
 
-The settings UI and CLI use a **decision-first** layout: verdict, then capabilities / injections / source, with evidence collapsed by default.
-
-| Verdict | Meaning | When |
-|---|---|---|
-| **Red line(s)** | Hard red line hit; stop by default — or confirm risk to keep using | Only when `redLines.length > 0` and the current fingerprint is not acknowledged |
-| **Risk accepted** | You confirmed the current red-line risk | Has red lines, and local `trust-ack.json` matches this scan |
-| **Review** | No hard red lines, but privileged capabilities or patch changes | Has capabilities or override/disable, no red lines |
-| **As expected** | You acknowledged the current capability/shape fingerprint | Local `trust-ack.json` matches this scan (no red lines) |
-| **Nothing detected** | Static scan found no red lines or privileged capabilities — not a safety guarantee | Everything else |
-
-**Shape layer (code-judged)**: besides capability chips, the report lists **literal destinations** (URL/host/IP), **workspace path escapes** (absolute paths, home directory, traversal, …), and **secret touches** (paths, sensitive env names) found in source. Same-origin HTTP routes (e.g. `/dsh-market/check`) are no longer shown as destinations. This is not “address/path safety” — only “we saw this string in source”; runtime-built URLs are invisible. Common host / registry domains (GitHub, npm, npmmirror, Tencent Cloud mirrors, …), the curated DSH catalog and GitHub proxies, and common model-vendor APIs (DeepSeek, OpenAI, Anthropic, Google Gemini) have a built-in allowlist: collapsed by default with a short note; plaintext HTTP is never downgraded by the allowlist. The scanner also skips IP range tables (e.g. SSRF private-IP checks), placeholder bases like `http://local`, and shell switches (`/c`) to reduce noise. Comments are blanked before the scan, so an example URL in a JSDoc block is not a destination (bundlers usually keep those comments), and namespace identifiers such as `xmlns="http://www.w3.org/2000/svg"` are excluded by exact host — an attacker cannot register those domains, so the exemption cannot be borrowed. When findings exceed the cap, the riskiest are kept: plaintext HTTP and literal IPs cannot be crowded out by harmless addresses.
-
-**Mark as expected**: after you confirm capabilities match why you installed the plugin, the fingerprint is stored in `~/.dsh/profiles/<profile>/trust-ack.json`. Upgrades that change capabilities/destinations/path escapes/secrets/injections (including skill text size) return to **review**. Accepting a red line goes through its own "confirm risk" action, which a plain mark-as-expected request cannot stand in for.
-
-**AI explain**: optional button; uses your DSH-configured model to explain the report summary only, **does not change the verdict**; unavailable when no model is configured.
-
-**Important: "red line(s)" follows `redLines`, not a low score.** A low score (e.g. 9) can come from shell + network + unpinned spec stacking — the UI shows **review**, not red line(s). JSON `band` may still be `red` (score &lt; 50), but UI/CLI use `verdict()` — do not mix them.
-
-Reading order:
+The settings UI and CLI use a **decision-first** layout. Reading order:
 
 1. **Decision**: badge + action line + "why be careful" (up to 3 bullets)
 2. **Scan**: capability chips → injection summary (collapsed) → source
 3. **Evidence**: grouped by capability, collapsed by default
 
-`score` / `summary` stay in JSON for sorting and integrators; **the settings UI no longer shows them**. Injected token estimates are labeled as **cost hints** only.
+| Verdict | Meaning | When |
+|---|---|---|
+| **Red line(s)** | Hard red line hit; stop by default — or confirm risk to keep using | `redLines` non-empty, current fingerprint not acknowledged |
+| **Risk accepted** | You confirmed the current red-line risk | Has red lines, `trust-ack.json` matches this scan |
+| **Review** | No hard red lines, but privileged capabilities or patch changes | Has capabilities or override/disable, no red lines |
+| **As expected** | You acknowledged the current capability/shape fingerprint | `trust-ack.json` matches this scan (no red lines) |
+| **Nothing detected** | No red lines or privileged capabilities — not a safety guarantee | Everything else |
+
+`score` / `summary` stay in JSON for sorting and integrators; the settings UI does not show them. Injected token estimates are labeled as **cost hints** only.
+
+### Shape layer (code-judged)
+
+Besides capability chips, the report extracts three kinds of literal facts from source:
+
+- **Literal destinations**: URL / host / IP. Same-origin HTTP routes (e.g. `/dsh-market/check`) do not count as destinations.
+- **Workspace path escapes**: absolute paths, home directory, traversal, …
+- **Secret touches**: paths, sensitive env names.
+
+These mean "we saw this string in source", not "this address/path is safe"; runtime-built URLs are invisible.
+
+**Allowlist**: common host / registry domains (GitHub, npm, npmmirror, Tencent Cloud mirrors, …), the curated DSH catalog and GitHub proxies, and common model-vendor APIs (DeepSeek, OpenAI, Anthropic, Google Gemini). Allowlisted entries are collapsed by default with a short note; plaintext HTTP is never downgraded by the allowlist.
+
+**Noise reduction and truncation**:
+
+- Skips IP range tables (e.g. SSRF private-IP checks), placeholder bases like `http://local`, and shell switches (`/c`).
+- Comments are blanked before the scan, so an example URL in a JSDoc block is not a destination (bundlers usually keep those comments).
+- Namespace identifiers such as `xmlns="http://www.w3.org/2000/svg"` are excluded by exact host — an attacker cannot register those domains, so the exemption cannot be borrowed.
+- When findings exceed the cap, the riskiest are kept: plaintext HTTP and literal IPs cannot be crowded out by harmless addresses.
+
+### Mark as expected
+
+After you confirm capabilities match why you installed the plugin, the fingerprint is stored in `~/.dsh/profiles/<profile>/trust-ack.json`. An upgrade that changes capabilities / destinations / path escapes / secrets / injections (including skill text size) returns to **review**. Accepting a red line goes through its own "confirm risk" action, which a plain mark-as-expected request cannot stand in for.
+
+**AI explain**: optional button; uses your DSH-configured model to explain the report summary only, **does not change the verdict**; unavailable when no model is configured.
 
 ### Red lines (default block)
 
@@ -62,7 +77,7 @@ Reading order:
 4. plaintext `http://` to non-localhost (literal) **and** has network;
 5. non-loopback literal IP outbound **and** has network.
 
-Red lines cap the numeric score at 49 (avoid "100 + high risk"), but UI/CLI verdicts follow `redLines`, not score or `band`.
+Red lines cap the numeric score at 49 (avoiding "100 + high risk"). **The verdict follows `redLines`, not the score**: a low score (e.g. 9) can come from shell + network + unpinned spec stacking and should show **review**, not red line(s). JSON `band` may still be `red` (score below 50), but UI/CLI use `verdict()` — do not mix them.
 
 ## What it audits
 
