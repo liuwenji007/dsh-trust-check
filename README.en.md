@@ -8,11 +8,24 @@ Static trust audit for DeepSeek Harness plugins: **capability disclosure** for p
 
 ## Install
 
+**The settings UI needs dsh ≥ 0.1.0-rc.8 (recommend 0.1.1-rc.2).** The Web UI depends on `@deepseek-ai/dsh-client-store` in the host module table. The market will not block a mismatched install; on an older host the settings page fails to load (`dsh-client-store` missed the module table).
+
+**The CLI does not need a DSH host** — `npx dsh-trust-check` still works on older dsh.
+
+Check the host first (settings UI only):
+
+```sh
+dsh --version
+# if too old: npm i -g @deepseek-ai/dsh@latest
+```
+
 ```sh
 dsh plugin --profile web add dsh-trust-check
 ```
 
-Restart `dsh web`, then open **Settings → Plugin Trust**. A standalone CLI is also provided, independent of the DSH host:
+Restart `dsh web`, then open **Settings → Plugin Trust**. Already installed: update from Plugin Market, or `dsh plugin --profile web add dsh-trust-check@latest`, then restart.
+
+A standalone CLI is also provided, independent of the DSH host:
 
 ```sh
 npx dsh-trust-check                 # audit the default profile `web`
@@ -29,6 +42,13 @@ npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 | Settings → Plugin Trust | CLI `--dir --json` |
 | --- | --- |
 | ![Settings plugin trust](docs/dsh.png) | ![CLI JSON output](docs/cli.png) |
+
+### Troubleshooting
+
+| If | Then |
+| --- | --- |
+| Settings: `dsh-client-store` missed the module table | Host too old: upgrade **dsh ≥ 0.1.0-rc.8**, restart Web; use the CLI above for audits in the meantime |
+| No “Plugin Trust” in Settings | Confirm `add` + restart; or the client failed to load on an old host |
 
 ## How to read the report
 

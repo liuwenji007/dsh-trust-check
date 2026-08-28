@@ -8,11 +8,24 @@ DeepSeek Harness 插件静态信任审计：对已安装插件做**能力披露*
 
 ## 安装
 
+**设置页需要 dsh ≥ 0.1.0-rc.8（建议 0.1.1-rc.2）。** Web UI 依赖宿主模块表里的 `@deepseek-ai/dsh-client-store`；市场不会拦不匹配的升级，老宿主上装了设置页也会加载失败（`dsh-client-store` missed the module table）。
+
+**CLI 不依赖 DSH 宿主**，旧 dsh 上仍可用 `npx dsh-trust-check`。
+
+先确认宿主（只影响设置页）：
+
+```sh
+dsh --version
+# 过旧则：npm i -g @deepseek-ai/dsh@latest
+```
+
 ```sh
 dsh plugin --profile web add dsh-trust-check
 ```
 
-重启 `dsh web`，打开 **设置 → 插件体检**。同时提供独立 CLI，不依赖 DSH 宿主：
+重启 `dsh web`，打开 **设置 → 插件体检**。已安装要升级：市场一键更新，或 `dsh plugin --profile web add dsh-trust-check@latest`，再重启。
+
+同时提供独立 CLI，不依赖 DSH 宿主：
 
 ```sh
 npx dsh-trust-check                 # 审计默认 profile `web`
@@ -29,6 +42,13 @@ npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 | 设置 → 插件体检 | CLI `--dir --json` |
 | --- | --- |
 | ![设置页插件体检](docs/dsh.png) | ![CLI JSON 输出](docs/cli.png) |
+
+### 排障
+
+| 碰到 | 怎么处理 |
+| --- | --- |
+| 设置页 `dsh-client-store` missed the module table | 宿主过旧：先升 **dsh ≥ 0.1.0-rc.8**，再重启 Web；审计可先用上面的 CLI |
+| 设置里没有「插件体检」 | 确认已 `add`、已重启；或宿主太旧导致客户端未加载 |
 
 ## 怎么读报告
 
