@@ -2,7 +2,7 @@
  * dsh-trust-check browser half: one `settings.section` page that renders the
  * audit report fetched from the node half's route.
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { TrustReport } from './TrustReport.tsx'

@@ -3,7 +3,7 @@
  * is instant and offline. The store is root-scoped; the handle is created
  * once in `apply`.
  */
-import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
+import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import { normalizeAuditResponse } from '../core/ack-fingerprint.ts'
 import type { AuditResponse } from '../core/types.ts'
 
