@@ -26,6 +26,10 @@ npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 
 `--dir` 与 `--profile` 互斥。两种模式的 `--json` 输出同为 `AuditResponse` 形状 `{ profile, dir?, generatedAt, plugins, errors }`；单目录模式下 `profile` 为空字符串，`dir` 为绝对路径。
 
+| 设置 → 插件体检 | CLI `--dir --json` |
+| --- | --- |
+| ![设置页插件体检](docs/dsh.png) | ![CLI JSON 输出](docs/cli.png) |
+
 ## 怎么读报告
 
 设置页与 CLI 采用**决策优先**布局，阅读顺序：

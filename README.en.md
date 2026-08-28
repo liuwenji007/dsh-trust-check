@@ -26,6 +26,10 @@ npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 
 `--dir` and `--profile` are mutually exclusive. Both modes emit the same `AuditResponse` shape for `--json`: `{ profile, dir?, generatedAt, plugins, errors }`; in single-directory mode `profile` is an empty string and `dir` is the absolute path.
 
+| Settings → Plugin Trust | CLI `--dir --json` |
+| --- | --- |
+| ![Settings plugin trust](docs/dsh.png) | ![CLI JSON output](docs/cli.png) |
+
 ## How to read the report
 
 The settings UI and CLI use a **decision-first** layout. Reading order:
