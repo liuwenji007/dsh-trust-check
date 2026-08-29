@@ -138,6 +138,38 @@ describe('scanCapabilities', () => {
     expect(clean.capabilities).not.toContain('credentials')
   })
 
+  it('detects node:undici, additional HTTP clients, and Bun.serve as network', () => {
+    for (const line of [
+      "import { fetch } from 'node:undici'",
+      "import fetch from 'ofetch'",
+      "import fetch from 'cross-fetch'",
+      "import { request } from 'gaxios'",
+      "const needle = require('needle')",
+      'Bun.serve({})',
+    ]) {
+      const result = scanCapabilities(input({ 'lib/index.js': `${line}\n` }))
+      expect(result.capabilities, line).toContain('network')
+    }
+  })
+
+  it('does not flag network names in strings or bare identifiers', () => {
+    const result = scanCapabilities(input({
+      'lib/index.js': [
+        'const name = "undici"',
+        'const bun = Bun',
+        'const client = ofetch',
+      ].join('\n'),
+    }))
+    expect(result.capabilities).not.toContain('network')
+  })
+
+  it('keeps matching both node:dns and node:dns2 as network', () => {
+    for (const module of ['node:dns', 'node:dns2', 'dns', 'dns2']) {
+      const result = scanCapabilities(input({ 'lib/index.js': `import client from '${module}'\n` }))
+      expect(result.capabilities, module).toContain('network')
+    }
+  })
+
   it('detects eval, new Function, and vm as dynamic-code', () => {
     expect(scanCapabilities(input({
       'lib/index.js': 'eval(payload)\n',
