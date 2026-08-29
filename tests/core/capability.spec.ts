@@ -100,6 +100,17 @@ describe('scanCapabilities', () => {
     expect(web.capabilities).toContain('network')
   })
 
+  it('detects direct Node HTTP call sites without matching prose strings', () => {
+    for (const call of ['http.get(url)', 'https.get(url)', 'http2.connect(url)']) {
+      expect(scanCapabilities(input({ 'lib/index.js': `${call}\n` })).capabilities, call).toContain('network')
+    }
+
+    const prose = scanCapabilities(input({
+      'lib/index.js': '// https.get(url)\nconst note = "http.get(url)"\n',
+    }))
+    expect(prose.capabilities).not.toContain('network')
+  })
+
   it('detects common third-party HTTP clients as network', () => {
     for (const line of [
       "import got from 'got'",
