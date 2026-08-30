@@ -158,6 +158,31 @@ describe('scanShape', () => {
     }))
     expect(secretTouches.some(s => s.kind === 'env-key' && s.value === 'OPENAI_API_KEY')).toBe(true)
   })
+
+  it('captures Kubernetes, Docker, and GnuPG credential paths', () => {
+    const { secretTouches } = scanShape(input({
+      'a.js': [
+        'readFile("~/.kube/config")',
+        'readFile("~/.docker/config.json")',
+        'readFile("~/.gnupg/private-keys-v1.d")',
+      ].join('\n'),
+    }))
+    expect(secretTouches.filter(s => s.kind === 'path').map(s => s.value)).toEqual([
+      '.kube/config',
+      '.docker/config.json',
+      '.gnupg/',
+    ])
+  })
+
+  it('does not flag generic credential words or filenames', () => {
+    const { secretTouches } = scanShape(input({
+      'a.js': [
+        'const names = ["kubernetes", "docker", "config.json"]',
+        'readFile("config.json")',
+      ].join('\n'),
+    }))
+    expect(secretTouches).toEqual([])
+  })
 })
 
 describe('auditPlugin shape integration', () => {

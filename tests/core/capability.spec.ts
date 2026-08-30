@@ -111,6 +111,22 @@ describe('scanCapabilities', () => {
     }
   })
 
+  it('detects credential paths without matching generic words', () => {
+    const secrets = scanCapabilities(input({
+      'lib/index.js': [
+        'readFile("~/.kube/config")',
+        'readFile("~/.docker/config.json")',
+        'readFile("~/.gnupg/private-keys-v1.d")',
+      ].join('\n'),
+    }))
+    expect(secrets.capabilities).toContain('credentials')
+
+    const clean = scanCapabilities(input({
+      'lib/index.js': 'const names = ["kubernetes", "docker", "config.json"]',
+    }))
+    expect(clean.capabilities).not.toContain('credentials')
+  })
+
   it('detects eval, new Function, and vm as dynamic-code', () => {
     expect(scanCapabilities(input({
       'lib/index.js': 'eval(payload)\n',

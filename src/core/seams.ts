@@ -57,7 +57,7 @@ export const CAPABILITY_RULES: readonly CapabilityRule[] = [
   // method calls, not the word in prose ("a synced keychain" is not access).
   {
     capability: 'credentials',
-    pattern: /(?:require\(|from\s+|import\s*\(\s*)['"](?:keychain|keytar|dotenv)['"]|\bkeychain\.\w+|\bkeytar\.\w+|\bdotenv\.config\b|\bctx\.credentials\b|~\/\.ssh|\b\.aws\/credentials\b|\b\.netrc\b|\bid_rsa\b|\bid_ed25519\b/,
+    pattern: /(?:require\(|from\s+|import\s*\(\s*)['"](?:keychain|keytar|dotenv)['"]|\bkeychain\.\w+|\bkeytar\.\w+|\bdotenv\.config\b|\bctx\.credentials\b|~\/\.ssh|\b\.aws\/credentials\b|\b\.netrc\b|\.gnupg(?:\/|\\|$)|\.docker\/config\.json|\.kube\/config|\bid_rsa\b|\bid_ed25519\b/,
     label: 'Credential / secret access',
   },
   // --- environment -------------------------------------------------------
