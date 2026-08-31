@@ -111,6 +111,65 @@ describe('scanShape', () => {
     expect(shapeRedLines(['network'], destinations)).toContain('uses plaintext http:// to proxy')
   })
 
+  it('treats RFC 2606 example.com subdomains as placeholders, not substring matches', () => {
+    const docs = scanShape(input({
+      'a.js': 'fetch("http://uat.example.com/login")',
+    }))
+    expect(docs.destinations).toEqual([])
+    expect(shapeRedLines(['network'], docs.destinations)).toEqual([])
+
+    const lookalike = scanShape(input({
+      'a.js': 'fetch("http://notexample.com/exfil")',
+    }))
+    expect(lookalike.destinations.some(d => d.value === 'notexample.com')).toBe(true)
+    expect(shapeRedLines(['network'], lookalike.destinations)).toContain('uses plaintext http:// to notexample.com')
+  })
+
+  it('does not read json-schema.org as a plaintext request', () => {
+    const { destinations } = scanShape(input({
+      'a.js': 'const schema = { $schema: "http://json-schema.org/draft-07/schema#" }',
+    }))
+    expect(destinations).toEqual([])
+    expect(shapeRedLines(['network'], destinations)).toEqual([])
+  })
+
+  it('keeps dsh.internal as a destination without a plaintext red line', () => {
+    const { destinations } = scanShape(input({
+      'a.js': 'fetch("http://dsh.internal/rpc")',
+    }))
+    expect(destinations.some(d => d.kind === 'http-host' && d.value === 'dsh.internal')).toBe(true)
+    expect(shapeRedLines(['network'], destinations)).toEqual([])
+  })
+
+  it('still red-lines plaintext HTTP to a generic .local host', () => {
+    const { destinations } = scanShape(input({
+      'a.js': 'fetch("http://fileserver.local/share")',
+    }))
+    expect(destinations.some(d => d.value === 'fileserver.local')).toBe(true)
+    expect(shapeRedLines(['network'], destinations)).toContain('uses plaintext http:// to fileserver.local')
+  })
+
+  it('does not red-line the unspecified bind address 0.0.0.0', () => {
+    const { destinations } = scanShape(input({
+      'a.js': 'listen("0.0.0.0")',
+    }))
+    expect(destinations.some(d => d.kind === 'ip' && d.value === '0.0.0.0')).toBe(true)
+    expect(shapeRedLines(['network'], destinations)).toEqual([])
+
+    const real = scanShape(input({
+      'a.js': 'const host = "198.51.100.7"',
+    }))
+    expect(shapeRedLines(['network'], real.destinations).some(l => l.startsWith('uses literal IP'))).toBe(true)
+  })
+
+  it('skips single-character documentation hosts but not proxy', () => {
+    const stub = scanShape(input({
+      'a.js': 'fetch("http://x/placeholder")',
+    }))
+    expect(stub.destinations.some(d => d.value === 'x')).toBe(false)
+    expect(shapeRedLines(['network'], stub.destinations)).toEqual([])
+  })
+
   it('keeps the riskiest destinations when padding overflows the cap', () => {
     const padding = Array.from(
       { length: MAX_DESTINATIONS + 5 },

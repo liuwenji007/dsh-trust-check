@@ -71,15 +71,55 @@ const IDENTIFIER_HOST_EXACT = new Set([
   'www.sitemaps.org',
   'schemas.xmlsoap.org',
   'purl.org',
+  'json-schema.org',
 ])
+
+/**
+ * Harness loopback-style names. Shown as destinations (facts) but not as
+ * plaintext-HTTP red lines. Exact hosts only — `fileserver.local` still flags.
+ */
+const HARNESS_INTERNAL_HOST_EXACT = new Set([
+  'dsh.internal',
+  'dsh.local',
+  'dsh.localhost',
+])
+
+const RFC2606_EXAMPLE_DOMAINS = ['example.com', 'example.net', 'example.org'] as const
 
 function isLoopbackHost(host: string): boolean {
   const h = host.toLowerCase()
   return h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '[::1]'
 }
 
+function normalizeHost(host: string): string {
+  return host.trim().toLowerCase().replace(/:\d+$/, '')
+}
+
 function isLoopbackIp(ip: string): boolean {
   return ip === '127.0.0.1' || ip.startsWith('127.')
+}
+
+/** Bind / unspecified address — not an outbound target. */
+export function isUnspecifiedIp(ip: string): boolean {
+  const v = ip.trim().toLowerCase()
+  return v === '0.0.0.0' || v === '::' || v === '[::]'
+}
+
+function isRfc2606ExampleHost(host: string): boolean {
+  const h = normalizeHost(host)
+  for (const domain of RFC2606_EXAMPLE_DOMAINS) {
+    if (h === domain || h.endsWith(`.${domain}`)) return true
+  }
+  return false
+}
+
+/** One-character labels are doc stubs (`http://x`), unlike resolvable names like `proxy`. */
+function isSingleCharHost(host: string): boolean {
+  return /^[a-z0-9]$/i.test(normalizeHost(host))
+}
+
+export function isHarnessInternalHost(host: string): boolean {
+  return HARNESS_INTERNAL_HOST_EXACT.has(normalizeHost(host))
 }
 
 function classifyUrl(url: string): DestinationFinding['kind'] {
@@ -160,18 +200,20 @@ export function isIpRangeTableLine(line: string): boolean {
 
 /** Documentation / parser base hosts that are not real destinations. */
 export function isPlaceholderHost(host: string): boolean {
-  const h = host.trim().toLowerCase().replace(/:\d+$/, '')
+  const h = normalizeHost(host)
   if (h === '') return true
   // Schema ellipsis: "https://..." in LLM prompt / docs examples.
   if (/^\.+$/.test(h)) return true
+  if (isSingleCharHost(h)) return true
   if (PLACEHOLDER_HOST_EXACT.has(h)) return true
+  if (isRfc2606ExampleHost(h)) return true
   if (PLACEHOLDER_TLD.test(h)) return true
   return false
 }
 
 /** Namespace/schema hosts that name a vocabulary instead of a request target. */
 export function isIdentifierHost(host: string): boolean {
-  return IDENTIFIER_HOST_EXACT.has(host.trim().toLowerCase().replace(/:\d+$/, ''))
+  return IDENTIFIER_HOST_EXACT.has(normalizeHost(host))
 }
 
 export function isPlaceholderUrl(url: string): boolean {
@@ -373,14 +415,15 @@ export function shapeRedLines(
     if (dest.kind === 'http-host'
       && !isLoopbackHost(dest.value)
       && !isPlaceholderHost(dest.value)
-      && !isIdentifierHost(dest.value)) {
+      && !isIdentifierHost(dest.value)
+      && !isHarnessInternalHost(dest.value)) {
       lines.push(`uses plaintext http:// to ${dest.value}`)
       break
     }
   }
 
   for (const dest of destinations) {
-    if (dest.kind === 'ip' && !isLoopbackIp(dest.value)) {
+    if (dest.kind === 'ip' && !isLoopbackIp(dest.value) && !isUnspecifiedIp(dest.value)) {
       lines.push(`uses literal IP ${dest.value} for network access`)
       break
     }
