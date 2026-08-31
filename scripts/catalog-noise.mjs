@@ -21,6 +21,12 @@ import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const DEFAULT_CATALOG = resolve(ROOT, '../dsh-market/data/registry-snapshot.json')
+
+function scannerLabel() {
+  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
+  const version = typeof pkg.version === 'string' ? pkg.version : 'unknown'
+  return `dsh-trust-check@${version}`
+}
 const WORK = join(ROOT, '.cache/catalog-sample')
 const SEED = 20260830
 const TOP_N = 20
@@ -150,7 +156,7 @@ function writeSample(path, work) {
     generatedAt: new Date().toISOString(),
     seed: SEED,
     catalog: { path, updated: catalog.updated, count: catalog.count },
-    scanner: 'dsh-trust-check@0.1.2',
+    scanner: scannerLabel(),
     notes: [
       'Exclude dshmarket itself from Top 20.',
       'Random is shuffled from remaining npm-published plugins (same download path as Top 20) with a fixed seed.',
@@ -264,7 +270,7 @@ function scanWork(work) {
 
   const report = {
     generatedAt: new Date().toISOString(),
-    scanner: sample.scanner,
+    scanner: scannerLabel(),
     seed: sample.seed,
     catalog: sample.catalog,
     rows,
