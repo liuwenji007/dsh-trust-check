@@ -69,7 +69,7 @@ export const CAPABILITY_RULES: readonly CapabilityRule[] = [
   // --- subagent ----------------------------------------------------------
   {
     capability: 'subagent',
-    pattern: /\bctx\.subagents\b|\bctx\.agentTeams\b|\bspawnTeammate\b|\bsubagent\s*\(|\bdelegate\s*\(/,
+    pattern: /\bctx\.subagents\b|\bctx\.agentTeams\b|\bspawnTeammate\b/,
     label: 'Sub-agent spawning',
   },
   // --- llm ---------------------------------------------------------------

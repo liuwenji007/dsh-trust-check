@@ -4,29 +4,8 @@
  */
 
 import { CAPABILITY_RULES, HOST_RUNTIME_PREFIXES } from './seams.ts'
+import { stripComments } from './strip-comments.ts'
 import type { Capability, Evidence, PluginInput } from './types.ts'
-
-/** Strip a `//…` line comment (not inside a string) and a full-line `/* … *​/`. */
-function stripLineComment(line: string): string {
-  // Conservative: only remove // and /* */ at their obvious forms; we accept
-  // a few false positives over silently missing a capability.
-  const block = line.replace(/\/\*[\s\S]*?\*\//g, '')
-  // Split on '//' unless preceded by a quote/backtick (crude string guard).
-  let out = ''
-  let inSingle = false
-  let inDouble = false
-  let inTemplate = false
-  for (let i = 0; i < block.length; i++) {
-    const ch = block[i]
-    const prev = i > 0 ? block[i - 1] : ''
-    if (ch === "'" && prev !== '\\' && !inDouble && !inTemplate) inSingle = !inSingle
-    else if (ch === '"' && prev !== '\\' && !inSingle && !inTemplate) inDouble = !inDouble
-    else if (ch === '`' && prev !== '\\' && !inSingle && !inDouble) inTemplate = !inTemplate
-    else if (ch === '/' && block[i + 1] === '/' && !inSingle && !inDouble && !inTemplate) break
-    out += ch
-  }
-  return out
-}
 
 /** Does any manifest dependency key declare a host-runtime package? */
 function manifestUsesHostRuntime(manifest: Record<string, unknown>): boolean {
@@ -55,9 +34,10 @@ export function scanCapabilities(input: PluginInput): CapabilityScan {
   const capabilities = new Set<Capability>()
 
   for (const [file, content] of Object.entries(input.sources)) {
-    const lines = content.split('\n')
-    for (let i = 0; i < lines.length; i++) {
-      const stripped = stripLineComment(lines[i])
+    const originalLines = content.split('\n')
+    const scannedLines = stripComments(content).split('\n')
+    for (let i = 0; i < scannedLines.length; i++) {
+      const stripped = scannedLines[i]
       for (const rule of CAPABILITY_RULES) {
         const match = rule.pattern.exec(stripped)
         if (match !== null) {
@@ -66,7 +46,7 @@ export function scanCapabilities(input: PluginInput): CapabilityScan {
             capability: rule.capability,
             file,
             line: i + 1,
-            snippet: lines[i].trim().slice(0, 120),
+            snippet: (originalLines[i] ?? stripped).trim().slice(0, 120),
           })
         }
       }

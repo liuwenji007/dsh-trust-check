@@ -184,6 +184,61 @@ describe('scanCapabilities', () => {
     })).capabilities).toContain('dynamic-code')
   })
 
+  it('detects DSH subagent seams and not a generic delegate() helper', () => {
+    const real = scanCapabilities(input({
+      'lib/index.js': [
+        'const runtime = ctx.subagents',
+        'ctx.agentTeams.spawn(spec)',
+        'spawnTeammate(task)',
+      ].join('\n'),
+    }))
+    expect(real.capabilities).toContain('subagent')
+
+    const method = scanCapabilities(input({
+      'lib/index.js': 'const { provider, runId, result } = await this.delegate(parent, "placement", prompt)\n',
+    }))
+    expect(method.capabilities).not.toContain('subagent')
+
+    const wrapper = scanCapabilities(input({
+      'lib/index.js': 'return delegate(file, args, execOptions)\n',
+    }))
+    expect(wrapper.capabilities).not.toContain('subagent')
+  })
+
+  it('does not treat JSDoc mentions of ctx.credentials as credential access', () => {
+    const commentOnly = scanCapabilities(input({
+      'lib/index.js': [
+        '/**',
+        ' * Resolves a credential via `ctx.credentials`.',
+        ' */',
+        'export function describe() { return 1 }',
+      ].join('\n'),
+    }))
+    expect(commentOnly.capabilities).not.toContain('credentials')
+
+    const live = scanCapabilities(input({
+      'lib/index.js': [
+        '/**',
+        ' * Resolves a credential via `ctx.credentials`.',
+        ' */',
+        'export function resolve() { return ctx.credentials.resolve(ref) }',
+      ].join('\n'),
+    }))
+    expect(live.capabilities).toContain('credentials')
+  })
+
+  it('does not treat JSDoc fetch examples as network', () => {
+    const result = scanCapabilities(input({
+      'lib/client.js': [
+        '/**',
+        ' * Same-origin: fetch("/api/overview")',
+        ' */',
+        'export const id = 1',
+      ].join('\n'),
+    }))
+    expect(result.capabilities).not.toContain('network')
+  })
+
   it('does not treat the dynamic-code rule table as a hit', () => {
     const result = scanCapabilities(input({
       'seams.ts': [
