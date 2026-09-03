@@ -154,6 +154,11 @@ export interface TrustAckEntry {
 
 /** The payload the audit route returns to the client. */
 export interface AuditResponse {
+  /**
+   * JSON output shape version. Bump only when fields are added/removed/renamed
+   * in a breaking way — not when detection rules change. See docs/audit-schema.md.
+   */
+  schemaVersion: number
   /** Profile name; empty when the scan target was `--dir` only. */
   profile: string
   /** Set when auditing a single package directory via CLI `--dir`. */

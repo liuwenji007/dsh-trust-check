@@ -13,6 +13,7 @@ import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import {
   auditPlugin,
+  buildAuditResponse,
   collectPlugin,
   concernText,
   concerns,
@@ -158,13 +159,13 @@ if (args.dir !== undefined) {
       message: error instanceof Error ? error.message : String(error),
     })
   }
-  response = {
+  plugins.sort((a, b) => a.score - b.score)
+  response = buildAuditResponse({
     profile: '',
     dir: args.dir,
-    generatedAt: new Date().toISOString(),
     plugins,
     errors,
-  }
+  })
 } else {
   const profileDir = resolveProfileDir(args.profile)
   const acks = readAckStore(profileDir)
@@ -178,16 +179,14 @@ if (args.dir !== undefined) {
       errors.push({ name, spec, message: error instanceof Error ? error.message : String(error) })
     }
   }
-  response = {
+  plugins.sort((a, b) => a.score - b.score)
+  response = buildAuditResponse({
     profile: args.profile,
-    generatedAt: new Date().toISOString(),
     plugins,
     errors,
     acks,
-  }
+  })
 }
-
-plugins.sort((a, b) => a.score - b.score)
 
 if (args.json) {
   console.log(JSON.stringify(response, null, 2))

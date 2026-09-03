@@ -3,6 +3,7 @@
  */
 
 import { injectionFingerprint } from './injection.ts'
+import { AUDIT_SCHEMA_VERSION } from './response.ts'
 import {
   destinationFingerprint,
   pathEscapeFingerprint,
@@ -29,6 +30,7 @@ export function normalizeAuditReport(report: AuditReport): AuditReport {
 export function normalizeAuditResponse(response: AuditResponse): AuditResponse {
   return {
     ...response,
+    schemaVersion: response.schemaVersion ?? AUDIT_SCHEMA_VERSION,
     acks: response.acks ?? {},
     plugins: response.plugins.map(normalizeAuditReport),
     errors: response.errors ?? [],

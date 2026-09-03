@@ -11,9 +11,11 @@ import { auditPlugin } from './core/audit.ts'
 import { explainWithLlm } from './host/llm-explain.ts'
 import { buildExplainPrompt } from './core/explain.ts'
 import { collectPlugin, readInstalled, resolveProfileDir } from './fs.ts'
+import { buildAuditResponse } from './core/response.ts'
 import type { AuditReport, AuditResponse } from './core/types.ts'
 
 export type { AuditReport, AuditResponse, TrustAckEntry } from './core/types.ts'
+export { AUDIT_SCHEMA_VERSION, buildAuditResponse } from './core/response.ts'
 export { auditPlugin, MAX_EVIDENCE } from './core/audit.ts'
 export {
   ackDrifted,
@@ -160,7 +162,7 @@ export function runAudit(profile: string): AuditResponse {
   plugins.sort((a, b) => a.score - b.score)
   const acks = readAckStore(profileDir)
 
-  return { profile, generatedAt: new Date().toISOString(), plugins, errors, acks }
+  return buildAuditResponse({ profile, plugins, errors, acks })
 }
 
 async function llmExplain(ctx: Context, prompt: string): Promise<string> {
