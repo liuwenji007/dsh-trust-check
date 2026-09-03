@@ -103,6 +103,8 @@ export interface AuditReport {
   /** Whether the package declares install-time build scripts. */
   hasBuildScript: boolean
   buildScripts: string[]
+  /** `prepare` only — runs on publish/pack or git install, not registry install. */
+  prepareScripts: string[]
   repository: string | undefined
   /** Whether the install spec is pinned to a version or commit. */
   pinned: boolean

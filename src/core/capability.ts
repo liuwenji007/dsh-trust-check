@@ -19,6 +19,33 @@ function manifestUsesHostRuntime(manifest: Record<string, unknown>): boolean {
   return false
 }
 
+/**
+ * Decide whether a `fetch(` call on one source line is network egress.
+ *
+ * Static truth only: a literal first argument that is a same-origin relative
+ * path (`/api/x`, `./x`, `../x`) cannot egress — the DSH host serves it.
+ * Absolute URLs are egress. Anything we cannot resolve statically (template
+ * literals, variables, concatenation) is treated as egress, because "only
+ * detect presence, never absence" — an attacker builds URLs at runtime.
+ */
+function fetchIsOutbound(line: string): boolean {
+  // Match `fetch(` then capture the first argument's opening quote (if any).
+  const m = /(?:^|[^\w$])fetch\s*\(\s*(['"`])?/.exec(line)
+  if (m === null) return false
+  const quote = m[1]
+  if (quote === undefined) return true // no literal first arg → variable / expr
+  const rest = line.slice(m.index + m[0].length)
+  const end = rest.indexOf(quote)
+  if (end === -1) return false // unterminated literal on this line; skip
+  const arg = rest.slice(0, end)
+  if (/^https?:\/\//i.test(arg) || /^\/\//.test(arg)) return true
+  // Same-origin: root-relative, or explicit relative path. Also treat scheme-
+  // relative and protocol-absolute as outbound (covered above).
+  if (arg.startsWith('/') || arg.startsWith('./') || arg.startsWith('../')) return false
+  // Bare host-ish literals without scheme are ambiguous; treat as outbound.
+  return true
+}
+
 export interface CapabilityScan {
   capabilities: Capability[]
   evidence: Evidence[]
@@ -49,6 +76,18 @@ export function scanCapabilities(input: PluginInput): CapabilityScan {
             snippet: (originalLines[i] ?? stripped).trim().slice(0, 120),
           })
         }
+      }
+      // fetch() is special-cased (not in CAPABILITY_RULES): a same-origin
+      // relative-path fetch is a call into the DSH host, not egress. Only
+      // outbound fetch counts as `network`. At most one evidence per line.
+      if (/fetch\s*\(/.test(stripped) && fetchIsOutbound(stripped)) {
+        capabilities.add('network')
+        evidence.push({
+          capability: 'network',
+          file,
+          line: i + 1,
+          snippet: (originalLines[i] ?? stripped).trim().slice(0, 120),
+        })
       }
     }
   }

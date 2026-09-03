@@ -45,9 +45,16 @@ export const CAPABILITY_RULES: readonly CapabilityRule[] = [
     label: 'Filesystem read',
   },
   // --- network -----------------------------------------------------------
+  // NOTE: `fetch(` is intentionally NOT in this table. A bare fetch call is
+  // ambiguous — `fetch('/api/x')` is a same-origin call into the DSH host,
+  // which is not network egress. Whether a fetch is outbound depends on its
+  // argument, so capability.ts special-cases it per call site (literal
+  // same-origin paths are not network; absolute URLs, template strings, and
+  // variable arguments are). Keeping it here would flag every relative-path
+  // fetch as network and drown the signal.
   {
     capability: 'network',
-    pattern: /(?:require\(|from\s+|import\s*\(\s*)['"](?:node:)?(?:http2|http|https|net|tls|dgram|dns2?|undici)['"]|\bfetch\s*\(|\bnew\s+WebSocket\b|\bhttp\.request\b|\bhttps\.request\b|(?<!['"])\b(?:http|https)\.get\s*\(|(?<!['"])\bhttp2\.connect\s*\(|\bBun\.serve\s*\(|(?:require\(|from\s+|import\s*\(\s*)['"](?:axios|undici|node-fetch|got|ws|superagent|ky|request|phin|ofetch|cross-fetch|gaxios|needle)['"]|\bctx\.web\b/,
+    pattern: /(?:require\(|from\s+|import\s*\(\s*)['"](?:node:)?(?:http2|http|https|net|tls|dgram|dns2?|undici)['"]|\bnew\s+WebSocket\b|\bhttp\.request\b|\bhttps\.request\b|(?<!['"])\b(?:http|https)\.get\s*\(|(?<!['"])\bhttp2\.connect\s*\(|\bBun\.serve\s*\(|(?:require\(|from\s+|import\s*\(\s*)['"](?:axios|undici|node-fetch|got|ws|superagent|ky|request|phin|ofetch|cross-fetch|gaxios|needle)['"]|\bctx\.web\b/,
     label: 'Network access',
   },
   // --- credentials -------------------------------------------------------

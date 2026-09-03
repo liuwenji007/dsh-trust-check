@@ -100,6 +100,7 @@ export function auditPlugin(input: PluginInput): AuditReport {
     injections,
     hasBuildScript: provenance.hasBuildScript,
     buildScripts: provenance.buildScripts,
+    prepareScripts: provenance.prepareScripts,
     repository: provenance.repository,
     pinned: provenance.pinned,
   })
@@ -117,6 +118,7 @@ export function auditPlugin(input: PluginInput): AuditReport {
     injectedTokensEstimate,
     hasBuildScript: provenance.hasBuildScript,
     buildScripts: provenance.buildScripts,
+    prepareScripts: provenance.prepareScripts,
     repository: provenance.repository,
     pinned: provenance.pinned,
     score,

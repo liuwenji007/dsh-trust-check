@@ -245,14 +245,14 @@ describe('scanShape', () => {
 })
 
 describe('auditPlugin shape integration', () => {
-  it('does not list relative audit fetch as destination or path escape', () => {
+  it('treats same-origin relative fetch as non-egress: no network capability, no destination', () => {
     const report = auditPlugin(input({
       'client.js': [
         'import { readFileSync } from "fs"',
         'await fetch("/dsh-trust-check/audit")',
       ].join('\n'),
     }))
-    expect(report.capabilities).toContain('network')
+    expect(report.capabilities).not.toContain('network')
     expect(report.destinations.some(d => d.value === '/dsh-trust-check/audit')).toBe(false)
     expect(report.pathEscapes.some(p => p.value === '/dsh-trust-check/audit')).toBe(false)
     expect(report.redLines).toEqual([])
@@ -283,6 +283,7 @@ describe('scoreTrust destinations', () => {
       injections: [],
       hasBuildScript: false,
       buildScripts: [],
+      prepareScripts: [],
       repository: 'https://github.com/x/y',
       pinned: true,
     })

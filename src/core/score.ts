@@ -31,6 +31,8 @@ export interface ScoreInput {
   injections: InjectionFinding[]
   hasBuildScript: boolean
   buildScripts: string[]
+  /** `prepare` only — runs on publish/pack or git install, not registry install. */
+  prepareScripts: string[]
   repository: string | undefined
   pinned: boolean
 }
@@ -65,9 +67,19 @@ export function scoreTrust(input: ScoreInput): ScoreResult {
     }
   }
 
-  // Build scripts: arbitrary code at install time.
+  // Build scripts: arbitrary code at install time. Only preinstall/install/
+  // postinstall run on a consumer's machine during a registry install, so
+  // only those are a red line.
   if (input.hasBuildScript) {
     redLines.push(`runs code at install time (${input.buildScripts.join(', ')})`)
+  }
+
+  // `prepare` does not run on a registry install, but it DOES run when the
+  // package is installed from git. A small deduction (not a red line) keeps
+  // the signal without crying wolf on the market's npm install path.
+  if ((input.prepareScripts?.length ?? 0) > 0) {
+    total += 5
+    deductions.push({ reason: `runs prepare on pack/git install (${input.prepareScripts.join(', ')})`, amount: 5 })
   }
 
   // Patch tampering: override/disable another bundle.

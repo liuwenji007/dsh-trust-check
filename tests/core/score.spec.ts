@@ -8,6 +8,7 @@ const base = {
   injections: [] as import('../../src/core/types.ts').InjectionFinding[],
   hasBuildScript: false,
   buildScripts: [] as string[],
+  prepareScripts: [] as string[],
   repository: 'https://github.com/x/y',
   pinned: true,
 }
@@ -39,11 +40,17 @@ describe('scoreTrust', () => {
     expect(result.score).toBe(49)
   })
 
-  it('forces red on prepare scripts', () => {
-    const result = scoreTrust({ ...base, hasBuildScript: true, buildScripts: ['prepare'] })
-    expect(result.band).toBe('red')
-    expect(result.redLines).toContain('runs code at install time (prepare)')
-    expect(result.score).toBe(49)
+  it('deducts for prepare without forcing red (registry install does not run it)', () => {
+    const result = scoreTrust({ ...base, prepareScripts: ['prepare'] })
+    expect(result.band).not.toBe('red')
+    expect(result.redLines).toEqual([])
+    expect(result.score).toBe(95) // 100 - 5 prepare deduction
+  })
+
+  it('does not double-count prepare as an install-time red line', () => {
+    const result = scoreTrust({ ...base, hasBuildScript: true, buildScripts: ['postinstall'], prepareScripts: ['prepare'] })
+    expect(result.redLines).toEqual(['runs code at install time (postinstall)'])
+    expect(result.score).toBe(49) // red-line cap still applies
   })
 
   it('forces red when secrets and network combine', () => {

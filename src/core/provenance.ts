@@ -10,11 +10,30 @@ export interface Provenance {
   version: string
   repository: string | undefined
   hasBuildScript: boolean
+  /** Install-time scripts (preinstall/install/postinstall) — run on consumer install. */
   buildScripts: string[]
+  /** `prepare` only — runs on publish/pack or git install, not registry install. */
+  prepareScripts: string[]
   pinned: boolean
 }
 
-const DANGEROUS_SCRIPTS = ['preinstall', 'install', 'postinstall', 'prepare'] as const
+/**
+ * Scripts that npm runs on a *consumer's* machine during `npm install` from a
+ * registry tarball. These are arbitrary code at install time → red line.
+ */
+const INSTALL_SCRIPTS = ['preinstall', 'install', 'postinstall'] as const
+
+/**
+ * Scripts that do NOT run on a consumer's machine during a registry install.
+ * `prepare` runs on the publisher's machine before pack/publish, or when the
+ * package is installed from git. A market installs from the registry, so
+ * `prepare` is a caution signal (git-install risk), not an install-time red
+ * line — but it must still surface, because a git-spec install does run it.
+ */
+const PREPARE_SCRIPTS = ['prepare'] as const
+
+/** Union of every script that may execute arbitrary code in some install path. */
+const ALL_DANGEROUS = [...INSTALL_SCRIPTS, ...PREPARE_SCRIPTS] as const
 
 function repoOf(manifest: Record<string, unknown>): string | undefined {
   const repo = manifest.repository
@@ -84,9 +103,14 @@ export function readProvenance(input: PluginInput): Provenance {
 
   const scripts = manifest.scripts
   const buildScripts: string[] = []
+  const prepareScripts: string[] = []
   if (typeof scripts === 'object' && scripts !== null) {
-    for (const key of DANGEROUS_SCRIPTS) {
-      if (typeof (scripts as Record<string, unknown>)[key] === 'string') buildScripts.push(key)
+    const record = scripts as Record<string, unknown>
+    for (const key of INSTALL_SCRIPTS) {
+      if (typeof record[key] === 'string') buildScripts.push(key)
+    }
+    for (const key of PREPARE_SCRIPTS) {
+      if (typeof record[key] === 'string') prepareScripts.push(key)
     }
   }
 
@@ -96,6 +120,7 @@ export function readProvenance(input: PluginInput): Provenance {
     repository: repoOf(manifest) ?? gitUrlFromSpec(input.spec),
     hasBuildScript: buildScripts.length > 0,
     buildScripts,
+    prepareScripts,
     pinned: isPinned(input.spec),
   }
 }
