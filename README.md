@@ -37,7 +37,7 @@ npx dsh-trust-check --dir ./path/to/plugin
 npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 ```
 
-`--dir` 与 `--profile` 互斥。两种模式的 `--json` 输出同为 `AuditResponse` 形状 `{ schemaVersion, profile, dir?, generatedAt, plugins, errors }`；单目录模式下 `profile` 为空字符串，`dir` 为绝对路径。详见 [docs/audit-schema.md](docs/audit-schema.md)。
+`--dir` 与 `--profile` 互斥。两种模式的 `--json` 输出同为 `AuditResponse` 形状 `{ schemaVersion, profile, dir?, generatedAt, plugins, errors }`；单目录模式下 `profile` 为空字符串，`dir` 为绝对路径。详见 [docs/audit-schema.md](docs/audit-schema.md) / [docs/INTEGRATION.md](docs/INTEGRATION.md)。
 
 | 设置 → 插件体检 | CLI `--dir --json` |
 | --- | --- |
@@ -116,7 +116,8 @@ npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 
 ## 给集成方（如 dsh-market）
 
-稳定输出契约见 **[docs/audit-schema.md](docs/audit-schema.md)**（英文）：`schemaVersion`、装前三态闸门、`--dir` / `--profile` 怎么读 JSON。
+装前怎么接闸门：**[docs/INTEGRATION.md](docs/INTEGRATION.md)**（英文）。  
+JSON 字段契约：**[docs/audit-schema.md](docs/audit-schema.md)**（`schemaVersion`、稳定五字段、易变字段）。
 
 本包导出稳定 API，供安装前确认弹窗或 CI 闸门使用：
 
@@ -137,7 +138,7 @@ CLI 等价调用（market 也可 spawn，无需 DSH）：
 npx dsh-trust-check --dir "$EXTRACTED_DIR" --spec "$INSTALL_SPEC" --json
 ```
 
-解析 `--json` 时统一读 `plugins[0]`（单目录）或 `plugins` 数组（profile 模式）；`errors` 非空表示目录不可读。`--json` 顶层含 **`schemaVersion`**（当前为 `1`）：只在输出**形状**破坏性变更时递增，检测规则改动不会 bump。
+解析 `--json` 时统一读 `plugins[0]`（单目录）或 `plugins` 数组（profile 模式）；`errors` 非空表示目录不可读。`--json` 顶层含 **`schemaVersion`**（当前为 `1`）：只在输出**形状**破坏性变更时递增，检测规则改动不会 bump。细节见上两份文档。
 
 **本期不做**：远程 tarball 下载（拉包是 market 的职责）。独立验证姿势：先把包解到临时目录，再 `--dir`。
 

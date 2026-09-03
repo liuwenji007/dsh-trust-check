@@ -138,5 +138,6 @@ Gate: `redLines.length > 0` ⇒ `red` ⇒ block by default.
 
 ## Related
 
+- [INTEGRATION.md](./INTEGRATION.md) — how to wire a pre-install gate (CLI or import)
 - Package README § “For integrators”
 - `verdict` / `buildAuditResponse` / `AUDIT_SCHEMA_VERSION` exports from `dsh-trust-check`

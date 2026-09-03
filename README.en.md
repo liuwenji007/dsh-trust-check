@@ -37,7 +37,7 @@ npx dsh-trust-check --dir ./path/to/plugin
 npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 ```
 
-`--dir` and `--profile` are mutually exclusive. Both modes emit the same `AuditResponse` shape for `--json`: `{ schemaVersion, profile, dir?, generatedAt, plugins, errors }`; in single-directory mode `profile` is an empty string and `dir` is the absolute path. See [docs/audit-schema.md](docs/audit-schema.md).
+`--dir` and `--profile` are mutually exclusive. Both modes emit the same `AuditResponse` shape for `--json`: `{ schemaVersion, profile, dir?, generatedAt, plugins, errors }`; in single-directory mode `profile` is an empty string and `dir` is the absolute path. See [docs/audit-schema.md](docs/audit-schema.md) and [docs/INTEGRATION.md](docs/INTEGRATION.md).
 
 | Settings → Plugin Trust | CLI `--dir --json` |
 | --- | --- |
@@ -116,7 +116,8 @@ Red lines cap the numeric score at 49 (avoiding "100 + high risk"). **The verdic
 
 ## For integrators (e.g. dsh-market)
 
-Stable output contract: **[docs/audit-schema.md](docs/audit-schema.md)** — `schemaVersion`, pre-install three-state gate, how to read `--dir` / `--profile` JSON.
+How to wire a pre-install gate: **[docs/INTEGRATION.md](docs/INTEGRATION.md)**.  
+JSON field contract: **[docs/audit-schema.md](docs/audit-schema.md)** (`schemaVersion`, stable gate fields, volatile fields).
 
 Stable exports for pre-install confirmation or CI gates:
 
@@ -137,7 +138,7 @@ CLI equivalent (market can spawn without DSH):
 npx dsh-trust-check --dir "$EXTRACTED_DIR" --spec "$INSTALL_SPEC" --json
 ```
 
-Parse `--json` uniformly: `plugins[0]` for single `--dir`, or the full `plugins` array for profile mode; non-empty `errors` means the directory could not be read. Top-level **`schemaVersion`** is currently `1` — bump only on breaking **shape** changes, not when detection rules change.
+Parse `--json` uniformly: `plugins[0]` for single `--dir`, or the full `plugins` array for profile mode; non-empty `errors` means the directory could not be read. Top-level **`schemaVersion`** is currently `1` — bump only on breaking **shape** changes, not when detection rules change. See the two docs above for the full contract.
 
 **Out of scope for this release**: remote tarball download (market's job). Workflow: extract to a temp dir, then `--dir`.
 

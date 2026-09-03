@@ -1,6 +1,6 @@
 {
   "name": "dsh-trust-check",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Static trust audit for DeepSeek Harness plugins: capabilities, injected prompts, token cost, provenance, and a reproducible 0-100 trust score",
   "license": "MIT",
   "type": "module",
@@ -43,7 +43,10 @@
     "lib/client.js",
     "lib/client.js.map",
     "bin/trust-check.mjs",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "docs/audit-schema.md",
+    "docs/INTEGRATION.md",
+    "THREAT-MODEL.md"
   ],
   "scripts": {
     "build": "tsdown",
