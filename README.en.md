@@ -82,10 +82,11 @@ These mean "we saw this string in source", not "this address/path is safe"; runt
 
 **Noise reduction and truncation**:
 
-- Skips IP range tables (e.g. SSRF private-IP checks), placeholder bases like `http://local`, and shell switches (`/c`).
+- Skips IP range tables (e.g. SSRF private-IP checks), placeholder bases like `http://local` / `http://dsh.invalid`, RFC 2606 `.example` / `.invalid` / `.test`, and shell switches (`/c`).
 - Comments are blanked before the scan, so an example URL in a JSDoc block is not a destination (bundlers usually keep those comments).
 - Namespace identifiers such as `xmlns="http://www.w3.org/2000/svg"` are excluded by exact host — an attacker cannot register those domains, so the exemption cannot be borrowed.
 - When findings exceed the cap, the riskiest are kept: plaintext HTTP and literal IPs cannot be crowded out by harmless addresses.
+- Secret paths require path shape (`/id_rsa`, `~/.netrc`); deny-list regex strings or `startsWith('id_rsa')` are not credential access.
 
 ### Mark as expected
 
@@ -164,7 +165,7 @@ pnpm test        # vitest, covers the core engine
 pnpm typecheck   # tsc --noEmit
 ```
 
-Rule-table and allowlist contributions: [CONTRIBUTING.md](CONTRIBUTING.md). Allowlist PRs are reviewed harder than rule PRs — an allowlist entry weakens detection, and plaintext HTTP is never downgraded by the allowlist.
+Rule-table and allowlist contributions: [CONTRIBUTING.md](CONTRIBUTING.md). Allowlist PRs are reviewed harder than rule PRs — an allowlist entry weakens detection, and plaintext HTTP is never downgraded by the allowlist. The attack classes rules are held against, and the three limits of static analysis, are in [THREAT-MODEL.md](THREAT-MODEL.md).
 
 ## Roadmap
 

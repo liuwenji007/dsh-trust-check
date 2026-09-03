@@ -82,10 +82,11 @@ npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 
 **降噪与截断**：
 
-- 跳过网段边界表（如 SSRF 私网判定）、`http://local` 一类占位 base、cmd 开关（`/c`）等误判噪音。
+- 跳过网段边界表（如 SSRF 私网判定）、`http://local` / `http://dsh.invalid` 一类占位 base、RFC 2606 的 `.example` / `.invalid` / `.test`、cmd 开关（`/c`）等误判噪音。
 - 注释在扫描前被抹掉，JSDoc 里的示例 URL 不算去向（打包产物通常保留注释）。
 - `xmlns="http://www.w3.org/2000/svg"` 一类命名空间标识按主机名精确排除——攻击者注册不到这些域名，这条豁免无法被借用。
 - 超出上限时按风险高低截断，明文 HTTP 与字面量 IP 不会被无害地址挤掉。
+- 密钥路径只认路径形态（`/id_rsa`、`~/.netrc`）；deny-list 正则字符串或 `startsWith('id_rsa')` 不算凭据访问。
 
 ### 记为预期
 
@@ -164,7 +165,7 @@ pnpm test        # vitest，覆盖 core 引擎
 pnpm typecheck   # tsc --noEmit
 ```
 
-规则表与白名单的贡献流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。白名单 PR 与规则 PR 不同权：白名单削弱检测，且明文 HTTP 永远不会因白名单降级。
+规则表与白名单的贡献流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。白名单 PR 与规则 PR 不同权：白名单削弱检测，且明文 HTTP 永远不会因白名单降级。规则打磨对照的攻击面与静态分析极限见 [THREAT-MODEL.md](THREAT-MODEL.md)（英文）。
 
 ## 路线图
 
