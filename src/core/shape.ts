@@ -23,7 +23,15 @@ const URL_LITERAL = /['"`](https?:\/\/[^'"`\s]+)['"`]/g
 const SLASH_PATH = /['"`](\/[^'"`\s]+)['"`]/g
 const IPV4_LITERAL = /['"`]((\d{1,3}\.){3}\d{1,3})(?:\/[^'"`]*)?['"`]/g
 const ENV_SENSITIVE = /process\.env\.([A-Z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|PRIVATE_KEY)[A-Z0-9_]*)/g
-const SECRET_PATH = /~\/\.ssh|\.aws\/credentials|\.netrc|\.gnupg(?:\/|\\|$)|\.docker\/config\.json|\.kube\/config|\bid_rsa\b|\bid_ed25519\b/g
+/**
+ * Path-shaped secret material only. Bare `id_rsa` / `.netrc` inside deny-list
+ * regex strings or `startsWith('id_rsa')` checks are not credential reads.
+ * `.netrc` requires a path prefix (`~/`, `./`, `/`) — a bare quoted
+ * `'.netrc'` is indistinguishable from a deny-list array entry (`['.netrc']`)
+ * and is therefore not flagged (deny-list false positives punish exactly the
+ * safety code this scanner exists to support).
+ */
+const SECRET_PATH = /~\/\.ssh|\.aws\/credentials|(?:~\/|\.\/|\/)\.netrc\b|\.gnupg(?:\/|\\|$)|\.docker\/config\.json|\.kube\/config|[/\\]id_rsa\b|[/\\]id_ed25519\b/g
 const CREDENTIALS_IMPORT = /(?:require\(|from\s+|import\s*\(\s*)['"](?:keychain|keytar|dotenv)['"]|\bkeychain\.\w+|\bkeytar\.\w+|\bdotenv\.config\b|\bctx\.credentials\b/g
 const HOME_ESCAPE = /['"`](~\/[^'"`]+|\$\{?HOME\}?\/[^'"`]+)['"`]/g
 const WIN_ABS = /['"`]([A-Za-z]:\\[^'"`]+)['"`]/g
@@ -56,8 +64,16 @@ const PLACEHOLDER_HOST_EXACT = new Set([
   'example.net',
 ])
 
-/** Documentation TLD only (`.test` / `.invalid` still count as outbound literals). */
-const PLACEHOLDER_TLD = /\.example$/i
+/**
+ * RFC 2606 reserved documentation TLDs: `.example`, `.invalid`, `.test`.
+ * These never resolve on the public Internet (RFC 2606 reserves them for
+ * testing and documentation), so a literal to any of them — parser base,
+ * fetch target, or docs example — cannot exfiltrate data: DNS resolution
+ * fails before anything is sent. An attacker cannot use them as a real
+ * exfil target for the same reason. Reporting them would be noise, so all
+ * three are skipped, matching `.example`'s existing treatment.
+ */
+const PLACEHOLDER_TLD = /\.(?:example|invalid|test)$/i
 
 /**
  * Standards-body hosts that appear as XML/SVG namespace identifiers

