@@ -172,10 +172,15 @@
   box-shadow: inset 2px 0 0 var(--trust-amber);
 }
 
-.verdict-expected,
-.verdict-clear {
+.verdict-expected {
   border-color: color-mix(in srgb, var(--trust-teal-soft) 55%, transparent);
   box-shadow: inset 2px 0 0 var(--trust-teal);
+}
+
+/* "Nothing detected" is no information — no teal pass-accent. */
+.verdict-clear {
+  border-color: var(--trust-line);
+  box-shadow: inset 2px 0 0 var(--trust-line-strong);
 }
 
 .pluginToggle {
@@ -258,11 +263,23 @@
   border: 1px solid color-mix(in srgb, var(--trust-amber-soft) 60%, transparent);
 }
 
-.badge-expected,
-.badge-clear {
+.badge-expected {
   color: var(--trust-teal);
   background: color-mix(in srgb, var(--trust-teal) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--trust-teal-soft) 65%, transparent);
+  border: 1px solid color-mix(in srgb, var(--trust-teal-soft) 60%, transparent);
+}
+
+/*
+ * "Nothing detected" is NO information, not a pass — a static scan that found
+ * nothing must not be rendered like a confirmation (see THREAT-MODEL.md,
+ * "no chip is not a safety claim"). Neutral muted styling, not the teal used
+ * for `expected` (user-confirmed), so it reads as "nothing flagged", never as
+ * "this is safe".
+ */
+.badge-clear {
+  color: var(--trust-muted);
+  background: color-mix(in srgb, currentColor 6%, transparent);
+  border: 1px solid var(--trust-line);
 }
 
 .previewChips {
