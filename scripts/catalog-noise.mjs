@@ -487,8 +487,7 @@ function renderReportMd(report) {
     '## Notes',
     '',
     '- `--dir` on an extracted package; `node_modules` is not installed and not scanned.',
-    '- Known misses stay: concatenated URLs, dynamic `import()`, obfuscated `eval`.',
-    '- If the network chip rate is ~50%+ in both cohorts, the signal is too noisy for a Discover-card chip row.',
+    '- Known misses stay: concatenated URLs, dynamic `import()`, obfuscated `eval`.'
     '',
   )
   return `${lines.join('\n')}\n`
