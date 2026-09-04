@@ -28,6 +28,7 @@ Pin a released `dsh-trust-check` version in CI / market. Prefer checking **`sche
 - Always check `schemaVersion` (currently `1`).
 - Always check `errors`: non-empty means that tree (or installed entry) could not be read — treat as scan failure, not `clear`.
 - **`--dir`**: `profile` is `""`, `dir` is the absolute path. Use **`plugins[0]`**. Empty `plugins` with `errors` ⇒ fail closed.
+- **Empty / corrupt extract**: if the directory has no readable `package.json` **and** no scannable source/skill/patch files, collection throws and lands in `errors` (not a silent `clear` report). A `package.json`-only minimal package is still valid and may be `clear`.
 - **`--profile`**: iterate `plugins[]`. Optional `acks` is for Settings fingerprints only.
 
 ## Pre-install gate (three states only)
@@ -78,6 +79,13 @@ else { /* may install silently */ }
 ```
 
 Prefer importing `verdict` when you already depend on the package (Path B): the CLI JSON does not embed the verdict string; you derive it.
+
+**Working reference:** [`scripts/market-gate-demo.mjs`](../scripts/market-gate-demo.mjs) in this repo implements exactly this Path-A flow — spawn `--dir --json`, check `schemaVersion` + `errors`, read `plugins[0]`, derive the three-state gate, with malformed-report checks that fail closed. It is written only from this document (no API import), so it doubles as a conformance test: if the doc drifts from the CLI output, the demo breaks. Run it on an extracted package:
+
+```sh
+node scripts/market-gate-demo.mjs <extracted-dir> [--spec <spec>]
+# exit: 0 clear · 1 review · 2 red · 3 scan failed / malformed
+```
 
 ## Path B — import API (in-process)
 

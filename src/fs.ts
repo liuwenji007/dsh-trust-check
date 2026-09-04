@@ -273,7 +273,7 @@ export function collectPlugin(dir: string, spec: string): PluginInput {
   try {
     manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as Record<string, unknown>
   } catch {
-    // Missing package.json → empty manifest; provenance reports "unknown".
+    // Missing or invalid package.json → empty manifest; may still audit source files.
   }
 
   const sources: Record<string, string> = {}
@@ -285,6 +285,20 @@ export function collectPlugin(dir: string, spec: string): PluginInput {
   scanManifestEntries(dir, manifest, sources, skillFiles, budget)
 
   const patch = readPatch(manifest, dir)
+
+  // Fail closed: an empty / corrupt extract must not become a silent `clear`
+  // report. A readable package.json (any keys) alone is enough for a genuine
+  // minimal package; source-/skill-/patch-only trees without a manifest are
+  // still auditable. Nothing at all is a collection error.
+  const hasManifest = Object.keys(manifest).length > 0
+  const hasContent = Object.keys(sources).length > 0
+    || Object.keys(skillFiles).length > 0
+    || patch?.text !== undefined
+  if (!hasManifest && !hasContent) {
+    throw new Error(
+      `nothing to audit in ${dir}: no readable package.json and no scannable source files`,
+    )
+  }
 
   return {
     manifest,

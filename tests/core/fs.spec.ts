@@ -127,4 +127,38 @@ describe('manifestEntryPaths', () => {
       },
     }).sort()).toEqual(['./bin/cli.js', './lib/client.js', './lib/index.js'])
   })
+
+  it('fails closed on an empty directory (no silent clear report)', () => {
+    const root = mkdtempSync(join(tmpdir(), 'trust-fs-empty-'))
+    try {
+      expect(() => collectPlugin(root, 'dir:.')).toThrow(/nothing to audit/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('fails closed when package.json is unreadable and there is no source', () => {
+    const root = mkdtempSync(join(tmpdir(), 'trust-fs-badjson-'))
+    try {
+      writeFileSync(join(root, 'package.json'), 'not-json{')
+      expect(() => collectPlugin(root, 'dir:.')).toThrow(/nothing to audit/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('still audits a package.json-only minimal plugin', () => {
+    const root = mkdtempSync(join(tmpdir(), 'trust-fs-pkgonly-'))
+    try {
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'minimal', version: '1.0.0' }))
+      const collected = collectPlugin(root, 'npm:minimal@1.0.0')
+      const report = auditPlugin(collected)
+      expect(collected.manifest.name).toBe('minimal')
+      expect(Object.keys(collected.sources)).toEqual([])
+      expect(report.capabilities).toEqual([])
+      expect(report.redLines).toEqual([])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })
