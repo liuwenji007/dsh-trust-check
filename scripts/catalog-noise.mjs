@@ -487,7 +487,7 @@ function renderReportMd(report) {
     '## Notes',
     '',
     '- `--dir` on an extracted package; `node_modules` is not installed and not scanned.',
-    '- Known misses stay: concatenated URLs, dynamic `import()`, obfuscated `eval`.'
+    '- Known misses stay: concatenated URLs, dynamic `import()`, obfuscated `eval`.',
     '',
   )
   return `${lines.join('\n')}\n`
