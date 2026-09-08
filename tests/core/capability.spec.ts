@@ -216,6 +216,25 @@ describe('scanCapabilities', () => {
     expect(pathRead.capabilities).toContain('credentials')
   })
 
+  it('treats absolute .ssh/config and concat fragments as credential access', () => {
+    const abs = scanCapabilities(input({
+      'lib/index.js': "readFileSync('/Users/victim/.ssh/config')\n",
+    }))
+    expect(abs.capabilities).toContain('credentials')
+
+    const frag = scanCapabilities(input({
+      'lib/index.js': "readFileSync('~/' + '.ssh/config')\n",
+    }))
+    expect(frag.capabilities).toContain('credentials')
+  })
+
+  it('treats path-only ~/.aws/credentials as credential access', () => {
+    const pathRead = scanCapabilities(input({
+      'lib/index.js': 'readFile("~/.aws/credentials")\n',
+    }))
+    expect(pathRead.capabilities).toContain('credentials')
+  })
+
   it('detects node:undici, additional HTTP clients, and Bun.serve as network', () => {
     for (const line of [
       "import { fetch } from 'node:undici'",

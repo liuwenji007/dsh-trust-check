@@ -62,13 +62,12 @@ export const CAPABILITY_RULES: readonly CapabilityRule[] = [
   // `env` rule below — every server plugin reads env vars, so it must not be
   // treated as "reads secrets". `keychain`/`keytar`/`dotenv` match imports or
   // method calls, not the word in prose ("a synced keychain" is not access).
-  // Path keys (`id_rsa`, `.netrc`) require a path separator or home/relative
-  // prefix so deny-list regex strings, `startsWith('id_rsa')`, and deny-list
-  // array entries (`['.netrc']`) do not match. `~/.ssh` must be the entire
-  // string literal so UI placeholder prose does not become credentials.
+  // Path keys require path-only quoted strings (no whitespace) for `.ssh` /
+  // `.aws/credentials`, or a path separator / home prefix for `.netrc` /
+  // `id_rsa`, so UI prose and deny-list array entries (`['.ssh']`) do not match.
   {
     capability: 'credentials',
-    pattern: /(?:require\(|from\s+|import\s*\(\s*)['"](?:keychain|keytar|dotenv)['"]|\bkeychain\.\w+|\bkeytar\.\w+|\bdotenv\.config\b|\bctx\.credentials\b|(?<=['"`])~\/\.ssh(?:\/[^'"`]*)?(?=['"`])|\b\.aws\/credentials\b|(?:~\/|\.\/|\/)\.netrc\b|\.gnupg(?:\/|\\|$)|\.docker\/config\.json|\.kube\/config|[/\\]id_rsa\b|[/\\]id_ed25519\b/,
+    pattern: /(?:require\(|from\s+|import\s*\(\s*)['"](?:keychain|keytar|dotenv)['"]|\bkeychain\.\w+|\bkeytar\.\w+|\bdotenv\.config\b|\bctx\.credentials\b|['"`](?:(?:~\/|\.\/|\/|[A-Za-z]:\\)[^'"`\s]*\.ssh[^'"`\s]*|\.ssh\/[^'"`\s]+)['"`]|['"`](?:(?:~\/|\.\/|\/|[A-Za-z]:\\)[^'"`\s]*\.aws\/credentials[^'"`\s]*|\.aws\/credentials)['"`]|(?:~\/|\.\/|\/)\.netrc\b|\.gnupg(?:\/|\\|$)|\.docker\/config\.json|\.kube\/config|[/\\]id_rsa\b|[/\\]id_ed25519\b/,
     label: 'Credential / secret access',
   },
   // --- environment -------------------------------------------------------

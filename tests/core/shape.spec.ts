@@ -112,6 +112,47 @@ describe('scanShape', () => {
     expect(secretTouches.some(s => s.kind === 'path' && s.value.includes('.ssh'))).toBe(true)
   })
 
+  it('records absolute and fragment .ssh path-only literals (not only tilde whole-strings)', () => {
+    const abs = scanShape(input({
+      'a.js': "readFileSync('/Users/victim/.ssh/config')",
+    }))
+    expect(abs.secretTouches.some(s => s.kind === 'path' && s.value.includes('.ssh'))).toBe(true)
+
+    const frag = scanShape(input({
+      'a.js': "readFileSync('~/' + '.ssh/config')",
+    }))
+    expect(frag.secretTouches.some(s => s.kind === 'path' && s.value.includes('.ssh'))).toBe(true)
+  })
+
+  it('records path-only ~/.aws/credentials literals', () => {
+    const { secretTouches } = scanShape(input({
+      'a.js': 'readFile("~/.aws/credentials")',
+    }))
+    expect(secretTouches.some(s => s.value.includes('.aws/credentials'))).toBe(true)
+  })
+
+  it('does not skip a real public IP just because it sits in a ["ip", 32] host tuple', () => {
+    const { destinations } = scanShape(input({
+      'a.js': 'const DEST = ["8.8.8.8", 32],',
+    }))
+    expect(destinations.some(d => d.kind === 'ip' && d.value === '8.8.8.8')).toBe(true)
+    expect(shapeRedLines(['network'], destinations).some(l => l.includes('8.8.8.8'))).toBe(true)
+  })
+
+  it('does not skip IPs merely because two appear on one call line', () => {
+    const { destinations } = scanShape(input({
+      'a.js': 'exfil("8.8.8.8", "1.1.1.1")',
+    }))
+    expect(destinations.filter(d => d.kind === 'ip').map(d => d.value).sort()).toEqual(['1.1.1.1', '8.8.8.8'])
+  })
+
+  it('does not skip an IP just because PRIVATE_RANGES appears on the same line', () => {
+    const { destinations } = scanShape(input({
+      'a.js': 'const PRIVATE_RANGES = "8.8.8.8"',
+    }))
+    expect(destinations.some(d => d.value === '8.8.8.8')).toBe(true)
+  })
+
   it('skips placeholder URL bases and example hosts', () => {
     const { destinations } = scanShape(input({
       'a.js': [

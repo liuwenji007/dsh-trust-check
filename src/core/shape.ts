@@ -31,10 +31,12 @@ const ENV_SENSITIVE = /process\.env\.([A-Z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD
  * and is therefore not flagged (deny-list false positives punish exactly the
  * safety code this scanner exists to support).
  *
- * `~/.ssh` must be the *entire* string literal (`"~/.ssh/config"`), not a
- * substring of UI prose (`"Uses … ~/.ssh/config when empty"`).
+ * `.ssh` / `.aws/credentials` must appear inside a *path-only* quoted string
+ * (no whitespace): `"~/.ssh/config"`, `"/Users/x/.ssh/config"`, `'.ssh/config'`.
+ * UI prose (`"Uses … ~/.ssh/config when empty"`) has spaces and does not match.
+ * A deny-list bare `'.ssh'` also does not match (needs `~/`/`/` prefix or `.ssh/…`).
  */
-const SECRET_PATH = /(?<=['"`])~\/\.ssh(?:\/[^'"`]*)?(?=['"`])|\.aws\/credentials|(?:~\/|\.\/|\/)\.netrc\b|\.gnupg(?:\/|\\|$)|\.docker\/config\.json|\.kube\/config|[/\\]id_rsa\b|[/\\]id_ed25519\b/g
+const SECRET_PATH = /['"`]((?:~\/|\.\/|\/|[A-Za-z]:\\)[^'"`\s]*\.ssh[^'"`\s]*|\.ssh\/[^'"`\s]+)['"`]|['"`]((?:~\/|\.\/|\/|[A-Za-z]:\\)[^'"`\s]*\.aws\/credentials[^'"`\s]*|\.aws\/credentials)['"`]|(?:~\/|\.\/|\/)\.netrc\b|\.gnupg(?:\/|\\|$)|\.docker\/config\.json|\.kube\/config|[/\\]id_rsa\b|[/\\]id_ed25519\b/g
 const CREDENTIALS_IMPORT = /(?:require\(|from\s+|import\s*\(\s*)['"](?:keychain|keytar|dotenv)['"]|\bkeychain\.\w+|\bkeytar\.\w+|\bdotenv\.config\b|\bctx\.credentials\b/g
 const HOME_ESCAPE = /['"`](~\/[^'"`]+|\$\{?HOME\}?\/[^'"`]+)['"`]/g
 const WIN_ABS = /['"`]([A-Za-z]:\\[^'"`]+)['"`]/g
@@ -210,13 +212,37 @@ function rankedDedupe<T>(
   return dedupeByKey(ordered, keyOf, max)
 }
 
-/** Line looks like a private/special IP range table, not an outbound target. */
+/**
+ * Line looks like a private/special IP *network* range table, not an outbound
+ * unicast target.
+ *
+ * Narrow on purpose: a bare "two IPs on one line" or a `PRIVATE_RANGES` /
+ * `CIDR` token must not wipe real destinations (`exfil("8.8.8.8","1.1.1.1")`,
+ * `const PRIVATE_RANGES = "8.8.8.8"`). Host routes written as `["8.8.8.8", 32]`
+ * are also kept — only network-aligned prefixes (< 32) count as table rows.
+ */
 export function isIpRangeTableLine(line: string): boolean {
-  const ipCount = [...line.matchAll(/['"`]((\d{1,3}\.){3}\d{1,3})['"`]/g)].length
-  if (ipCount >= 2) return true
-  // One network address + prefix length per row: `["10.0.0.0", 8],`
-  if (/\[\s*['"`](?:\d{1,3}\.){3}\d{1,3}['"`]\s*,\s*\d{1,2}\s*\]/.test(line)) return true
-  return /\binRange\s*\(|\bisPrivate|\bisReserved|\bipRange|specialRanges|PRIVATE_RANGES|CIDR/i.test(line)
+  for (const match of line.matchAll(/\[\s*['"`]((?:\d{1,3}\.){3}\d{1,3})['"`]\s*,\s*(\d{1,2})\s*\]/g)) {
+    const ip = match[1]
+    const prefix = Number(match[2])
+    if (ip !== undefined && Number.isFinite(prefix) && isNetworkCidrTuple(ip, prefix)) return true
+  }
+  // inRange(value, "10.0.0.0", "10.255.255.255") — endpoints, not destinations.
+  if (/\binRange\s*\(/.test(line)) {
+    const ipCount = [...line.matchAll(/['"`]((?:\d{1,3}\.){3}\d{1,3})['"`]/g)].length
+    if (ipCount >= 2) return true
+  }
+  return false
+}
+
+/** True when [ip, prefix] names a network block (SSRF denylist row), not a /32 host. */
+export function isNetworkCidrTuple(ip: string, prefix: number): boolean {
+  if (!Number.isInteger(prefix) || prefix < 0 || prefix >= 32) return false
+  const parts = ip.split('.').map(Number)
+  if (parts.length !== 4 || parts.some(n => !Number.isInteger(n) || n < 0 || n > 255)) return false
+  const addr = ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0
+  const mask = prefix === 0 ? 0 : (0xFFFFFFFF << (32 - prefix)) >>> 0
+  return (addr & ~mask) === 0
 }
 
 /**
