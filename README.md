@@ -82,11 +82,13 @@ npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 
 **降噪与截断**：
 
-- 跳过网段边界表（如 SSRF 私网判定）、`http://local` / `http://dsh.invalid` 一类占位 base、RFC 2606 的 `.example` / `.invalid` / `.test`、cmd 开关（`/c`）等误判噪音。
+- 跳过**网络对齐**的 CIDR 表行（如 `["10.0.0.0", 8]`、`inRange(a, "10.0.0.0", "10.255.255.255")`）；`["8.8.8.8", 32]` 这类主机路由仍记为字面量 IP。不因行内出现 `PRIVATE_RANGES` / `CIDR` 字样、或同行两个 IP 就整行跳过。
+- 跳过 RFC 5737 文档例网（`192.0.2.0/24`、`198.51.100.0/24`、`203.0.113.0/24`），以及 `0.0.0.0` / `255.255.255.255`（绑定/广播，非单播出站）。
+- 跳过 `http://local` / `http://dsh.invalid` 一类占位 base、RFC 2606 的 `.example` / `.invalid` / `.test`、cmd 开关（`/c`）等误判噪音。
 - 注释在扫描前被抹掉，JSDoc 里的示例 URL 不算去向（打包产物通常保留注释）。
 - `xmlns="http://www.w3.org/2000/svg"` 一类命名空间标识按主机名精确排除——攻击者注册不到这些域名，这条豁免无法被借用。
 - 超出上限时按风险高低截断，明文 HTTP 与字面量 IP 不会被无害地址挤掉。
-- 密钥路径只认路径形态（`/id_rsa`、`~/.netrc`）；deny-list 正则字符串或 `startsWith('id_rsa')` 不算凭据访问。
+- 密钥路径只认**无空白的路径形引号串**（`"~/.ssh/config"`、`"/Users/x/.ssh/config"`、`'.ssh/config'`、`"~/.aws/credentials"`）或 `/id_rsa`、`~/.netrc` 等路径形态；UI 文案（`"Uses … ~/.ssh/config when empty"`）、deny-list 正则、`startsWith('id_rsa')`、裸 `'.ssh'` 不算凭据访问。
 
 ### 记为预期
 
@@ -96,11 +98,11 @@ npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 
 ### 红线（有则默认应挡住）
 
-1. 声明 install/postinstall/preinstall/**prepare** 安装脚本；
+1. 声明 install / postinstall / preinstall 安装脚本（**不含** `prepare`：`prepare` 只在 pack/git 安装时跑，记为扣分，不是红线）；
 2. `cordis.patch.yml` override / disable 了 `@deepseek-ai/*` 核心 bundle（匹配 `id` **或** `name`）；
-3. 读取凭据/密钥材料（keychain / keytar / dotenv / `~/.ssh` / `.aws/credentials` 等）**且**有网络访问；
+3. 读取凭据/密钥材料（keychain / keytar / dotenv / 路径形 `.ssh` / `.aws/credentials` 等）**且**有网络访问；
 4. 非 localhost 的明文 `http://` 外连（字面量）**且**有 network；
-5. 非 loopback 的字面量 IP 外连 **且**有 network。
+5. 非 loopback、非文档例网、非绑定/广播的字面量 IP 外连 **且**有 network。
 
 命中红线时数值分封顶 49（避免「100 分 + 高风险」的误导）。**裁决只看 `redLines`，不看分数**：分数低（如 9 分）可能只是 shell + 网络 + 未锁版本叠加，应显示「需确认」而非「有红线」；JSON 里的 `band` 仍可能为 `red`（分数低于 50），但 UI/CLI 用 `verdict()` 呈现，二者不要混读。
 
@@ -112,7 +114,7 @@ npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 | **注入面** | `cordis.patch.yml` + `systemPrompt` / `ctx.skills.register` / `system-prompt/assemble` + 技能文本 | override / disable 了谁（`id` 或 `name`）、注入了什么 |
 | **成本** | 技能文本 + system-prompt 行内字面量字节数 | 估算每请求注入 token（字节 / 4，仅估算） |
 | **来源** | `package.json` 的 `repository`（缺失回退到 git 安装源）+ 安装 spec | 是否锁版本/锁 commit |
-| **更新风险** | 安装脚本（install/postinstall/preinstall/prepare） | 是否在安装时执行任意代码 |
+| **更新风险** | 安装脚本（install/postinstall/preinstall；`prepare` 仅扣分） | 是否在安装时执行任意代码 |
 
 ## 给集成方（如 dsh-market）
 
@@ -138,7 +140,7 @@ CLI 等价调用（market 也可 spawn，无需 DSH）：
 npx dsh-trust-check --dir "$EXTRACTED_DIR" --spec "$INSTALL_SPEC" --json
 ```
 
-解析 `--json` 时统一读 `plugins[0]`（单目录）或 `plugins` 数组（profile 模式）；`errors` 非空表示目录不可读。`--json` 顶层含 **`schemaVersion`**（当前为 `1`）：只在输出**形状**破坏性变更时递增，检测规则改动不会 bump。细节见上两份文档。
+解析 `--json` 时统一读 `plugins[0]`（单目录）或 `plugins` 数组（profile 模式）；`errors` 非空表示目录不可读——**按扫描失败处理，不是 `clear`**。空目录 / 损坏解压（无可读 `package.json` 且无源码）会进 `errors`（fail closed）。`--json` 顶层含 **`schemaVersion`**（当前为 `1`）：只在输出**形状**破坏性变更时递增，检测规则改动不会 bump。细节见上两份文档；仓库内 Path A 冒烟样例：`scripts/market-gate-demo.mjs`。
 
 **本期不做**：远程 tarball 下载（拉包是 market 的职责）。独立验证姿势：先把包解到临时目录，再 `--dir`。
 
@@ -168,7 +170,7 @@ pnpm test        # vitest，覆盖 core 引擎
 pnpm typecheck   # tsc --noEmit
 ```
 
-规则表与白名单的贡献流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。白名单 PR 与规则 PR 不同权：白名单削弱检测，且明文 HTTP 永远不会因白名单降级。规则打磨对照的攻击面与静态分析极限见 [THREAT-MODEL.md](THREAT-MODEL.md)（英文）。
+规则表、跳过规则与白名单的贡献流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。**扩大跳过 / 白名单与加规则不同权**——二者都可能削弱检测；明文 HTTP 永远不会因白名单降级。修误报时必须带 fail-open 探针。规则打磨对照的攻击面与静态分析极限见 [THREAT-MODEL.md](THREAT-MODEL.md)（英文）。
 
 ## 路线图
 

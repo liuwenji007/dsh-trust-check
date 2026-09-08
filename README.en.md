@@ -82,11 +82,13 @@ These mean "we saw this string in source", not "this address/path is safe"; runt
 
 **Noise reduction and truncation**:
 
-- Skips IP range tables (e.g. SSRF private-IP checks), placeholder bases like `http://local` / `http://dsh.invalid`, RFC 2606 `.example` / `.invalid` / `.test`, and shell switches (`/c`).
+- Skips **network-aligned** CIDR table rows (e.g. `["10.0.0.0", 8]`, `inRange(a, "10.0.0.0", "10.255.255.255")`); host routes like `["8.8.8.8", 32]` still count as literal IPs. A `PRIVATE_RANGES` / `CIDR` token on the line, or two IPs on one call, does **not** wipe the line.
+- Skips RFC 5737 documentation ranges (`192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`), and `0.0.0.0` / `255.255.255.255` (bind / broadcast, not unicast outbound).
+- Skips placeholder bases like `http://local` / `http://dsh.invalid`, RFC 2606 `.example` / `.invalid` / `.test`, and shell switches (`/c`).
 - Comments are blanked before the scan, so an example URL in a JSDoc block is not a destination (bundlers usually keep those comments).
 - Namespace identifiers such as `xmlns="http://www.w3.org/2000/svg"` are excluded by exact host — an attacker cannot register those domains, so the exemption cannot be borrowed.
 - When findings exceed the cap, the riskiest are kept: plaintext HTTP and literal IPs cannot be crowded out by harmless addresses.
-- Secret paths require path shape (`/id_rsa`, `~/.netrc`); deny-list regex strings or `startsWith('id_rsa')` are not credential access.
+- Secret paths require a **path-only quoted string** (no whitespace): `"~/.ssh/config"`, `"/Users/x/.ssh/config"`, `'.ssh/config'`, `"~/.aws/credentials"`, or path forms like `/id_rsa` / `~/.netrc`. UI prose (`"Uses … ~/.ssh/config when empty"`), deny-list regexes, `startsWith('id_rsa')`, and a bare `'.ssh'` are not credential access.
 
 ### Mark as expected
 
@@ -96,11 +98,11 @@ After you confirm capabilities match why you installed the plugin, the fingerpri
 
 ### Red lines (default block)
 
-1. declares install/postinstall/preinstall/**prepare** scripts;
+1. declares install / postinstall / preinstall scripts (**not** `prepare`: `prepare` runs on pack/git install only — a score deduction, not a red line);
 2. `cordis.patch.yml` overrides/disables an `@deepseek-ai/*` core bundle (matched by `id` **or** `name`);
-3. reads credential/secret material (keychain / keytar / dotenv / `~/.ssh` / `.aws/credentials` …) **and** has network access;
+3. reads credential/secret material (keychain / keytar / dotenv / path-shaped `.ssh` / `.aws/credentials` …) **and** has network access;
 4. plaintext `http://` to non-localhost (literal) **and** has network;
-5. non-loopback literal IP outbound **and** has network.
+5. non-loopback, non-documentation, non-bind/broadcast literal IP outbound **and** has network.
 
 Red lines cap the numeric score at 49 (avoiding "100 + high risk"). **The verdict follows `redLines`, not the score**: a low score (e.g. 9) can come from shell + network + unpinned spec stacking and should show **review**, not red line(s). JSON `band` may still be `red` (score below 50), but UI/CLI use `verdict()` — do not mix them.
 
@@ -112,7 +114,7 @@ Red lines cap the numeric score at 49 (avoiding "100 + high risk"). **The verdic
 | **Injections** | `cordis.patch.yml` + `systemPrompt` / `ctx.skills.register` / `system-prompt/assemble` + skill text | who it overrides/disables (`id` or `name`), what it injects |
 | **Cost** | skill text + system-prompt inline literal bytes | estimated injected tokens per request (bytes / 4, estimate only) |
 | **Source** | `package.json` `repository` (falls back to the git install source) + install spec | pinned version / pinned commit |
-| **Update risk** | install scripts (install/postinstall/preinstall/prepare) | arbitrary code at install time |
+| **Update risk** | install scripts (install/postinstall/preinstall; `prepare` is deduction-only) | arbitrary code at install time |
 
 ## For integrators (e.g. dsh-market)
 
@@ -138,7 +140,7 @@ CLI equivalent (market can spawn without DSH):
 npx dsh-trust-check --dir "$EXTRACTED_DIR" --spec "$INSTALL_SPEC" --json
 ```
 
-Parse `--json` uniformly: `plugins[0]` for single `--dir`, or the full `plugins` array for profile mode; non-empty `errors` means the directory could not be read. Top-level **`schemaVersion`** is currently `1` — bump only on breaking **shape** changes, not when detection rules change. See the two docs above for the full contract.
+Parse `--json` uniformly: `plugins[0]` for single `--dir`, or the full `plugins` array for profile mode; non-empty `errors` means the directory could not be read — **treat as scan failure, not `clear`**. An empty / corrupt extract (no readable `package.json` and no scannable sources) lands in `errors` (fail closed). Top-level **`schemaVersion`** is currently `1` — bump only on breaking **shape** changes, not when detection rules change. See the two docs above; in-repo Path A smoke demo: `scripts/market-gate-demo.mjs`.
 
 **Out of scope for this release**: remote tarball download (market's job). Workflow: extract to a temp dir, then `--dir`.
 
@@ -168,7 +170,7 @@ pnpm test        # vitest, covers the core engine
 pnpm typecheck   # tsc --noEmit
 ```
 
-Rule-table and allowlist contributions: [CONTRIBUTING.md](CONTRIBUTING.md). Allowlist PRs are reviewed harder than rule PRs — an allowlist entry weakens detection, and plaintext HTTP is never downgraded by the allowlist. The attack classes rules are held against, and the three limits of static analysis, are in [THREAT-MODEL.md](THREAT-MODEL.md).
+Rule-table, skip-rule, and allowlist contributions: [CONTRIBUTING.md](CONTRIBUTING.md). **Widening a skip or allowlist is reviewed harder than adding a rule** — both can weaken detection; plaintext HTTP is never downgraded by the allowlist. False-positive fixes must include a fail-open probe. The attack classes rules are held against, and the three limits of static analysis, are in [THREAT-MODEL.md](THREAT-MODEL.md).
 
 ## Roadmap
 
