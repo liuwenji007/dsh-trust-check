@@ -64,10 +64,11 @@ export const CAPABILITY_RULES: readonly CapabilityRule[] = [
   // method calls, not the word in prose ("a synced keychain" is not access).
   // Path keys (`id_rsa`, `.netrc`) require a path separator or home/relative
   // prefix so deny-list regex strings, `startsWith('id_rsa')`, and deny-list
-  // array entries (`['.netrc']`) do not match.
+  // array entries (`['.netrc']`) do not match. `~/.ssh` must be the entire
+  // string literal so UI placeholder prose does not become credentials.
   {
     capability: 'credentials',
-    pattern: /(?:require\(|from\s+|import\s*\(\s*)['"](?:keychain|keytar|dotenv)['"]|\bkeychain\.\w+|\bkeytar\.\w+|\bdotenv\.config\b|\bctx\.credentials\b|~\/\.ssh|\b\.aws\/credentials\b|(?:~\/|\.\/|\/)\.netrc\b|\.gnupg(?:\/|\\|$)|\.docker\/config\.json|\.kube\/config|[/\\]id_rsa\b|[/\\]id_ed25519\b/,
+    pattern: /(?:require\(|from\s+|import\s*\(\s*)['"](?:keychain|keytar|dotenv)['"]|\bkeychain\.\w+|\bkeytar\.\w+|\bdotenv\.config\b|\bctx\.credentials\b|(?<=['"`])~\/\.ssh(?:\/[^'"`]*)?(?=['"`])|\b\.aws\/credentials\b|(?:~\/|\.\/|\/)\.netrc\b|\.gnupg(?:\/|\\|$)|\.docker\/config\.json|\.kube\/config|[/\\]id_rsa\b|[/\\]id_ed25519\b/,
     label: 'Credential / secret access',
   },
   // --- environment -------------------------------------------------------

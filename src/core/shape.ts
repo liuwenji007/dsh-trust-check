@@ -30,8 +30,11 @@ const ENV_SENSITIVE = /process\.env\.([A-Z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD
  * `'.netrc'` is indistinguishable from a deny-list array entry (`['.netrc']`)
  * and is therefore not flagged (deny-list false positives punish exactly the
  * safety code this scanner exists to support).
+ *
+ * `~/.ssh` must be the *entire* string literal (`"~/.ssh/config"`), not a
+ * substring of UI prose (`"Uses … ~/.ssh/config when empty"`).
  */
-const SECRET_PATH = /~\/\.ssh|\.aws\/credentials|(?:~\/|\.\/|\/)\.netrc\b|\.gnupg(?:\/|\\|$)|\.docker\/config\.json|\.kube\/config|[/\\]id_rsa\b|[/\\]id_ed25519\b/g
+const SECRET_PATH = /(?<=['"`])~\/\.ssh(?:\/[^'"`]*)?(?=['"`])|\.aws\/credentials|(?:~\/|\.\/|\/)\.netrc\b|\.gnupg(?:\/|\\|$)|\.docker\/config\.json|\.kube\/config|[/\\]id_rsa\b|[/\\]id_ed25519\b/g
 const CREDENTIALS_IMPORT = /(?:require\(|from\s+|import\s*\(\s*)['"](?:keychain|keytar|dotenv)['"]|\bkeychain\.\w+|\bkeytar\.\w+|\bdotenv\.config\b|\bctx\.credentials\b/g
 const HOME_ESCAPE = /['"`](~\/[^'"`]+|\$\{?HOME\}?\/[^'"`]+)['"`]/g
 const WIN_ABS = /['"`]([A-Za-z]:\\[^'"`]+)['"`]/g
@@ -115,10 +118,10 @@ function isLoopbackIp(ip: string): boolean {
   return ip === '127.0.0.1' || ip.startsWith('127.')
 }
 
-/** Bind / unspecified address — not an outbound target. */
+/** Bind / unspecified / broadcast — not an outbound unicast target. */
 export function isUnspecifiedIp(ip: string): boolean {
   const v = ip.trim().toLowerCase()
-  return v === '0.0.0.0' || v === '::' || v === '[::]'
+  return v === '0.0.0.0' || v === '255.255.255.255' || v === '::' || v === '[::]'
 }
 
 function isRfc2606ExampleHost(host: string): boolean {
@@ -211,7 +214,23 @@ function rankedDedupe<T>(
 export function isIpRangeTableLine(line: string): boolean {
   const ipCount = [...line.matchAll(/['"`]((\d{1,3}\.){3}\d{1,3})['"`]/g)].length
   if (ipCount >= 2) return true
+  // One network address + prefix length per row: `["10.0.0.0", 8],`
+  if (/\[\s*['"`](?:\d{1,3}\.){3}\d{1,3}['"`]\s*,\s*\d{1,2}\s*\]/.test(line)) return true
   return /\binRange\s*\(|\bisPrivate|\bisReserved|\bipRange|specialRanges|PRIVATE_RANGES|CIDR/i.test(line)
+}
+
+/**
+ * RFC 5737 documentation IPv4 ranges (TEST-NET-1/2/3). Same role as RFC 2606
+ * `.example` / `.invalid` hosts: never routable on the public Internet, used
+ * only in examples. An attacker cannot exfiltrate to them.
+ */
+export function isDocumentationIp(ip: string): boolean {
+  const v = ip.trim().toLowerCase().replace(/^\[|\]$/g, '')
+  return (
+    v.startsWith('192.0.2.')
+    || v.startsWith('198.51.100.')
+    || v.startsWith('203.0.113.')
+  )
 }
 
 /** Documentation / parser base hosts that are not real destinations. */
@@ -224,6 +243,7 @@ export function isPlaceholderHost(host: string): boolean {
   if (PLACEHOLDER_HOST_EXACT.has(h)) return true
   if (isRfc2606ExampleHost(h)) return true
   if (PLACEHOLDER_TLD.test(h)) return true
+  if (isDocumentationIp(h)) return true
   return false
 }
 
@@ -350,6 +370,7 @@ export function scanShape(input: PluginInput): ShapeScan {
         for (const match of line.matchAll(IPV4_LITERAL)) {
           const ip = match[1]
           if (ip === undefined) continue
+          if (isDocumentationIp(ip)) continue
           destinations.push({
             kind: isLoopbackIp(ip) ? 'loopback' : 'ip',
             value: ip,
@@ -439,7 +460,10 @@ export function shapeRedLines(
   }
 
   for (const dest of destinations) {
-    if (dest.kind === 'ip' && !isLoopbackIp(dest.value) && !isUnspecifiedIp(dest.value)) {
+    if (dest.kind === 'ip'
+      && !isLoopbackIp(dest.value)
+      && !isUnspecifiedIp(dest.value)
+      && !isDocumentationIp(dest.value)) {
       lines.push(`uses literal IP ${dest.value} for network access`)
       break
     }

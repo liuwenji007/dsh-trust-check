@@ -198,6 +198,24 @@ describe('scanCapabilities', () => {
     expect(pathRead.capabilities).toContain('credentials')
   })
 
+  it('does not treat ~/.ssh inside UI prose as credential access', () => {
+    const prose = scanCapabilities(input({
+      'lib/client.js': [
+        'vpsSshKeyPlaceholder: "Uses ssh-agent or ~/.ssh/config when empty",',
+        'fetch("https://api.github.com/x")',
+      ].join('\n'),
+    }))
+    expect(prose.capabilities).not.toContain('credentials')
+    expect(prose.capabilities).toContain('network')
+  })
+
+  it('still treats path-only ~/.ssh literals as credential access', () => {
+    const pathRead = scanCapabilities(input({
+      'lib/index.js': 'const k = readFile("~/.ssh/config")\n',
+    }))
+    expect(pathRead.capabilities).toContain('credentials')
+  })
+
   it('detects node:undici, additional HTTP clients, and Bun.serve as network', () => {
     for (const line of [
       "import { fetch } from 'node:undici'",

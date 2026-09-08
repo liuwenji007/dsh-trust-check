@@ -42,11 +42,25 @@ describe('scanShape', () => {
   })
 
   it('flags non-loopback literal IP with network', () => {
+    // RFC1918 alone still reds; RFC 5737 docs ranges are skipped elsewhere.
     const { destinations } = scanShape(input({
-      'a.js': 'const u = "203.0.113.1/api"',
+      'a.js': 'const u = "192.168.1.100"',
     }))
     const lines = shapeRedLines(['network'], destinations)
     expect(lines.some(l => l.startsWith('uses literal IP'))).toBe(true)
+  })
+
+  it('skips RFC 5737 documentation IPv4 ranges (not real outbound)', () => {
+    const { destinations } = scanShape(input({
+      'a.js': [
+        'const example = "203.0.113.10"',
+        'fetch("https://203.0.113.10/x")',
+        'fetch("http://192.0.2.1/x")',
+        'const other = "198.51.100.50"',
+      ].join('\n'),
+    }))
+    expect(destinations.some(d => /203\.0\.113|192\.0\.2|198\.51\.100/.test(d.value))).toBe(false)
+    expect(shapeRedLines(['network'], destinations)).toEqual([])
   })
 
   it('skips private IP range-table boundaries (SSRF denylist)', () => {
@@ -57,14 +71,45 @@ describe('scanShape', () => {
     expect(shapeRedLines(['network'], destinations)).toEqual([])
   })
 
-  it('still records a lone literal IP used as a destination', () => {
+  it('skips one-IP-per-line CIDR table rows', () => {
     const { destinations } = scanShape(input({
-      'a.js': 'fetch("http://203.0.113.50/x")',
+      'a.js': [
+        'const PRIVATE_RANGES = [',
+        '\t["10.0.0.0", 8],',
+        '\t["192.168.0.0", 16],',
+        '\t["172.16.0.0", 12],',
+        ']',
+      ].join('\n'),
     }))
-    // http URL takes host path; also ensure raw IP on its own line is kept
-    const alone = scanShape(input({ 'b.js': 'const host = "203.0.113.50"' }))
-    expect(alone.destinations.some(d => d.kind === 'ip' && d.value === '203.0.113.50')).toBe(true)
-    expect(destinations.some(d => d.kind === 'http-host' && d.value === '203.0.113.50')).toBe(true)
+    expect(destinations.filter(d => d.kind === 'ip')).toEqual([])
+    expect(shapeRedLines(['network'], destinations)).toEqual([])
+  })
+
+  it('still records a lone private literal IP used as a destination', () => {
+    const { destinations } = scanShape(input({
+      'a.js': 'fetch("http://192.168.1.100/x")',
+    }))
+    const alone = scanShape(input({ 'b.js': 'const host = "10.0.0.5"' }))
+    expect(alone.destinations.some(d => d.kind === 'ip' && d.value === '10.0.0.5')).toBe(true)
+    expect(destinations.some(d => d.kind === 'http-host' && d.value === '192.168.1.100')).toBe(true)
+    expect(shapeRedLines(['network'], alone.destinations).some(l => l.includes('10.0.0.5'))).toBe(true)
+  })
+
+  it('does not treat ~/.ssh inside UI prose as a secret touch', () => {
+    const { secretTouches } = scanShape(input({
+      'a.js': 'vpsSshKeyPlaceholder: "Uses ssh-agent or ~/.ssh/config when empty",',
+    }))
+    expect(secretTouches.some(s => s.kind === 'path' && s.value.includes('.ssh'))).toBe(false)
+  })
+
+  it('still records path-only ~/.ssh string literals as secret touches', () => {
+    const { secretTouches } = scanShape(input({
+      'a.js': [
+        'readFile("~/.ssh/config")',
+        'open("~/.ssh/id_rsa")',
+      ].join('\n'),
+    }))
+    expect(secretTouches.some(s => s.kind === 'path' && s.value.includes('.ssh'))).toBe(true)
   })
 
   it('skips placeholder URL bases and example hosts', () => {
@@ -169,9 +214,17 @@ describe('scanShape', () => {
     expect(shapeRedLines(['network'], destinations)).toEqual([])
 
     const real = scanShape(input({
-      'a.js': 'const host = "198.51.100.7"',
+      'a.js': 'const host = "8.8.8.8"',
     }))
     expect(shapeRedLines(['network'], real.destinations).some(l => l.startsWith('uses literal IP'))).toBe(true)
+  })
+
+  it('does not red-line limited-broadcast 255.255.255.255', () => {
+    const { destinations } = scanShape(input({
+      'a.js': 'const mask = "255.255.255.255"',
+    }))
+    expect(destinations.some(d => d.value === '255.255.255.255')).toBe(true)
+    expect(shapeRedLines(['network'], destinations)).toEqual([])
   })
 
   it('skips single-character documentation hosts but not proxy', () => {
@@ -188,10 +241,10 @@ describe('scanShape', () => {
       (_, i) => `const u${i} = "https://cdn${i}.github.io/x"`,
     )
     const { destinations } = scanShape(input({
-      'a.js': [...padding, 'fetch("http://198.51.100.7/exfil")'].join('\n'),
+      'a.js': [...padding, 'fetch("http://8.8.8.8/exfil")'].join('\n'),
     }))
     expect(destinations).toHaveLength(MAX_DESTINATIONS)
-    expect(destinations.some(d => d.value === '198.51.100.7')).toBe(true)
+    expect(destinations.some(d => d.value === '8.8.8.8')).toBe(true)
     expect(shapeRedLines(['network'], destinations).length).toBeGreaterThan(0)
   })
 
