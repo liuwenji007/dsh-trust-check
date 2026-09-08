@@ -3,7 +3,9 @@
  * Catalog noise sample for dsh-market #401.
  *
  *   node scripts/catalog-noise.mjs sample   # write Top20 + Random20 + download list
+ *   node scripts/catalog-noise.mjs expand   # append next Top/Random batch (keeps existing)
  *   node scripts/catalog-noise.mjs scan     # extract local tarballs, scan, write report
+ *   node scripts/catalog-noise.mjs review   # write REVIEW.md checklist (TP/FP/FN)
  *
  * This script never downloads. Put .tgz files in work/downloads/ yourself,
  * then run scan (extract + dsh-trust-check --dir).
@@ -38,17 +40,46 @@ const args = process.argv.slice(2)
 const command = args[0]
 const catalogPath = flagValue(args, '--catalog') ?? DEFAULT_CATALOG
 const workDir = flagValue(args, '--work') ?? WORK
+const expandTopN = Number(flagValue(args, '--top') ?? '40')
+const expandRandomN = Number(flagValue(args, '--random') ?? '40')
+const expandSeed = Number(flagValue(args, '--seed') ?? '20260907')
 
-if (command !== 'sample' && command !== 'scan') {
+if (command !== 'sample' && command !== 'scan' && command !== 'expand' && command !== 'review') {
   console.error(`Usage:
-  node scripts/catalog-noise.mjs sample [--catalog <plugins.json>] [--work <dir>]
-  node scripts/catalog-noise.mjs scan   [--catalog <plugins.json>] [--work <dir>]
+  node scripts/catalog-noise.mjs sample  [--catalog <plugins.json>] [--work <dir>]
+  node scripts/catalog-noise.mjs expand  [--catalog <plugins.json>] [--work <dir>]
+                                         [--top 40] [--random 40] [--seed 20260907]
+  node scripts/catalog-noise.mjs scan    [--work <dir>]
+  node scripts/catalog-noise.mjs review  [--work <dir>]
 `)
   process.exit(1)
 }
 
 if (command === 'sample') writeSample(catalogPath, workDir)
+else if (command === 'expand') expandSample(catalogPath, workDir, expandTopN, expandRandomN, expandSeed)
+else if (command === 'review') writeReview(workDir)
 else scanWork(workDir)
+
+/** Flatten every cohort list on a sample.json (top / random / top2 / …). */
+function allEntries(sample) {
+  const out = []
+  for (const [key, value] of Object.entries(sample)) {
+    if (!Array.isArray(value) || value.length === 0) continue
+    if (typeof value[0] !== 'object' || value[0] === null || !('id' in value[0])) continue
+    out.push(...value)
+  }
+  return out
+}
+
+function cohortLists(sample) {
+  const lists = []
+  for (const [key, value] of Object.entries(sample)) {
+    if (!Array.isArray(value) || value.length === 0) continue
+    if (typeof value[0] !== 'object' || value[0] === null || !('id' in value[0])) continue
+    lists.push([key, value])
+  }
+  return lists
+}
 
 function flagValue(argv, name) {
   const i = argv.indexOf(name)
@@ -175,6 +206,85 @@ function writeSample(path, work) {
   console.log(`when the network works: bash ${join(work, 'download.sh')}`)
 }
 
+/**
+ * Append a second (or Nth) batch without wiping the original Top/Random 20.
+ * New cohorts: top2 / random2 (or top3… if those keys already exist).
+ */
+function expandSample(path, work, topN, randomN, seed) {
+  const samplePath = join(work, 'sample.json')
+  if (!existsSync(samplePath)) {
+    console.error(`missing ${samplePath}; run sample first`)
+    process.exit(1)
+  }
+  if (!Number.isFinite(topN) || topN < 0 || !Number.isFinite(randomN) || randomN < 0) {
+    console.error('--top / --random must be non-negative numbers')
+    process.exit(1)
+  }
+  if (!Number.isFinite(seed)) {
+    console.error('--seed must be a number')
+    process.exit(1)
+  }
+
+  const sample = JSON.parse(readFileSync(samplePath, 'utf8'))
+  const existing = allEntries(sample)
+  const existingIds = new Set(existing.map(e => e.id))
+
+  const catalog = loadCatalog(path)
+  const eligible = catalog.plugins.filter(p => !isExcluded(p))
+  const withDownloads = eligible
+    .filter(p => typeof p.downloads === 'number' && p.npm)
+    .sort((a, b) => b.downloads - a.downloads)
+
+  let topKey = 'top2'
+  let randomKey = 'random2'
+  let n = 2
+  while (Array.isArray(sample[topKey]) || Array.isArray(sample[randomKey])) {
+    n += 1
+    topKey = `top${n}`
+    randomKey = `random${n}`
+  }
+
+  const top = withDownloads
+    .filter(p => !existingIds.has(pluginId(p)))
+    .slice(0, topN)
+    .map(p => toEntry(p, topKey))
+  for (const e of top) existingIds.add(e.id)
+
+  const randomPool = eligible.filter(p => {
+    if (!p.npm) return false
+    return !existingIds.has(pluginId(p))
+  })
+  const random = pickRandom(randomPool, randomN, seed).map(p => toEntry(p, randomKey))
+
+  sample[topKey] = top
+  sample[randomKey] = random
+  sample.scanner = scannerLabel()
+  sample.expandedAt = new Date().toISOString()
+  sample.expand = {
+    ...(sample.expand && typeof sample.expand === 'object' ? sample.expand : {}),
+    [String(n)]: { seed, topN, randomN, topKey, randomKey, added: top.length + random.length },
+  }
+  sample.catalog = { path, updated: catalog.updated, count: catalog.count }
+  sample.notes = [
+    ...(Array.isArray(sample.notes) ? sample.notes : []),
+    `Batch ${n}: ${topKey}=${top.length} (next-by-downloads), ${randomKey}=${random.length} (seed ${seed}); excludes all prior sample ids.`,
+  ]
+
+  mkdirSync(join(work, 'downloads'), { recursive: true })
+  mkdirSync(join(work, 'extracted'), { recursive: true })
+  mkdirSync(join(work, 'reports'), { recursive: true })
+
+  writeFileSync(samplePath, `${JSON.stringify(sample, null, 2)}\n`)
+  writeFileSync(join(work, 'DOWNLOAD.md'), renderDownloadMd(sample))
+  writeFileSync(join(work, 'download.sh'), renderDownloadSh(sample), { mode: 0o755 })
+  writeReview(work)
+
+  console.log(`appended ${topKey}=${top.length}, ${randomKey}=${random.length} (seed ${seed})`)
+  console.log(`total entries: ${allEntries(sample).length}`)
+  console.log(`download only the new packs, then: node scripts/catalog-noise.mjs scan`)
+  console.log(`review sheet: ${join(work, 'REVIEW.md')}`)
+}
+
 function renderDownloadMd(sample) {
   const lines = [
     '# 手动下载清单（#401 噪音样本）',
@@ -188,14 +298,12 @@ function renderDownloadMd(sample) {
     '',
     '```sh',
     'node scripts/catalog-noise.mjs scan',
+    'node scripts/catalog-noise.mjs review   # 更新复盘表',
     '```',
     '',
   ]
-  for (const [title, list] of [
-    ['A. 下载量 Top 20（排除 dshmarket）', sample.top],
-    ['B. 随机 20（有 npm、排除 Top 20）', sample.random],
-  ]) {
-    lines.push(`## ${title}`, '')
+  for (const [key, list] of cohortLists(sample)) {
+    lines.push(`## ${cohortTitle(key, list.length)}`, '')
     for (const [i, e] of list.entries()) {
       lines.push(`### ${i + 1}. ${e.name} \`${e.id}\``)
       lines.push('')
@@ -210,6 +318,14 @@ function renderDownloadMd(sample) {
   return `${lines.join('\n')}\n`
 }
 
+function cohortTitle(key, n) {
+  if (key === 'top') return `A. 下载量 Top ${n}（排除 dshmarket）`
+  if (key === 'random') return `B. 随机 ${n}（有 npm、排除 Top）`
+  if (key.startsWith('top')) return `${key}. 下载量续批 ${n}（排除已采样）`
+  if (key.startsWith('random')) return `${key}. 随机续批 ${n}（排除已采样）`
+  return `${key} (${n})`
+}
+
 function renderDownloadSh(sample) {
   const lines = [
     '#!/bin/sh',
@@ -219,7 +335,7 @@ function renderDownloadSh(sample) {
     'mkdir -p downloads extracted',
     '',
   ]
-  for (const e of [...sample.top, ...sample.random]) {
+  for (const e of allEntries(sample)) {
     lines.push(`echo "=== ${e.cohort} ${e.id} ==="`)
     if (e.download.method === 'npm-pack') {
       lines.push(e.download.command)
@@ -261,11 +377,11 @@ function scanWork(work) {
     : []
 
   const rows = []
-  for (const entry of [...sample.top, ...sample.random]) {
+  for (const entry of allEntries(sample)) {
     const row = scanOne(entry, { work, extractedDir, downloadsDir, tarballs, bin, reportsDir })
     rows.push(row)
     const mark = row.status === 'ok' ? 'ok' : row.status
-    console.log(`${mark.padEnd(10)} ${entry.cohort.padEnd(6)} ${entry.id}`)
+    console.log(`${mark.padEnd(10)} ${entry.cohort.padEnd(8)} ${entry.id}`)
   }
 
   const report = {
@@ -278,7 +394,9 @@ function scanWork(work) {
   }
   writeFileSync(join(work, 'report.json'), `${JSON.stringify(report, null, 2)}\n`)
   writeFileSync(join(work, 'REPORT.md'), renderReportMd(report))
+  writeReview(work)
   console.log(`\nwrote ${join(work, 'REPORT.md')}`)
+  console.log(`review sheet: ${join(work, 'REVIEW.md')}`)
 }
 
 function findTarball(entry, tarballs) {
@@ -396,10 +514,10 @@ function fail(entry, status, error) {
 
 function summarize(rows) {
   const ok = rows.filter(r => r.status === 'ok')
+  const cohorts = [...new Set(rows.map(r => r.cohort))]
   const byCohort = {}
-  for (const cohort of ['top', 'random']) {
-    const slice = ok.filter(r => r.cohort === cohort)
-    byCohort[cohort] = chipStats(slice)
+  for (const cohort of cohorts) {
+    byCohort[cohort] = chipStats(ok.filter(r => r.cohort === cohort))
   }
   return {
     total: rows.length,
@@ -454,10 +572,14 @@ function renderReportMd(report) {
     '| cohort | n | any chip | no chip | network | install script | red line |',
     '|---|---:|---:|---:|---:|---:|---:|',
   ]
-  for (const [label, key] of [['Top 20', 'top'], ['Random 20', 'random'], ['All scanned', 'overall']]) {
-    const s = key === 'overall' ? report.summary.overall : report.summary.byCohort[key]
-    if (!s) continue
-    lines.push(`| ${label} | ${s.n} | ${s.withAnyChip} | ${s.empty} | ${pct(s.withNetwork, s.n)} | ${s.withBuild} | ${s.withRed} |`)
+  const cohortKeys = Object.keys(report.summary.byCohort)
+  for (const key of cohortKeys) {
+    const s = report.summary.byCohort[key]
+    lines.push(`| ${key} | ${s.n} | ${s.withAnyChip} | ${s.empty} | ${pct(s.withNetwork, s.n)} | ${s.withBuild} | ${s.withRed} |`)
+  }
+  {
+    const s = report.summary.overall
+    lines.push(`| all scanned | ${s.n} | ${s.withAnyChip} | ${s.empty} | ${pct(s.withNetwork, s.n)} | ${s.withBuild} | ${s.withRed} |`)
   }
   lines.push('', '### Capability histogram (scanned only)', '')
   const chips = report.summary.overall.chips
@@ -469,8 +591,8 @@ function renderReportMd(report) {
     for (const key of keys) lines.push(`| ${key} | ${chips[key]} |`)
   }
 
-  for (const [title, cohort] of [['A. Top 20', 'top'], ['B. Random 20', 'random']]) {
-    lines.push('', `## ${title}`, '')
+  for (const cohort of cohortKeys) {
+    lines.push('', `## ${cohortTitle(cohort, report.rows.filter(r => r.cohort === cohort).length)}`, '')
     lines.push('| plugin | version | chips | hosts | install script | red | status |')
     lines.push('|---|---|---|---:|---|---|---|')
     for (const row of report.rows.filter(r => r.cohort === cohort)) {
@@ -488,9 +610,71 @@ function renderReportMd(report) {
     '',
     '- `--dir` on an extracted package; `node_modules` is not installed and not scanned.',
     '- Known misses stay: concatenated URLs, dynamic `import()`, obfuscated `eval`.',
+    '- Human review sheet: `REVIEW.md` (TP / FP / FN — prefer rule fixes over allowlists).',
     '',
   )
   return `${lines.join('\n')}\n`
+}
+
+/**
+ * Checklist for slow human review. Prefer fixing rules for FP / adding call-site
+ * rules for FN; allowlist only as a last resort (see CONTRIBUTING.md).
+ */
+function writeReview(work) {
+  const samplePath = join(work, 'sample.json')
+  if (!existsSync(samplePath)) {
+    console.error(`missing ${samplePath}; run sample first`)
+    process.exit(1)
+  }
+  const sample = JSON.parse(readFileSync(samplePath, 'utf8'))
+  const reportPath = join(work, 'report.json')
+  const report = existsSync(reportPath) ? JSON.parse(readFileSync(reportPath, 'utf8')) : null
+  const byId = new Map((report?.rows ?? []).map(r => [r.id, r]))
+
+  const lines = [
+    '# Catalog review sheet',
+    '',
+    'Fill one row at a time. Goal: classify scanner output against threat-model “presence” claims — not CVE hunting.',
+    '',
+    '| Label | Meaning | Next step |',
+    '|---|---|---|',
+    '| **TP** | Finding is real / expected for this plugin | keep |',
+    '| **FP** | Finding should not fire | fix rule / fixture; allowlist only if CONTRIBUTING allows |',
+    '| **FN** | Should have proven a capability / red-line shape and did not | add call-site rule + test |',
+    '| **OK-clear** | Empty chips is fine (truly minimal / no privileged shape) | keep; remember clear ≠ safe |',
+    '',
+    'Do **not** bulk-fill destination allowlists to clear the board.',
+    '',
+    `- sample entries: ${allEntries(sample).length}`,
+    `- report: ${report
+      ? `${report.summary.scanned}/${report.summary.total} in last scan`
+        + (report.summary.total < allEntries(sample).length
+          ? ` (sample grew — re-run scan after downloading new packs)`
+          : '')
+      : '_run scan first for gate columns_'}`,
+    '',
+  ]
+
+  for (const [key, list] of cohortLists(sample)) {
+    lines.push(`## ${cohortTitle(key, list.length)}`, '')
+    lines.push('| plugin | gate | caps | red | class (TP/FP/FN/OK-clear) | notes |')
+    lines.push('|---|---|---|---|---|---|')
+    for (const e of list) {
+      const row = byId.get(e.id)
+      if (!row || row.status !== 'ok') {
+        const status = row?.status ?? 'pending'
+        lines.push(`| ${e.name} (\`${e.id}\`) | ${status} | — | — |  |  |`)
+        continue
+      }
+      const caps = row.capabilities.join(', ') || '—'
+      const red = row.redLines.length ? row.redLines.join('; ') : '—'
+      lines.push(`| ${e.name} (\`${e.id}\`) | ${row.verdict} | ${caps} | ${red} |  |  |`)
+    }
+    lines.push('')
+  }
+
+  writeFileSync(join(work, 'REVIEW.md'), `${lines.join('\n')}\n`)
+  console.log(`wrote ${join(work, 'REVIEW.md')}`)
 }
 
 function pct(part, total) {

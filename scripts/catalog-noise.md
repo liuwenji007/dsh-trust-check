@@ -19,6 +19,17 @@ Writes `.cache/catalog-sample/`:
 
 Default catalog: `../dsh-market/data/registry-snapshot.json`. Override with `--catalog`.
 
+## 1b. Expand (optional second batch)
+
+Keeps the original 40 and appends more (default: next Top 40 by downloads + Random 40 with seed `20260907`):
+
+```sh
+node scripts/catalog-noise.mjs expand
+# or: node scripts/catalog-noise.mjs expand --top 20 --random 20 --seed 20260908
+```
+
+Also refreshes `DOWNLOAD.md` / `download.sh` / `REVIEW.md`.
+
 ## 2. Download (manual)
 
 Put npm pack output into `.cache/catalog-sample/downloads/`. File names can stay as npm wrote them (`pkg-1.2.3.tgz`); scan matches by package name.
@@ -47,3 +58,12 @@ Outputs:
 - `.cache/catalog-sample/REPORT.md` — paste this into the issue
 - `.cache/catalog-sample/report.json`
 - `.cache/catalog-sample/reports/<id>.json` — raw `--json` from each plugin
+- `.cache/catalog-sample/REVIEW.md` — TP / FP / FN checklist (fill slowly)
+
+## 4. Review
+
+```sh
+node scripts/catalog-noise.mjs review
+```
+
+Re-writes `REVIEW.md` from `sample.json` + latest `report.json`. Classify against threat-model presence claims; prefer rule fixes over allowlists (see `CONTRIBUTING.md`).
