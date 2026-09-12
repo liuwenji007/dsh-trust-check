@@ -100,13 +100,14 @@ describe('scanShape', () => {
       "const c = ctx.credentials",
       "const d = this.ctx.get('credentials')",
       "const e = hostCtx.get('credentials')",
+      "const g = appCtx.get('credentials')",
       "const { credentials } = ctx",
       "const f = a",
       "import kt from 'keytar'",
       "const kc = require('keychain')",
     ])
     const has = (name: string) => aliases.includes(name) || aliases.includes(`keychain:${name}`)
-    for (const name of ['a', 'b', 'c', 'd', 'e', 'credentials', 'f', 'keytar', 'keychain', 'kt', 'kc']) {
+    for (const name of ['a', 'b', 'c', 'd', 'e', 'g', 'credentials', 'f', 'keytar', 'keychain', 'kt', 'kc']) {
       expect(has(name), name).toBe(true)
     }
     // Renamed keychain modules carry their kind so the keychain method set is used.

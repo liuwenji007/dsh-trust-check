@@ -179,7 +179,12 @@ function escapeForRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-const SEAM_RECEIVERS = /(?:ctx|this\.ctx|hostCtx)\s*\.\s*get\(\s*['"]credentials['"]\s*\)|(?:ctx|this\.ctx|hostCtx)\s*\.\s*credentials\b/
+// The seam is reached off a context object, which callers name `ctx`,
+// `hostCtx`, `appCtx`, `this.ctx`, and so on. Matching any `*Ctx` receiver keeps
+// the alias pass from depending on one naming convention; the property being
+// read is what makes the binding a credential source.
+const CTX_RECEIVER = /(?:[A-Za-z_$][\w$]*\.)?(?:ctx|[a-z][\w$]*Ctx)|this\.ctx/
+const SEAM_RECEIVERS = new RegExp(`(?:${CTX_RECEIVER.source})\\s*\\.\\s*get\\(\\s*['"]credentials['"]\\s*\\)|(?:${CTX_RECEIVER.source})\\s*\\.\\s*credentials\\b`)
 const KEYCHAIN_MODULE_NAMES = ['keytar', 'keychain']
 const SEAM_METHODS = 'resolve|read|readRecord|get[A-Z]\\w*'
 const KEYCHAIN_METHODS = 'getPassword|getCredentials|getSecret|getToken|findCredentials|findPassword|findAnyCredential'
@@ -210,7 +215,7 @@ export function collectSeamAliases(lines: readonly string[]): string[] {
     for (const m of line.matchAll(assignDirect)) {
       if (m[1] !== undefined) { names.add(m[1]); seam.add(m[1]) }
     }
-    const destructured = /\b(?:const|let|var)\s*\{([^}]*)\}\s*=\s*(?:ctx|this\.ctx|hostCtx)\b/.exec(line)
+    const destructured = new RegExp(`\\b(?:const|let|var)\\s*\\{([^}]*)\\}\\s*=\\s*(?:${CTX_RECEIVER.source})`).exec(line)
     if (destructured?.[1] !== undefined && /\bcredentials\b/.test(destructured[1])) {
       names.add('credentials'); seam.add('credentials')
     }
