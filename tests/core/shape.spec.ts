@@ -63,6 +63,23 @@ describe('scanShape', () => {
     expect(shapeRedLines(['network'], destinations)).toEqual([])
   })
 
+  it('skips CIDR network literals but still flags a /32 host', () => {
+    const { destinations } = scanShape(input({
+      'a.js': [
+        "if (/^10\\./.test(ip)) cidr = '10.0.0.0/8'",
+        "else if (/^192\\.168\\./.test(ip)) cidr = '192.168.0.0/16'",
+        "else if (/^172\\./.test(ip)) cidr = '172.16.0.0/12'",
+        "else if (/^100\\./.test(ip)) cidr = '100.64.0.0/10'",
+      ].join('\n'),
+    }))
+    expect(destinations.some(d => /^(10\.0\.0\.0|192\.168\.0\.0|172\.16\.0\.0|100\.64\.0\.0)$/.test(d.value))).toBe(false)
+    expect(shapeRedLines(['network'], destinations)).toEqual([])
+
+    const host = scanShape(input({ 'a.js': 'const u = "10.0.0.5/32"' }))
+    expect(host.destinations.some(d => d.value === '10.0.0.5')).toBe(true)
+    expect(shapeRedLines(['network'], host.destinations).some(l => l.startsWith('uses literal IP'))).toBe(true)
+  })
+
   it('skips private IP range-table boundaries (SSRF denylist)', () => {
     const { destinations } = scanShape(input({
       'a.js': 'return inRange(value, "10.0.0.0", "10.255.255.255") || inRange(value, "192.168.0.0", "192.168.255.255")',

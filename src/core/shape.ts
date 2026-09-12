@@ -397,6 +397,11 @@ export function scanShape(input: PluginInput): ShapeScan {
           const ip = match[1]
           if (ip === undefined) continue
           if (isDocumentationIp(ip)) continue
+          // `'10.0.0.0/8'` is a network block, not a destination — `IPV4_LITERAL`
+          // captures the address and leaves the prefix outside the group. `/32`
+          // is a single host and stays a destination.
+          const cidr = /['"`]\d{1,3}(?:\.\d{1,3}){3}\/(\d{1,2})['"`]$/.exec(match[0])
+          if (cidr !== null && isNetworkCidrTuple(ip, Number(cidr[1]))) continue
           destinations.push({
             kind: isLoopbackIp(ip) ? 'loopback' : 'ip',
             value: ip,
