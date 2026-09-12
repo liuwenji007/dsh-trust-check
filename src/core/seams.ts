@@ -67,7 +67,16 @@ export const CAPABILITY_RULES: readonly CapabilityRule[] = [
   // `id_rsa`, so UI prose and deny-list array entries (`['.ssh']`) do not match.
   {
     capability: 'credentials',
-    pattern: /(?:require\(|from\s+|import\s*\(\s*)['"](?:keychain|keytar|dotenv)['"]|\bkeychain\.\w+|\bkeytar\.\w+|\bdotenv\.config\b|\bctx\.credentials\b|['"`](?:(?:~\/|\.\/|\/|[A-Za-z]:\\)[^'"`\s]*\.ssh[^'"`\s]*|\.ssh\/[^'"`\s]+)['"`]|['"`](?:(?:~\/|\.\/|\/|[A-Za-z]:\\)[^'"`\s]*\.aws\/credentials[^'"`\s]*|\.aws\/credentials)['"`]|(?:~\/|\.\/|\/)\.netrc\b|\.gnupg(?:\/|\\|$)|\.docker\/config\.json|\.kube\/config|[/\\]id_rsa\b|[/\\]id_ed25519\b/,
+    pattern: /(?:require\(|from\s+|import\s*\(\s*)['"](?:keychain|keytar|dotenv)['"]|\bkeychain\.\w+|\bkeytar\.\w+|\bdotenv\.config\b|\bctx\.credentials\b|\bctx\.get\(\s*['"]credentials['"]\s*\)|['"`](?:(?:~\/|\.\/|\/|[A-Za-z]:\\)[^'"`\s]*\.ssh[^'"`\s]*|\.ssh\/[^'"`\s]+)['"`]|['"`](?:(?:~\/|\.\/|\/|[A-Za-z]:\\)[^'"`\s]*\.aws\/credentials[^'"`\s]*|\.aws\/credentials)['"`]|(?:~\/|\.\/|\/)\.netrc\b|\.gnupg(?:\/|\\|$)|\.docker\/config\.json|\.kube\/config|[/\\]id_rsa\b|[/\\]id_ed25519\b/,
+    label: 'Credential / secret access',
+  },
+  // The seam is often reached through a local alias (`const credentials =
+  // ctx.get('credentials')`), which the handle rule above does not see. Reading
+  // through the alias is still credential access, so the chip must show it —
+  // otherwise a plugin can carry the red line with no matching chip.
+  {
+    capability: 'credentials',
+    pattern: /\bcredentials\.(?:resolve|readRecord|read|get[A-Z]\w*)\s*\(/,
     label: 'Credential / secret access',
   },
   // --- environment -------------------------------------------------------

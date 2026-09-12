@@ -51,7 +51,7 @@ export interface PathEscapeFinding {
   line: number
 }
 
-export type SecretTouchKind = 'path' | 'env-key' | 'api'
+export type SecretTouchKind = 'path' | 'env-key' | 'api' | 'read'
 
 export interface SecretTouchFinding {
   kind: SecretTouchKind

@@ -100,7 +100,7 @@ npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 
 1. 声明 install / postinstall / preinstall 安装脚本（**不含** `prepare`：`prepare` 只在 pack/git 安装时跑，记为扣分，不是红线）；
 2. `cordis.patch.yml` override / disable 了 `@deepseek-ai/*` 核心 bundle（匹配 `id` **或** `name`）；
-3. 读取凭据/密钥材料（keychain / keytar / dotenv / 路径形 `.ssh` / `.aws/credentials` 等）**且**有网络访问；
+3. **读到**凭据/密钥的值（`ctx.credentials.resolve` / `read` / `readRecord` / `get*`，或读文件调用同行的密钥路径）**且**有网络访问——只拿到句柄（`const c = ctx.credentials`、`ctx.get('credentials')`）或只读元数据（`describe`）记为 chip 披露，不算红线；
 4. 非 localhost 的明文 `http://` 外连（字面量）**且**有 network；
 5. 非 loopback、非文档例网、非绑定/广播的字面量 IP 外连 **且**有 network。
 

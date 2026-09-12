@@ -38,6 +38,13 @@ const ENV_SENSITIVE = /process\.env\.([A-Z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD
  */
 const SECRET_PATH = /['"`]((?:~\/|\.\/|\/|[A-Za-z]:\\)[^'"`\s]*\.ssh[^'"`\s]*|\.ssh\/[^'"`\s]+)['"`]|['"`]((?:~\/|\.\/|\/|[A-Za-z]:\\)[^'"`\s]*\.aws\/credentials[^'"`\s]*|\.aws\/credentials)['"`]|(?:~\/|\.\/|\/)\.netrc\b|\.gnupg(?:\/|\\|$)|\.docker\/config\.json|\.kube\/config|[/\\]id_rsa\b|[/\\]id_ed25519\b/g
 const CREDENTIALS_IMPORT = /(?:require\(|from\s+|import\s*\(\s*)['"](?:keychain|keytar|dotenv)['"]|\bkeychain\.\w+|\bkeytar\.\w+|\bdotenv\.config\b|\bctx\.credentials\b/g
+/**
+ * Credential API calls that return secret *material* (`resolve('API_KEY')`
+ * yields the value). Handle access and `describe`/`set`/`unset` do not.
+ */
+const CREDENTIALS_READ = /\bcredentials\.(?:resolve|readRecord|read|get[A-Z]\w*)\s*\(/g
+/** A read call on the same line as a secret-path literal lifts it to a read. */
+const SECRET_FILE_READ = /\b(?:readFile|readFileSync|createReadStream)\s*\(/
 const HOME_ESCAPE = /['"`](~\/[^'"`]+|\$\{?HOME\}?\/[^'"`]+)['"`]/g
 const WIN_ABS = /['"`]([A-Za-z]:\\[^'"`]+)['"`]/g
 /** Two or more `../` segments — likely leaving a package/workspace tree. */
@@ -198,6 +205,7 @@ const SECRET_TOUCH_RANK: Readonly<Record<SecretTouchKind, number>> = {
   path: 0,
   'env-key': 1,
   api: 2,
+  read: 3,
 }
 
 function dedupeByKey<T>(rows: T[], keyOf: (row: T) => string, max: number): T[] {
@@ -441,14 +449,29 @@ export function scanShape(input: PluginInput): ShapeScan {
       if (SECRET_PATH.test(line)) {
         SECRET_PATH.lastIndex = 0
         const paths = line.match(SECRET_PATH) ?? []
+        // A path inside a read call is a secret read; a bare path literal is
+        // only a reference. Same distinction as the credential API below.
+        const kind: SecretTouchKind = SECRET_FILE_READ.test(line) ? 'read' : 'path'
         for (const p of paths) {
-          secretTouches.push({ kind: 'path', value: p, file, line: lineNo })
+          secretTouches.push({ kind, value: p, file, line: lineNo })
         }
       }
 
       if (CREDENTIALS_IMPORT.test(line)) {
         CREDENTIALS_IMPORT.lastIndex = 0
         secretTouches.push({ kind: 'api', value: 'credential API', file, line: lineNo })
+      }
+
+      // Reading the *value* is the risky half of the credential surface;
+      // holding the handle (`const c = ctx.credentials`) or asking for
+      // metadata (`describe`) is disclosure, not a secret read. The red line
+      // keys off this rather than off the capability chip.
+      if (CREDENTIALS_READ.test(line)) {
+        CREDENTIALS_READ.lastIndex = 0
+        const calls = line.match(CREDENTIALS_READ) ?? []
+        for (const call of calls) {
+          secretTouches.push({ kind: 'read', value: call, file, line: lineNo })
+        }
       }
     }
   }

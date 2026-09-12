@@ -3,6 +3,7 @@ import { scoreTrust } from '../../src/core/score.ts'
 
 const base = {
   capabilities: [] as import('../../src/core/types.ts').Capability[],
+  secretTouches: [] as import('../../src/core/types.ts').SecretTouchFinding[],
   destinations: [] as import('../../src/core/types.ts').DestinationFinding[],
   injectedTokensEstimate: 0,
   injections: [] as import('../../src/core/types.ts').InjectionFinding[],
@@ -53,11 +54,25 @@ describe('scoreTrust', () => {
     expect(result.score).toBe(49) // red-line cap still applies
   })
 
-  it('forces red when secrets and network combine', () => {
-    const result = scoreTrust({ ...base, capabilities: ['credentials', 'network'] })
+  it('forces red when a secret read and network combine', () => {
+    const result = scoreTrust({
+      ...base,
+      capabilities: ['credentials', 'network'],
+      secretTouches: [{ kind: 'read', value: "credentials.resolve('K')", file: 'a.js', line: 1 }],
+    })
     expect(result.band).toBe('red')
     expect(result.redLines).toContain('reads credentials/secrets AND has network access')
     expect(result.score).toBe(49)
+  })
+
+  it('does not red-line a credential handle that is never read', () => {
+    const result = scoreTrust({
+      ...base,
+      capabilities: ['credentials', 'network'],
+      secretTouches: [{ kind: 'api', value: 'credential API', file: 'a.js', line: 1 }],
+    })
+    expect(result.band).not.toBe('red')
+    expect(result.redLines).not.toContain('reads credentials/secrets AND has network access')
   })
 
   it('treats overriding a core bundle as a red line, community bundles as a deduction', () => {

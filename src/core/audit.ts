@@ -95,6 +95,7 @@ export function auditPlugin(input: PluginInput): AuditReport {
 
   const { score, band, redLines, deductions } = scoreTrust({
     capabilities,
+    secretTouches,
     destinations,
     injectedTokensEstimate,
     injections,

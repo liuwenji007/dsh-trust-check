@@ -154,12 +154,13 @@ describe('scanShape', () => {
     const abs = scanShape(input({
       'a.js': "readFileSync('/Users/victim/.ssh/config')",
     }))
-    expect(abs.secretTouches.some(s => s.kind === 'path' && s.value.includes('.ssh'))).toBe(true)
+    // Inside a read call the touch is a secret read, not a bare reference.
+    expect(abs.secretTouches.some(s => s.kind === 'read' && s.value.includes('.ssh'))).toBe(true)
 
     const frag = scanShape(input({
       'a.js': "readFileSync('~/' + '.ssh/config')",
     }))
-    expect(frag.secretTouches.some(s => s.kind === 'path' && s.value.includes('.ssh'))).toBe(true)
+    expect(frag.secretTouches.some(s => s.kind === 'read' && s.value.includes('.ssh'))).toBe(true)
   })
 
   it('records path-only ~/.aws/credentials literals', () => {
@@ -370,11 +371,12 @@ describe('scanShape', () => {
         'readFile("~/.gnupg/private-keys-v1.d")',
       ].join('\n'),
     }))
-    expect(secretTouches.filter(s => s.kind === 'path').map(s => s.value)).toEqual([
+    expect(secretTouches.map(s => s.value)).toEqual([
       '.kube/config',
       '.docker/config.json',
       '.gnupg/',
     ])
+    expect(secretTouches.every(s => s.kind === 'read')).toBe(true)
   })
 
   it('does not flag generic credential words or filenames', () => {
@@ -406,7 +408,9 @@ describe('scanShape', () => {
         'open("./.netrc")',
       ].join('\n'),
     }))
-    expect(secretTouches.some(s => s.kind === 'path' && s.value.includes('id_rsa'))).toBe(true)
+    expect(secretTouches.some(s => s.kind === 'read' && s.value.includes('id_rsa'))).toBe(true)
+    expect(secretTouches.some(s => s.kind === 'read' && s.value.includes('.netrc'))).toBe(true)
+    // `open('./.netrc')` is a reference on its own line, not a read.
     expect(secretTouches.some(s => s.kind === 'path' && s.value.includes('.netrc'))).toBe(true)
   })
 
@@ -452,6 +456,7 @@ describe('scoreTrust destinations', () => {
   it('merges shape red lines', () => {
     const result = scoreTrust({
       capabilities: ['network'],
+      secretTouches: [],
       destinations: [{ kind: 'http-host', value: 'attacker.com', file: 'a.js', line: 1 }],
       injectedTokensEstimate: 0,
       injections: [],

@@ -3,7 +3,7 @@
  * every deduction is reproducible from the evidence the scanner produced.
  */
 
-import type { Band, Capability, Deduction, DestinationFinding, InjectionFinding } from './types.ts'
+import type { Band, Capability, Deduction, DestinationFinding, InjectionFinding, SecretTouchFinding } from './types.ts'
 import { shapeRedLines } from './shape.ts'
 
 export const CAPABILITY_WEIGHT: Readonly<Record<Capability, number>> = {
@@ -26,6 +26,8 @@ const TOKEN_DEDUCTION_STEP = 50
 
 export interface ScoreInput {
   capabilities: Capability[]
+  /** Located secret touches; the `read` kind is what the credential red line keys off. */
+  secretTouches: SecretTouchFinding[]
   destinations: DestinationFinding[]
   injectedTokensEstimate: number
   injections: InjectionFinding[]
@@ -94,8 +96,12 @@ export function scoreTrust(input: ScoreInput): ScoreResult {
     }
   }
 
-  // Secrets + network together is the classic exfiltration shape.
-  if (input.capabilities.includes('credentials') && input.capabilities.includes('network')) {
+  // Secrets + network together is the classic exfiltration shape. Only an
+  // actual secret *read* qualifies: holding the credential handle
+  // (`const c = ctx.credentials`) or reading its metadata is disclosure, which
+  // the capability chip already carries, not an exfiltration shape.
+  const readsSecret = input.secretTouches.some(t => t.kind === 'read')
+  if (readsSecret && input.capabilities.includes('network')) {
     redLines.push('reads credentials/secrets AND has network access')
   }
 
