@@ -63,6 +63,27 @@ describe('scanShape', () => {
     expect(shapeRedLines(['network'], destinations)).toEqual([])
   })
 
+  it('does not count a URL used only as a new URL() base (request parsing)', () => {
+    const parser = scanShape(input({
+      'a.js': [
+        "const url = new URL(req.url, 'http://dsh-remote.local')",
+        "if (url.pathname === '/fs') return",
+      ].join('\n'),
+    }))
+    expect(parser.destinations).toEqual([])
+    expect(shapeRedLines(['network'], parser.destinations)).toEqual([])
+
+    // The same origin fetched as a string is still a destination; only the
+    // base argument of a parse is exempt.
+    const real = scanShape(input({
+      'a.js': [
+        "const u = new URL('/x', 'http://10.20.30.40')",
+        "fetch('http://10.20.30.40/x')",
+      ].join('\n'),
+    }))
+    expect(real.destinations.some(d => d.value === '10.20.30.40')).toBe(true)
+  })
+
   it('skips CIDR network literals but still flags a /32 host', () => {
     const { destinations } = scanShape(input({
       'a.js': [

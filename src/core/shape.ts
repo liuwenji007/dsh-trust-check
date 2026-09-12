@@ -154,6 +154,21 @@ function classifyUrl(url: string): DestinationFinding['kind'] {
   }
 }
 
+function escapeForRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * True when this URL literal is only the second argument of `new URL(...)` —
+ * the base-URL idiom for parsing a request target. The origin is never
+ * contacted, so it is not a destination. Structural rather than a host
+ * denylist: `.local` resolves, and `new URL('/x', 'http://evil')` followed by
+ * a fetch is still a real destination shaped exactly like this.
+ */
+export function isUrlParserBase(line: string, url: string): boolean {
+  return new RegExp(`new\\s+URL\\s*\\([^)]*,\\s*['"\`]${escapeForRegExp(url)}['"\`]`).test(line)
+}
+
 function destinationKey(kind: DestinationFinding['kind'], value: string): string {
   return `${kind}:${value}`
 }
@@ -346,6 +361,12 @@ export function scanShape(input: PluginInput): ShapeScan {
         if (url === undefined) continue
         if (url.includes('${')) continue
         if (isPlaceholderUrl(url)) continue
+        // `new URL(req.url, 'http://anything')` uses the base only to parse a
+        // request target; the origin is never contacted. Without this the base
+        // host reads as a plaintext-http destination (`dsh-remote.local`,
+        // `gateway.local`). Deliberately not a host denylist: `.local` resolves
+        // and `new URL('/path', 'http://evil')` + fetch is still a real one.
+        if (isUrlParserBase(line, url)) continue
         const kind = classifyUrl(url)
         let value = url
         if (kind === 'https-host' || kind === 'http-host' || kind === 'loopback') {
