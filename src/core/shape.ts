@@ -41,8 +41,22 @@ const CREDENTIALS_IMPORT = /(?:require\(|from\s+|import\s*\(\s*)['"](?:keychain|
 /**
  * Credential API calls that return secret *material* (`resolve('API_KEY')`
  * yields the value). Handle access and `describe`/`set`/`unset` do not.
+ *
+ * Not anchored to the literal token `credentials`: the seam is routinely
+ * aliased (`const x = ctx.get('credentials')`), and requiring the name let a
+ * real read-and-post shape pass as `review`.
+ *
+ * A bare `read(` / `getXxx(` is also not matched: those names are ordinary DOM
+ * and collection methods (`getItem`, `getBoundingClientRect`,
+ * `getRandomValues`), which red-lined `dsh-pocket` and `agent-teams`.
+ * Destructuring the seam (`const { resolve } = ctx.credentials`), aliasing it
+ * to a differently named local (`const x = …; x.resolve(…)`) and reading a
+ * secret path held in a variable stay known misses: telling those from
+ * ordinary calls needs scope tracking, not a line regex.
  */
-const CREDENTIALS_READ = /\bcredentials\.(?:resolve|readRecord|read|get[A-Z]\w*)\s*\(/g
+const CREDENTIALS_READ = /(?<![\w$])credentials\s*\.\s*(?:resolve|read|readRecord|get[A-Z]\w*)\s*\(|(?<![\w$])readRecord\s*\(/g
+/** Keychain libraries: these calls return the secret itself, not a handle. */
+const KEYCHAIN_READ = /\b(?:keytar|keychain)\.(?:getPassword|getCredentials|findCredentials|findPassword)\s*\(/g
 /** A read call on the same line as a secret-path literal lifts it to a read. */
 const SECRET_FILE_READ = /\b(?:readFile|readFileSync|createReadStream)\s*\(/
 const HOME_ESCAPE = /['"`](~\/[^'"`]+|\$\{?HOME\}?\/[^'"`]+)['"`]/g
@@ -163,6 +177,34 @@ function classifyUrl(url: string): DestinationFinding['kind'] {
 
 function escapeForRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/** Identifiers a file binds to the credential seam. */
+export function collectSeamAliases(lines: readonly string[]): string[] {
+  const names = new Set<string>()
+  for (const line of lines) {
+    for (const m of line.matchAll(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:ctx|this\.ctx|hostCtx)\s*\.\s*get\(\s*['"]credentials['"]\s*\)/g)) {
+      if (m[1] !== undefined) names.add(m[1])
+    }
+  }
+  return [...names]
+}
+
+/**
+ * Value-returning credential calls on one line, including calls through a
+ * local seam alias (`const x = ctx.get('credentials')` → `x.resolve(…)`).
+ * Bare `resolve(` / `read(` / `getXxx(` are excluded because Promise executors
+ * and DOM accessors use those names.
+ */
+export function credentialReadCalls(line: string, seamAliases: readonly string[] = []): string[] {
+  CREDENTIALS_READ.lastIndex = 0
+  const calls = [...(line.match(CREDENTIALS_READ) ?? [])]
+  for (const alias of seamAliases) {
+    if (!line.includes(`${alias}.`)) continue
+    const re = new RegExp(`(?<![\\w$])${escapeForRegExp(alias)}\\s*\\.\\s*(?:resolve|read|readRecord|get[A-Z]\\w*)\\s*\\(`, 'g')
+    calls.push(...(line.match(re) ?? []))
+  }
+  return calls
 }
 
 /**
@@ -359,6 +401,11 @@ export function scanShape(input: PluginInput): ShapeScan {
   for (const [file, content] of Object.entries(input.sources)) {
     const scanned = isCodeFile(file) ? stripComments(content) : content
     const lines = scanned.split('\n')
+    // Locals bound to the credential seam in this file (`const x =
+    // ctx.get('credentials')`). Reads through them are real reads, but matching
+    // a bare `resolve(` instead would also catch every Promise executor, so the
+    // names are collected first and only those receivers count.
+    const seamAliases = collectSeamAliases(lines)
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]
       const lineNo = i + 1
@@ -466,9 +513,16 @@ export function scanShape(input: PluginInput): ShapeScan {
       // holding the handle (`const c = ctx.credentials`) or asking for
       // metadata (`describe`) is disclosure, not a secret read. The red line
       // keys off this rather than off the capability chip.
-      if (CREDENTIALS_READ.test(line)) {
-        CREDENTIALS_READ.lastIndex = 0
-        const calls = line.match(CREDENTIALS_READ) ?? []
+      const readCalls = credentialReadCalls(line, seamAliases)
+      if (readCalls.length > 0) {
+        for (const call of readCalls) {
+          secretTouches.push({ kind: 'read', value: call, file, line: lineNo })
+        }
+      }
+
+      if (KEYCHAIN_READ.test(line)) {
+        KEYCHAIN_READ.lastIndex = 0
+        const calls = line.match(KEYCHAIN_READ) ?? []
         for (const call of calls) {
           secretTouches.push({ kind: 'read', value: call, file, line: lineNo })
         }

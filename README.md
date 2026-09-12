@@ -100,7 +100,7 @@ npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 
 1. 声明 install / postinstall / preinstall 安装脚本（**不含** `prepare`：`prepare` 只在 pack/git 安装时跑，记为扣分，不是红线）；
 2. `cordis.patch.yml` override / disable 了 `@deepseek-ai/*` 核心 bundle（匹配 `id` **或** `name`）；
-3. **读到**凭据/密钥的值（`ctx.credentials.resolve` / `read` / `readRecord` / `get*`，或读文件调用同行的密钥路径）**且**有网络访问——只拿到句柄（`const c = ctx.credentials`、`ctx.get('credentials')`）或只读元数据（`describe`）记为 chip 披露，不算红线；
+3. **读到**凭据/密钥的值（`credentials.resolve` / `read` / `readRecord` / `get*`，含经 `ctx.get('credentials')` 别名的调用、`keytar`/`keychain` 的 `getPassword` 等，或读文件调用同行的密钥路径）**且**有网络访问——只拿到句柄（`const c = ctx.credentials`、`ctx.get('credentials')`）或只读元数据（`describe`）记为 chip 披露，不算红线；
 4. 非 localhost 的明文 `http://` 外连（字面量）**且**有 network；
 5. 非 loopback、非文档例网、非绑定/广播的字面量 IP 外连 **且**有 network。
 
@@ -156,6 +156,8 @@ npx dsh-trust-check --dir "$EXTRACTED_DIR" --spec "$INSTALL_SPEC" --json
 - **装后体检**：profile 模式审计的是**已经安装**的插件；install/postinstall/prepare 在你第一次扫描前就可能已经跑过。`--dir` 模式可在安装前对解压目录扫描（但安装脚本本身仍可能在 market 解包/安装阶段已执行）。
 - 静态扫描有漏判/误判（运行时才加载的能力看不到；动态 `import('node:' + …)`、字符串拼接、混淆后的 `eval`/`Function` 仍可能绕过规则表）。
 - **不扫 `node_modules`**：依赖里的行为不在审计范围内。
+- **凭据读值判定的已知漏判**（有意保留，见 `src/core/shape.ts` 的注释）：解构接缝（`const { resolve } = ctx.credentials` 后 `resolve(…)`）、把接缝赋给别名后调用（`const x = ctx.get('credentials'); x.read(…)`，`read` 不在别名单里）不带红；密钥路径存在变量里再 `readFileSync(p)` 也不带红。这些形与 Promise executor、DOM accessor、普通文件读同形，靠行级正则区分会大量误报，需要作用域追踪。
+- **`new URL` 的 base 参数不记为去向**，因此 `const u = new URL('/x', 'http://evil'); fetch(u.href)` 这种写法不含明文 http 红线——这是该豁免的已知代价，不要再扩大 base 豁免范围。
 - 客户端 `fetch('/api')` 等同源调用仍记为 network；芯片会标「同源」或「外连」，但没有字面量外连不等于不出网，评分不变。
 - 注入 token 是字节 / 4 的粗估，不是精确计费。
 - `link:` / `file:` 本地安装的插件无法从 spec 推断来源，若其 `package.json` 未声明 `repository`，会显示"未声明仓库"。
