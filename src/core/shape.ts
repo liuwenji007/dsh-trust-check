@@ -179,29 +179,79 @@ function escapeForRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-/** Identifiers a file binds to the credential seam. */
-export function collectSeamAliases(lines: readonly string[]): string[] {
-  const names = new Set<string>()
-  for (const line of lines) {
-    for (const m of line.matchAll(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:ctx|this\.ctx|hostCtx)\s*\.\s*get\(\s*['"]credentials['"]\s*\)/g)) {
-      if (m[1] !== undefined) names.add(m[1])
-    }
-  }
-  return [...names]
-}
+const SEAM_RECEIVERS = /(?:ctx|this\.ctx|hostCtx)\s*\.\s*get\(\s*['"]credentials['"]\s*\)|(?:ctx|this\.ctx|hostCtx)\s*\.\s*credentials\b/
+const KEYCHAIN_MODULE_NAMES = ['keytar', 'keychain']
+const SEAM_METHODS = 'resolve|read|readRecord|get[A-Z]\\w*'
+const KEYCHAIN_METHODS = 'getPassword|getCredentials|getSecret|getToken|findCredentials|findPassword|findAnyCredential'
 
 /**
- * Value-returning credential calls on one line, including calls through a
- * local seam alias (`const x = ctx.get('credentials')` → `x.resolve(…)`).
+ * Identifiers a file binds to the credential seam. Covers all the shapes that
+ * reach the seam, because a miss here is a missed secret read:
+ *
+ *   const x = ctx.get('credentials')       // seam service
+ *   const x = await ctx.get('credentials') // await does not break the binding
+ *   const x = ctx.credentials              // property access
+ *   const { credentials } = ctx            // destructured off ctx
+ *   import kt from 'keytar'                // renamed keychain module
+ *
+ * A `ctx.credentials.resolve(…)` direct call binds nothing and is matched by
+ * the call patterns instead.
+ */
+export function collectSeamAliases(lines: readonly string[]): string[] {
+  const names = new Set<string>([...KEYCHAIN_MODULE_NAMES])
+  const seam = new Set<string>()
+  const keychain = new Set<string>(KEYCHAIN_MODULE_NAMES)
+  const assignAwait = new RegExp(`\\b(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*await\\s+(?:${SEAM_RECEIVERS.source})`, 'g')
+  const assignDirect = new RegExp(`\\b(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*(?:${SEAM_RECEIVERS.source})(?!\\s*\\()`, 'g')
+  for (const line of lines) {
+    for (const m of line.matchAll(assignAwait)) {
+      if (m[1] !== undefined) { names.add(m[1]); seam.add(m[1]) }
+    }
+    for (const m of line.matchAll(assignDirect)) {
+      if (m[1] !== undefined) { names.add(m[1]); seam.add(m[1]) }
+    }
+    const destructured = /\b(?:const|let|var)\s*\{([^}]*)\}\s*=\s*(?:ctx|this\.ctx|hostCtx)\b/.exec(line)
+    if (destructured?.[1] !== undefined && /\bcredentials\b/.test(destructured[1])) {
+      names.add('credentials'); seam.add('credentials')
+    }
+    const rebound = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([A-Za-z_$][\w$]*)\s*$/.exec(line)
+    if (rebound?.[1] !== undefined && rebound[2] !== undefined && names.has(rebound[2])) {
+      names.add(rebound[1])
+      if (seam.has(rebound[2])) seam.add(rebound[1])
+      if (keychain.has(rebound[2])) keychain.add(rebound[1])
+    }
+    const namedImport = /\bimport\s+([A-Za-z_$][\w$]*)\s+from\s*['"](?:keytar|keychain)['"]/.exec(line)
+    if (namedImport?.[1] !== undefined) { names.add(namedImport[1]); keychain.add(namedImport[1]) }
+    const required = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*require\(\s*['"](?:keytar|keychain)['"]\s*\)/.exec(line)
+    if (required?.[1] !== undefined) { names.add(required[1]); keychain.add(required[1]) }
+  }
+  // The prefix keeps the alias kind with the name; a single string[] keeps the
+  // public signature and the call site simple. The module names themselves are
+  // already unambiguous, so only renamed aliases carry the prefix.
+  return [...names].map(name =>
+    (keychain.has(name) && name !== 'keytar' && name !== 'keychain' ? `${KEYCHAIN_PREFIX}${name}` : name))
+}
+
+/** Marks a keychain-module alias so the call regex uses the keychain method set. */
+const KEYCHAIN_PREFIX = 'keychain:'
+
+/**
+ * Value-returning credential calls on one line, including calls through a local
+ * seam alias (`const x = ctx.get('credentials')` → `x.resolve(…)`) and through
+ * a renamed keychain module (`import kt from 'keytar'` → `kt.getPassword(…)`).
+ *
  * Bare `resolve(` / `read(` / `getXxx(` are excluded because Promise executors
  * and DOM accessors use those names.
  */
 export function credentialReadCalls(line: string, seamAliases: readonly string[] = []): string[] {
   CREDENTIALS_READ.lastIndex = 0
   const calls = [...(line.match(CREDENTIALS_READ) ?? [])]
-  for (const alias of seamAliases) {
+  for (const entry of seamAliases) {
+    const isKeychain = entry.startsWith(KEYCHAIN_PREFIX) || entry === 'keytar' || entry === 'keychain'
+    const alias = isKeychain ? entry.slice(KEYCHAIN_PREFIX.length) : entry
     if (!line.includes(`${alias}.`)) continue
-    const re = new RegExp(`(?<![\\w$])${escapeForRegExp(alias)}\\s*\\.\\s*(?:resolve|read|readRecord|get[A-Z]\\w*)\\s*\\(`, 'g')
+    const methods = isKeychain ? KEYCHAIN_METHODS : SEAM_METHODS
+    const re = new RegExp(`(?<![\\w$])${escapeForRegExp(alias)}\\s*\\.\\s*(?:${methods})\\s*\\(`, 'g')
     calls.push(...(line.match(re) ?? []))
   }
   return calls

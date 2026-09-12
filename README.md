@@ -156,7 +156,7 @@ npx dsh-trust-check --dir "$EXTRACTED_DIR" --spec "$INSTALL_SPEC" --json
 - **装后体检**：profile 模式审计的是**已经安装**的插件；install/postinstall/prepare 在你第一次扫描前就可能已经跑过。`--dir` 模式可在安装前对解压目录扫描（但安装脚本本身仍可能在 market 解包/安装阶段已执行）。
 - 静态扫描有漏判/误判（运行时才加载的能力看不到；动态 `import('node:' + …)`、字符串拼接、混淆后的 `eval`/`Function` 仍可能绕过规则表）。
 - **不扫 `node_modules`**：依赖里的行为不在审计范围内。
-- **凭据读值判定的已知漏判**（有意保留，见 `src/core/shape.ts` 的注释）：解构接缝（`const { resolve } = ctx.credentials` 后 `resolve(…)`）、把接缝赋给别名后调用（`const x = ctx.get('credentials'); x.read(…)`，`read` 不在别名单里）不带红；密钥路径存在变量里再 `readFileSync(p)` 也不带红。这些形与 Promise executor、DOM accessor、普通文件读同形，靠行级正则区分会大量误报，需要作用域追踪。
+- **凭据读值判定覆盖到哪些写法**：接缝服务（`ctx.get('credentials')`，含 `await`）、属性直取（`ctx.credentials`）、从 `ctx` 解构、以及经这些来源再赋值的别名，其上的 `resolve` / `read` / `readRecord` / `get*` 都算读到值；`keytar` / `keychain` 的 `getPassword` / `findCredentials` 等，包括改名导入（`import kt from 'keytar'`）也算。**仍漏判**：解构到函数名（`const { resolve } = ctx.credentials` 后 `resolve(…)`）——它与 Promise executor 同名，按行匹配会把 `new Promise(resolve => …)` 误判成读值（实测会把 `dsh-pocket`、`agent-teams` 误红），需要作用域追踪；密钥路径先存进变量再 `readFileSync(p)` 同样漏判。
 - **`new URL` 的 base 参数不记为去向**，因此 `const u = new URL('/x', 'http://evil'); fetch(u.href)` 这种写法不含明文 http 红线——这是该豁免的已知代价，不要再扩大 base 豁免范围。
 - 客户端 `fetch('/api')` 等同源调用仍记为 network；芯片会标「同源」或「外连」，但没有字面量外连不等于不出网，评分不变。
 - 注入 token 是字节 / 4 的粗估，不是精确计费。

