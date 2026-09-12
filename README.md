@@ -100,7 +100,7 @@ npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 
 1. 声明 install / postinstall / preinstall 安装脚本（**不含** `prepare`：`prepare` 只在 pack/git 安装时跑，记为扣分，不是红线）；
 2. `cordis.patch.yml` override / disable 了 `@deepseek-ai/*` 核心 bundle（匹配 `id` **或** `name`）；
-3. **读到**凭据/密钥的值（`credentials.resolve` / `read` / `readRecord` / `get*`，含经 `ctx.get('credentials')` 别名的调用、`keytar`/`keychain` 的 `getPassword` 等，或读文件调用同行的密钥路径）**且**有网络访问——只拿到句柄（`const c = ctx.credentials`、`ctx.get('credentials')`）或只读元数据（`describe`）记为 chip 披露，不算红线；
+3. **读到**凭据/密钥的值（`credentials.resolve` / `read` / `readRecord` / `get*`，含经接缝别名 / 解构改名的调用、`keytar`/`keychain` 的 `getPassword` 等——含 `import * as` / `default as` 改名——或读文件调用同行的密钥路径）**且**有网络访问——只拿到句柄（`const c = ctx.credentials`、`ctx.get('credentials')`）或只读元数据（`describe`）记为 chip 披露，不算红线；
 4. 非 localhost 的明文 `http://` 外连（字面量）**且**有 network；
 5. 非 loopback、非文档例网、非绑定/广播的字面量 IP 外连 **且**有 network。
 
@@ -156,7 +156,7 @@ npx dsh-trust-check --dir "$EXTRACTED_DIR" --spec "$INSTALL_SPEC" --json
 - **装后体检**：profile 模式审计的是**已经安装**的插件；install/postinstall/prepare 在你第一次扫描前就可能已经跑过。`--dir` 模式可在安装前对解压目录扫描（但安装脚本本身仍可能在 market 解包/安装阶段已执行）。
 - 静态扫描有漏判/误判（运行时才加载的能力看不到；动态 `import('node:' + …)`、字符串拼接、混淆后的 `eval`/`Function` 仍可能绕过规则表）。
 - **不扫 `node_modules`**：依赖里的行为不在审计范围内。
-- **凭据读值判定覆盖到哪些写法**：接缝服务（`ctx.get('credentials')`，含 `await`；接收者认 `ctx` / `this.ctx` / `*Ctx` 等命名）、属性直取（`ctx.credentials`）、从上下文解构、以及经这些来源再赋值的别名，其上的 `resolve` / `read` / `readRecord` / `get*` 都算读到值；`keytar` / `keychain` 的 `getPassword` / `findCredentials` 等，包括改名导入（`import kt from 'keytar'`）也算。**仍漏判**：解构到函数名（`const { resolve } = ctx.credentials` 后 `resolve(…)`）——它与 Promise executor 同名，按行匹配会把 `new Promise(resolve => …)` 误判成读值（实测会把 `dsh-pocket`、`agent-teams` 误红），需要作用域追踪；密钥路径先存进变量再 `readFileSync(p)` 同样漏判。
+- **凭据读值判定覆盖到哪些写法**：接缝服务（`ctx.get('credentials')`，含 `await` / 可选链 `get?.`；接收者认 `ctx` / `this.ctx` / `*Ctx`）、属性直取（`ctx.credentials`）、从上下文解构（含改名 `credentials: creds`）、以及经这些来源再赋值的别名（含 `b = a`），其上的 `resolve` / `read` / `readRecord` / `get*` 都算读到值；`keytar` / `keychain` 的 `getPassword` / `findCredentials` 等，包括默认导入、`import * as`、`import { default as … }`、`require` 改名也算。**仍漏判**：解构到函数名（`const { resolve } = ctx.credentials` 后 `resolve(…)`）——它与 Promise executor 同名，按行匹配会把 `new Promise(resolve => …)` 误判成读值（实测会把 `dsh-pocket`、`agent-teams` 误红），需要作用域追踪；密钥路径先存进变量再 `readFileSync(p)` 同样漏判；接收者若既不叫 `ctx` 也不以 `Ctx` 结尾（如 `context` / `Context`）也不认。
 - **`new URL` 的 base 参数不记为去向**，因此 `const u = new URL('/x', 'http://evil'); fetch(u.href)` 这种写法不含明文 http 红线——这是该豁免的已知代价，不要再扩大 base 豁免范围。
 - 客户端 `fetch('/api')` 等同源调用仍记为 network；芯片会标「同源」或「外连」，但没有字面量外连不等于不出网，评分不变。
 - 注入 token 是字节 / 4 的粗估，不是精确计费。

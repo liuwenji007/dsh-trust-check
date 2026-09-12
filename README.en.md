@@ -100,7 +100,7 @@ After you confirm capabilities match why you installed the plugin, the fingerpri
 
 1. declares install / postinstall / preinstall scripts (**not** `prepare`: `prepare` runs on pack/git install only — a score deduction, not a red line);
 2. `cordis.patch.yml` overrides/disables an `@deepseek-ai/*` core bundle (matched by `id` **or** `name`);
-3. reads credential/secret material (keychain / keytar / dotenv / path-shaped `.ssh` / `.aws/credentials` …) **and** has network access;
+3. **reads** credential/secret *values* (`credentials.resolve` / `read` / `readRecord` / `get*`, including seam aliases and renamed destructures; keytar/keychain `getPassword` etc. including `import * as` / `default as`; or a secret path on the same line as a file read) **and** has network access — holding a handle only (`const c = ctx.credentials`, `ctx.get('credentials')`) or metadata (`describe`) is a capability chip, not a red line;
 4. plaintext `http://` to non-localhost (literal) **and** has network;
 5. non-loopback, non-documentation, non-bind/broadcast literal IP outbound **and** has network.
 
@@ -156,6 +156,8 @@ Parse `--json` uniformly: `plugins[0]` for single `--dir`, or the full `plugins`
 - **Post-install checkup**: profile mode audits plugins **already installed**; install/postinstall/prepare may have run before your first scan. `--dir` can scan an extracted tree before install (but install scripts may still run during market extract/install).
 - Static scans miss/false-positive (runtime-loaded capabilities are invisible; dynamic `import('node:' + …)`, string concatenation, and obfuscated `eval`/`Function` can still bypass the rule table).
 - **Does not scan `node_modules`**: dependency behavior is out of scope.
+- **Credential-value reads cover**: seam service (`ctx.get('credentials')`, including `await` / optional `get?.`; receivers `ctx` / `this.ctx` / `*Ctx`), property access (`ctx.credentials`), destructuring off context (including `credentials: creds`), rebinds of those aliases (including `b = a`), and keytar/keychain password reads including default / `import * as` / `import { default as … }` / `require` renames. **Still missed on purpose**: destructuring down to a bare function name (`const { resolve } = ctx.credentials` then `resolve(…)`) — same shape as Promise executors and would red-line plugins like `dsh-pocket` / `agent-teams` without scope tracking; a secret path held in a variable then `readFileSync(p)`; receivers named neither `ctx` nor `*Ctx` (e.g. `context` / `Context`).
+- **`new URL` base args are not destinations**, so `const u = new URL('/x', 'http://evil'); fetch(u.href)` has no plaintext-http red line — the known cost of that exemption; do not widen it.
 - Client-side `fetch('/api')` same-origin calls are still flagged as network; the chip is labelled same-origin or outbound, but a missing outbound literal is not a proof of no outbound access, and the score is unchanged.
 - Injected tokens are a byte / 4 estimate, not exact billing.
 - `link:` / `file:` installs can't infer source from the spec; if the package.json lacks `repository`, it shows "no repository declared".
