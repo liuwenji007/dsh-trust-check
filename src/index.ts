@@ -2,7 +2,7 @@
  * dsh-trust-check host entry: audit, ack, and optional explain routes.
  */
 
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
@@ -100,6 +100,20 @@ export function isLoopbackRequest(request: IncomingMessage): boolean {
   return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1'
 }
 
+const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]'])
+
+/**
+ * A loopback peer is not enough: a DNS-rebound page reaches 127.0.0.1 with
+ * its own name in Host and a matching Origin. Only loopback names pass.
+ */
+function loopbackHostHeader(host: string): boolean {
+  try {
+    return LOOPBACK_HOSTNAMES.has(new URL(`http://${host}`).hostname)
+  } catch {
+    return false
+  }
+}
+
 export function trustedAuditRequest(request: IncomingMessage): boolean {
   if (!isLoopbackRequest(request)) return false
   if (request.headers.forwarded !== undefined
@@ -107,7 +121,7 @@ export function trustedAuditRequest(request: IncomingMessage): boolean {
     || request.headers['x-real-ip'] !== undefined) return false
   const origin = request.headers.origin
   const host = request.headers.host
-  if (host === undefined) return false
+  if (host === undefined || !loopbackHostHeader(host)) return false
   if (origin === undefined) return true
   try {
     const parsed = new URL(origin)
@@ -148,22 +162,64 @@ export function decideAckSave(
   }
 }
 
+const MAX_BODY_BYTES = 64 * 1024
+
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = []
-  for await (const chunk of request) chunks.push(Buffer.from(chunk))
+  let total = 0
+  for await (const chunk of request) {
+    const buffer = Buffer.from(chunk)
+    total += buffer.length
+    if (total > MAX_BODY_BYTES) throw new Error(`request body exceeds ${MAX_BODY_BYTES} bytes`)
+    chunks.push(buffer)
+  }
   const text = Buffer.concat(chunks).toString('utf8').trim()
   if (text === '') return {}
   return JSON.parse(text) as unknown
 }
 
-function findPluginReport(profile: string, name: string): AuditReport | undefined {
+function manifestName(dir: string): string | undefined {
+  try {
+    const parsed = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { name?: unknown }
+    return typeof parsed.name === 'string' ? parsed.name : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Reports (and the acks keyed off them) carry the plugin's own manifest name,
+ * which need not equal its dependency key in the profile — npm aliases, or a
+ * plugin that simply names itself differently. Match on the manifest name
+ * first; fall back to the dependency key for API callers that use it.
+ */
+export function resolveInstalledKey(
+  profileDir: string,
+  installed: Record<string, string>,
+  name: string,
+): { key: string } | { ambiguous: true } | undefined {
+  const matches = Object.keys(installed).filter(key =>
+    manifestName(join(profileDir, 'node_modules', key)) === name)
+  if (matches.length > 1) return { ambiguous: true }
+  if (matches.length === 1) return { key: matches[0] }
+  return installed[name] !== undefined ? { key: name } : undefined
+}
+
+type PluginLookup = { report: AuditReport } | { ambiguous: true } | undefined
+
+function findPluginReport(profile: string, name: string): PluginLookup {
   const profileDir = resolveProfileDir(profile)
   const installed = readInstalled(profileDir)
-  const spec = installed[name]
-  if (spec === undefined) return undefined
-  const dir = join(profileDir, 'node_modules', name)
+  const resolved = resolveInstalledKey(profileDir, installed, name)
+  if (resolved === undefined || 'ambiguous' in resolved) return resolved
+  const dir = join(profileDir, 'node_modules', resolved.key)
   if (!existsSync(dir)) return undefined
-  return auditPlugin(collectPlugin(dir, spec))
+  return { report: auditPlugin(collectPlugin(dir, installed[resolved.key])) }
+}
+
+function sendLookupFailure(response: ServerResponse, lookup: Exclude<PluginLookup, { report: AuditReport }>): void {
+  if (lookup === undefined) sendJson(response, 404, { error: 'plugin not found' })
+  else sendJson(response, 400, { error: 'plugin-name-ambiguous' })
 }
 
 export function runAudit(profile: string): AuditResponse {
@@ -250,11 +306,12 @@ export function apply(ctx: Context, config?: Config): void {
                   sendJson(response, 400, { error: 'name is required' })
                   return
                 }
-                const report = findPluginReport(profile, body.name)
-                if (report === undefined) {
-                  sendJson(response, 404, { error: 'plugin not found' })
+                const lookup = findPluginReport(profile, body.name)
+                if (lookup === undefined || 'ambiguous' in lookup) {
+                  sendLookupFailure(response, lookup)
                   return
                 }
+                const { report } = lookup
                 const decision = decideAckSave(report, body.fingerprint, body.acceptRisk === true)
                 if (decision.status === 409) {
                   sendJson(response, 409, { error: 'plugin-content-changed', report: decision.report })
@@ -278,7 +335,12 @@ export function apply(ctx: Context, config?: Config): void {
                 sendJson(response, 400, { error: 'name query param is required' })
                 return
               }
-              removeAck(resolveProfileDir(profile), name)
+              try {
+                removeAck(resolveProfileDir(profile), name)
+              } catch (error) {
+                sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) })
+                return
+              }
               sendJson(response, 200, { ok: true })
               return
             }
@@ -302,12 +364,12 @@ export function apply(ctx: Context, config?: Config): void {
                 sendJson(response, 400, { error: 'name is required' })
                 return
               }
-              const report = findPluginReport(profile, body.name)
-              if (report === undefined) {
-                sendJson(response, 404, { error: 'plugin not found' })
+              const lookup = findPluginReport(profile, body.name)
+              if (lookup === undefined || 'ambiguous' in lookup) {
+                sendLookupFailure(response, lookup)
                 return
               }
-              const prompt = buildExplainPrompt(report, body.locale)
+              const prompt = buildExplainPrompt(lookup.report, body.locale)
               const text = await llmExplain(hostCtx, prompt)
               sendJson(response, 200, { name: body.name, text, disclaimer: 'explanation only, not a security verdict' })
             } catch (error) {

@@ -47,6 +47,23 @@ describe('trustedAuditRequest', () => {
   it('rejects forwarded proxy headers', () => {
     expect(trustedAuditRequest(requestOf({ forwarded: 'for=1.2.3.4' }))).toBe(false)
   })
+
+  it('rejects a DNS-rebound name even when Origin matches Host', () => {
+    expect(trustedAuditRequest(requestOf({
+      origin: 'http://rebind.attacker.test:3000',
+      host: 'rebind.attacker.test:3000',
+    }))).toBe(false)
+  })
+
+  it('accepts localhost and [::1] Host names', () => {
+    expect(trustedAuditRequest(requestOf({ host: 'localhost:3000', origin: 'http://localhost:3000' }))).toBe(true)
+    expect(trustedAuditRequest(requestOf({ host: '[::1]:3000', remoteAddress: '::1' }))).toBe(true)
+  })
+
+  it('rejects a loopback-looking name that is not loopback', () => {
+    expect(trustedAuditRequest(requestOf({ host: '127.0.0.1.attacker.test:3000' }))).toBe(false)
+    expect(trustedAuditRequest(requestOf({ host: 'localhost.attacker.test' }))).toBe(false)
+  })
 })
 
 describe('ackAllowed', () => {

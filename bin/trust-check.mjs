@@ -40,16 +40,24 @@ function parseArgs(argv) {
     dir: undefined,
     spec: 'dir:.',
   }
+  const valueOf = (flag, i) => {
+    const value = argv[i + 1]
+    if (value === undefined || value === '' || value.startsWith('--')) {
+      console.error(`error: ${flag} requires a non-empty value`)
+      process.exit(1)
+    }
+    return value
+  }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
-    if (arg === '--profile' && argv[i + 1] !== undefined) {
-      args.profile = argv[i + 1]
+    if (arg === '--profile') {
+      args.profile = valueOf(arg, i)
       i++
-    } else if (arg === '--dir' && argv[i + 1] !== undefined) {
-      args.dir = resolve(argv[i + 1])
+    } else if (arg === '--dir') {
+      args.dir = resolve(valueOf(arg, i))
       i++
-    } else if (arg === '--spec' && argv[i + 1] !== undefined) {
-      args.spec = argv[i + 1]
+    } else if (arg === '--spec') {
+      args.spec = valueOf(arg, i)
       i++
     } else if (arg === '--json') {
       args.json = true
@@ -65,6 +73,9 @@ Options:
   --json             Machine-readable AuditResponse JSON
 `)
       process.exit(0)
+    } else {
+      console.error(`error: unknown argument: ${arg} (see --help)`)
+      process.exit(1)
     }
   }
   if (args.dir !== undefined && argv.includes('--profile')) {
@@ -174,5 +185,5 @@ if (args.json) {
   const label = args.dir !== undefined
     ? `dir: ${args.dir}`
     : `profile: ${args.profile}`
-  humanReport(label, plugins, errors, response.acks)
+  humanReport(label, response.plugins, response.errors, response.acks)
 }

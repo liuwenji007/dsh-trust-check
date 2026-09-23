@@ -51,8 +51,28 @@ export interface CollectOptions {
 
 const MAX_COVERAGE_NOTES = 20
 
-/** Files that are build/test artifacts, never runtime code worth auditing. */
+/**
+ * Files that are build/test artifacts, never runtime code worth auditing.
+ * Only applies to the directory walk: a file reached from a manifest entry or
+ * a relative import is runtime code whatever it is named.
+ */
 const SKIP_FILE_RE = /(?:^|\/)(?:tsdown|vitest|jest|eslint|prettier)\.config\.|(?:^|\/)tsconfig[^/]*\.json$|\.spec\.|\.test\.|\.d\.ts$|\.map$|\.snap$/
+
+/** Parsed as data by every loader, never executed. */
+const DATA_EXT = new Set(['.json'])
+
+/**
+ * Binary targets a text scan cannot read. CommonJS `require` would still
+ * execute any of these as JavaScript, so reaching one is a coverage note,
+ * never a silent skip.
+ */
+const OPAQUE_EXT = new Set([
+  '.node', '.wasm',
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp', '.avif',
+  '.woff', '.woff2', '.ttf', '.otf', '.eot',
+  '.mp3', '.mp4', '.wav', '.ogg', '.webm',
+  '.zip', '.gz', '.tgz',
+])
 
 interface WalkBudget {
   bytes: number
@@ -82,7 +102,7 @@ function collectExportTarget(value: unknown, out: Set<string>): void {
   }
   if (typeof value === 'object' && value !== null) {
     const obj = value as Record<string, unknown>
-    for (const key of ['import', 'default', 'require', 'node', 'types']) {
+    for (const key of ['import', 'default', 'require', 'node']) {
       const entry = obj[key]
       if (typeof entry === 'string') out.add(entry)
     }
@@ -217,6 +237,49 @@ function readScannedFile(
   const ext = extOf(rel)
   const isSkill = isSkillFile(rel) && (ext === '.md' || ext === '.prompt' || ext === '.txt')
   if (ext !== '' && !CODE_EXT.has(ext) && !isSkill) return
+  readIntoBudget(abs, rel, isSkill ? skillFiles : sources, budget, limits, size)
+}
+
+/**
+ * Read a file reached from a manifest entry or a relative import. Name and
+ * extension skip rules do not apply here: whatever the loader will execute
+ * gets scanned, or is reported as a coverage limit.
+ */
+function readRuntimeTarget(
+  abs: string,
+  root: string,
+  sources: Record<string, string>,
+  skillFiles: Record<string, string>,
+  budget: WalkBudget,
+  limits: ScanLimits,
+  coverageNotes: string[],
+  omitted: { count: number },
+  size?: number,
+): void {
+  const rel = posixRel(root, abs)
+  if (sources[rel] !== undefined) return
+  const skillText = skillFiles[rel]
+  if (skillText !== undefined) {
+    sources[rel] = skillText
+    return
+  }
+  const ext = extOf(rel)
+  if (DATA_EXT.has(ext)) return
+  if (OPAQUE_EXT.has(ext)) {
+    pushNote(coverageNotes, omitted, `binary runtime target not scanned: ${rel}`)
+    return
+  }
+  readIntoBudget(abs, rel, sources, budget, limits, size)
+}
+
+function readIntoBudget(
+  abs: string,
+  rel: string,
+  into: Record<string, string>,
+  budget: WalkBudget,
+  limits: ScanLimits,
+  size?: number,
+): void {
   const bytes = size ?? lstatSync(abs).size
   if (bytes > limits.maxFileBytes) {
     throw new Error(`file too large: ${rel} (${bytes} bytes)`)
@@ -235,8 +298,7 @@ function readScannedFile(
   }
   budget.bytes += bytes
   budget.files += 1
-  if (isSkill) skillFiles[rel] = content
-  else sources[rel] = content
+  into[rel] = content
 }
 
 type LocatedPath =
@@ -308,7 +370,9 @@ function scanDeclaredEntries(
       pushNote(coverageNotes, omitted, `optional export not found: ${raw}`)
       continue
     }
-    readScannedFile(located.abs, packageDir, sources, skillFiles, budget, limits, located.size)
+    readRuntimeTarget(
+      located.abs, packageDir, sources, skillFiles, budget, limits, coverageNotes, omitted, located.size,
+    )
   }
 }
 
@@ -350,30 +414,20 @@ function readPatch(manifest: Record<string, unknown>, dir: string): { text: stri
       if (typeof patch === 'string') declared = patch
     }
   }
-  const candidates = declared !== undefined
-    ? [resolve(dir, declared)]
-    : [join(dir, 'cordis.patch.yml')]
-  for (const candidate of candidates) {
-    if (!isInsidePackage(dir, candidate)) continue
-    if (!existsSync(candidate)) continue
-    let stat
-    try {
-      stat = lstatSync(candidate)
-    } catch {
-      continue
-    }
-    if (!stat.isFile()) continue
-    if (stat.size > SCAN_LIMITS.maxFileBytes) {
-      throw new Error(`file too large: ${posixRel(dir, candidate)} (${stat.size} bytes)`)
-    }
-    try {
-      const text = readFileSync(candidate, 'utf8')
-      return { text, path: posixRel(dir, candidate) }
-    } catch {
-      return undefined
-    }
+  const raw = declared ?? 'cordis.patch.yml'
+  const located = locatePackagePath(dir, resolve(dir, raw))
+  if (located.kind === 'escape') throw new Error(`patch escapes package: ${raw}`)
+  if (located.kind === 'missing') return undefined
+  if (located.kind === 'dir') throw new Error(`patch is a directory: ${raw}`)
+  const rel = posixRel(dir, located.abs)
+  if (located.size > SCAN_LIMITS.maxFileBytes) {
+    throw new Error(`file too large: ${rel} (${located.size} bytes)`)
   }
-  return undefined
+  try {
+    return { text: readFileSync(located.abs, 'utf8'), path: rel }
+  } catch (err) {
+    throw new Error(`unreadable: ${rel}: ${err instanceof Error ? err.message : String(err)}`)
+  }
 }
 
 /**
@@ -525,10 +579,7 @@ function followStaticImports(
         pushNote(coverageNotes, omitted, `unresolvable runtime target from ${rel}: ${spec}`)
         continue
       }
-      const targetRel = posixRel(packageDir, target)
-      if (sources[targetRel] === undefined && skillFiles[targetRel] === undefined) {
-        readScannedFile(target, packageDir, sources, skillFiles, budget, limits)
-      }
+      readRuntimeTarget(target, packageDir, sources, skillFiles, budget, limits, coverageNotes, omitted)
       queue.push(target)
     }
   }

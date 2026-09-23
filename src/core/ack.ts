@@ -2,7 +2,7 @@
  * Local trust-ack store: user-acknowledged capability/shape fingerprints per profile.
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { AuditReport, TrustAckEntry } from './types.ts'
 
@@ -14,25 +14,48 @@ export function ackPath(profileDir: string): string {
   return join(profileDir, 'trust-ack.json')
 }
 
-export function readAckStore(profileDir: string): TrustAckStore {
+function isAckEntry(value: unknown): value is TrustAckEntry {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** Throws on a corrupt file, so a write never replaces acks it could not read. */
+function readAckStoreStrict(profileDir: string): TrustAckStore {
   const path = ackPath(profileDir)
   if (!existsSync(path)) return {}
+  let parsed: unknown
   try {
-    const raw = readFileSync(path, 'utf8')
-    const parsed = JSON.parse(raw) as unknown
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {}
-    return parsed as TrustAckStore
+    parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown
+  } catch (err) {
+    throw new Error(`trust-ack.json is corrupt, refusing to overwrite it: ${err instanceof Error ? err.message : String(err)}`)
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('trust-ack.json is not an object, refusing to overwrite it')
+  }
+  const store: TrustAckStore = {}
+  for (const [name, entry] of Object.entries(parsed)) {
+    if (isAckEntry(entry)) store[name] = entry
+  }
+  return store
+}
+
+/** Lenient read for display: an unreadable store means "no acks", never a crash. */
+export function readAckStore(profileDir: string): TrustAckStore {
+  try {
+    return readAckStoreStrict(profileDir)
   } catch {
     return {}
   }
 }
 
 export function writeAckStore(profileDir: string, store: TrustAckStore): void {
-  writeFileSync(ackPath(profileDir), `${JSON.stringify(store, null, 2)}\n`, 'utf8')
+  const path = ackPath(profileDir)
+  const temp = `${path}.${process.pid}.tmp`
+  writeFileSync(temp, `${JSON.stringify(store, null, 2)}\n`, 'utf8')
+  renameSync(temp, path)
 }
 
 export function setAck(profileDir: string, report: AuditReport): TrustAckEntry {
-  const store = readAckStore(profileDir)
+  const store = readAckStoreStrict(profileDir)
   const entry: TrustAckEntry = {
     digest: report.ackFingerprint,
     capabilities: [...report.capabilities],
@@ -49,7 +72,8 @@ export function setAck(profileDir: string, report: AuditReport): TrustAckEntry {
 }
 
 export function removeAck(profileDir: string, name: string): void {
-  const store = readAckStore(profileDir)
+  const store = readAckStoreStrict(profileDir)
+  if (!(name in store)) return
   delete store[name]
   writeAckStore(profileDir, store)
 }

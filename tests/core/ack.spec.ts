@@ -1,5 +1,10 @@
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { ackPath, readAckStore, removeAck, setAck } from '../../src/core/ack.ts'
 import { ackMatchesReport, fingerprintFromReport } from '../../src/core/ack-fingerprint.ts'
+import { verdict } from '../../src/core/present.ts'
 import { auditPlugin } from '../../src/core/audit.ts'
 import { decideAckSave } from '../../src/index.ts'
 import type { AuditReport } from '../../src/core/types.ts'
@@ -89,5 +94,60 @@ describe('decideAckSave', () => {
     })
     expect(fresh.redLines.length).toBeGreaterThan(0)
     expect(decideAckSave(fresh, fresh.ackFingerprint, false).status).toBe(400)
+  })
+})
+
+describe('ack store', () => {
+  const withProfile = (run: (dir: string) => void) => {
+    const dir = mkdtempSync(join(tmpdir(), 'trust-ack-'))
+    try {
+      run(dir)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+  const fresh = (): AuditReport => ({ ...report(), ackFingerprint: 'abc' })
+
+  it('refuses to overwrite a corrupt store instead of wiping other acks', () => {
+    withProfile(dir => {
+      writeFileSync(ackPath(dir), '{"other": {"digest": "x"}, broken')
+      expect(() => setAck(dir, fresh())).toThrow(/corrupt/)
+      expect(() => removeAck(dir, 'other')).toThrow(/corrupt/)
+      expect(readFileSync(ackPath(dir), 'utf8')).toContain('broken')
+    })
+  })
+
+  it('reads a corrupt store as empty for display', () => {
+    withProfile(dir => {
+      writeFileSync(ackPath(dir), 'not json')
+      expect(readAckStore(dir)).toEqual({})
+    })
+  })
+
+  it('drops malformed entries so verdict never dereferences null', () => {
+    withProfile(dir => {
+      writeFileSync(ackPath(dir), JSON.stringify({ p: null, q: 'str', r: { digest: 'abc' } }))
+      const store = readAckStore(dir)
+      expect(Object.keys(store)).toEqual(['r'])
+      expect(verdict(fresh(), store.p)).toBe('review')
+    })
+  })
+
+  it('writes atomically and keeps other entries', () => {
+    withProfile(dir => {
+      writeFileSync(ackPath(dir), JSON.stringify({ other: { digest: 'x' } }))
+      setAck(dir, fresh())
+      const store = readAckStore(dir)
+      expect(Object.keys(store).sort()).toEqual(['other', 'p'])
+      expect(store.p?.digest).toBe('abc')
+      expect(readdirSync(dir).filter(name => name.endsWith('.tmp'))).toEqual([])
+    })
+  })
+
+  it('does not create a store when removing from a missing one', () => {
+    withProfile(dir => {
+      removeAck(dir, 'p')
+      expect(existsSync(ackPath(dir))).toBe(false)
+    })
   })
 })

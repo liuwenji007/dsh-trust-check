@@ -72,7 +72,7 @@ describe('collectPlugin', () => {
     }
   })
 
-  it('rejects patch paths outside the package directory', () => {
+  it('fails the scan when a declared patch path leaves the package', () => {
     const root = mkdtempSync(join(tmpdir(), 'trust-fs-'))
     try {
       mkdirSync(join(root, 'pkg'))
@@ -82,14 +82,13 @@ describe('collectPlugin', () => {
         version: '1',
         dsh: { bundle: { patch: '../outside.yml' } },
       }))
-      const collected = collectPlugin(join(root, 'pkg'), 'npm:x@1')
-      expect(collected.patchText).toBeUndefined()
+      expect(() => collectPlugin(join(root, 'pkg'), 'npm:x@1')).toThrow(/patch escapes package/)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
   })
 
-  it('rejects absolute patch paths', () => {
+  it('fails the scan on an absolute patch path', () => {
     const root = mkdtempSync(join(tmpdir(), 'trust-fs-'))
     try {
       writeFileSync(join(root, 'package.json'), JSON.stringify({
@@ -97,8 +96,34 @@ describe('collectPlugin', () => {
         version: '1',
         dsh: { bundle: { patch: '/etc/passwd' } },
       }))
-      const collected = collectPlugin(root, 'npm:x@1')
-      expect(collected.patchText).toBeUndefined()
+      expect(() => collectPlugin(root, 'npm:x@1')).toThrow(/patch escapes package/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('follows a patch symlink that stays inside the package', () => {
+    const root = mkdtempSync(join(tmpdir(), 'trust-fs-patch-link-'))
+    try {
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'patch-link', version: '1' }))
+      writeFileSync(join(root, 'real.yml'), '- override:\n    - id: "@deepseek-ai/dsh-base"\n')
+      symlinkSync('real.yml', join(root, 'cordis.patch.yml'))
+      const report = auditPlugin(collectPlugin(root, 'npm:x@1'))
+      expect(report.redLines.some(line => line.startsWith('tampers with a core bundle'))).toBe(true)
+      expect(verdict(report)).toBe('red')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('fails the scan when the patch symlink leaves the package', () => {
+    const root = mkdtempSync(join(tmpdir(), 'trust-fs-patch-link-out-'))
+    try {
+      mkdirSync(join(root, 'pkg'))
+      writeFileSync(join(root, 'outside.yml'), '- override:\n    - id: "@deepseek-ai/dsh-base"\n')
+      writeFileSync(join(root, 'pkg', 'package.json'), JSON.stringify({ name: 'patch-link-out', version: '1' }))
+      symlinkSync(join(root, 'outside.yml'), join(root, 'pkg', 'cordis.patch.yml'))
+      expect(() => collectPlugin(join(root, 'pkg'), 'npm:x@1')).toThrow(/escapes package/)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -304,6 +329,96 @@ describe('collectPlugin', () => {
       expect(Object.keys(collected.sources).sort()).toEqual(['lib/index.js', 'runtime/payload.js'])
       expect(report.capabilities).toContain('shell')
       expect(verdict(report)).toBe('review')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('scans a test-named file reached from the entry', () => {
+    const root = mkdtempSync(join(tmpdir(), 'trust-fs-testname-'))
+    try {
+      mkdirSync(join(root, 'lib'))
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'tn', version: '1.0.0', main: './lib/index.js' }))
+      writeFileSync(join(root, 'lib', 'index.js'), "require('./payload.test.js')\n")
+      writeFileSync(join(root, 'lib', 'payload.test.js'), "require('child_process').execSync('id')\n")
+      const collected = collectPlugin(root, 'npm:tn@1.0.0')
+      const report = auditPlugin(collected)
+      expect(collected.sources['lib/payload.test.js']).toContain('execSync')
+      expect(report.capabilities).toContain('shell')
+      expect(verdict(report)).toBe('review')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('scans a primary entry whose name matches a skip rule', () => {
+    const root = mkdtempSync(join(tmpdir(), 'trust-fs-mainskip-'))
+    try {
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ms', version: '1.0.0', main: './index.spec.cjs' }))
+      writeFileSync(join(root, 'index.spec.cjs'), "require('child_process').execSync('id')\n")
+      const report = auditPlugin(collectPlugin(root, 'npm:ms@1.0.0'))
+      expect(report.capabilities).toContain('shell')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('scans a non-code extension that require() would execute', () => {
+    const root = mkdtempSync(join(tmpdir(), 'trust-fs-ext-'))
+    try {
+      mkdirSync(join(root, 'lib'))
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ext', version: '1.0.0', main: './lib/index.js' }))
+      writeFileSync(join(root, 'lib', 'index.js'), "require('./data.bin')\n")
+      writeFileSync(join(root, 'lib', 'data.bin'), "require('child_process').execSync('id')\n")
+      const collected = collectPlugin(root, 'npm:ext@1.0.0')
+      expect(collected.sources['lib/data.bin']).toContain('execSync')
+      expect(auditPlugin(collected).capabilities).toContain('shell')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('follows imports inside a reached non-code file', () => {
+    const root = mkdtempSync(join(tmpdir(), 'trust-fs-chain-'))
+    try {
+      mkdirSync(join(root, 'lib'))
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'chain', version: '1.0.0', main: './lib/index.js' }))
+      writeFileSync(join(root, 'lib', 'index.js'), "require('./a.dat')\n")
+      writeFileSync(join(root, 'lib', 'a.dat'), "require('./b.test.js')\n")
+      writeFileSync(join(root, 'lib', 'b.test.js'), "require('child_process').execSync('id')\n")
+      const report = auditPlugin(collectPlugin(root, 'npm:chain@1.0.0'))
+      expect(report.capabilities).toContain('shell')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('notes a binary runtime target instead of skipping it silently', () => {
+    const root = mkdtempSync(join(tmpdir(), 'trust-fs-bin-'))
+    try {
+      mkdirSync(join(root, 'lib'))
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'bin', version: '1.0.0', main: './lib/index.js' }))
+      writeFileSync(join(root, 'lib', 'index.js'), "require('./addon.node')\nrequire('./data.json')\n")
+      writeFileSync(join(root, 'lib', 'addon.node'), 'binary')
+      writeFileSync(join(root, 'lib', 'data.json'), '{}')
+      const collected = collectPlugin(root, 'npm:bin@1.0.0')
+      expect(collected.coverageNotes).toContain('binary runtime target not scanned: lib/addon.node')
+      expect(collected.coverageNotes?.some(note => note.includes('data.json'))).toBe(false)
+      expect(collected.sources['lib/data.json']).toBeUndefined()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('still skips test files that nothing imports', () => {
+    const root = mkdtempSync(join(tmpdir(), 'trust-fs-orphan-'))
+    try {
+      mkdirSync(join(root, 'lib'))
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'orphan', version: '1.0.0', main: './lib/index.js' }))
+      writeFileSync(join(root, 'lib', 'index.js'), 'export const ok = 1\n')
+      writeFileSync(join(root, 'lib', 'index.test.js'), "require('child_process').execSync('id')\n")
+      const collected = collectPlugin(root, 'npm:orphan@1.0.0')
+      expect(collected.sources['lib/index.test.js']).toBeUndefined()
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
