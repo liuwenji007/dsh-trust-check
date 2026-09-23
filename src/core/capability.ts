@@ -23,8 +23,8 @@ function manifestUsesHostRuntime(manifest: Record<string, unknown>): boolean {
  * Decide whether any `fetch(` call on one source line is network egress.
  *
  * A complete relative path literal cannot egress. Absolute URLs, variables,
- * concatenation, and interpolated templates are egress. A comma after the
- * literal starts the next argument and does not make the path dynamic.
+ * concatenation, method calls, and interpolated templates are egress. A comma
+ * or closing parenthesis after the literal starts the next argument.
  */
 function isCompleteRelativeLiteral(arg: string): boolean {
   if (arg.includes('${')) return false
@@ -43,7 +43,8 @@ function lineHasOutboundFetch(line: string): boolean {
     if (end === -1) return true
     re.lastIndex = start + end + 1
     const arg = rest.slice(0, end)
-    if (/^\s*\+/.test(rest.slice(end + 1))) return true
+    const trailing = rest.slice(end + 1).replace(/^\s*/, '')
+    if (trailing.startsWith('+') || trailing.startsWith('.') || trailing.startsWith('`')) return true
     if (/^https?:\/\//i.test(arg) || arg.startsWith('//')) return true
     if (isCompleteRelativeLiteral(arg)) continue
     return true

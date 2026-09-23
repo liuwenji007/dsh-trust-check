@@ -121,7 +121,7 @@ Optional: `buildAuditResponse` / `AUDIT_SCHEMA_VERSION` if you assemble a full `
 
 - Do not treat empty chips / `clear` as “safe” — only “nothing detected in this static pass”.
 - Do not gate on specific destination hosts; placeholder and allowlist rules change (e.g. RFC 2606 `.invalid`).
-- Do not scan or trust `node_modules` inside the candidate — out of scope by design.
+- Do not treat a skipped dependency tree as safe. Bare imports such as `import 'lodash'` are not expanded. A relative import that stays inside this package, including under its own `node_modules`, is scanned.
 - Do not expect this tool to stop install scripts that already ran during your extract/install step; run `--dir` as early as your pipeline allows.
 
 ## Post-install (Settings) — brief

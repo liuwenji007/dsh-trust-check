@@ -125,7 +125,7 @@ See `scripts/catalog-noise.md`. Empty `clear` is *no information*, not a safety 
 ## Out of scope / 不接受
 
 - Remote tarball download. Market's job; this package audits a directory it is given.
-- Scanning `node_modules`. Dependency behavior is out of scope by design.
+- Expanding a dependency tree. Bare imports stay unread. A relative import that stays inside the package, including under its own `node_modules`, is in scope.
 - LLM-scored verdicts, "safe" badges, or any wording that claims absence of risk.
 - Changing `verdict()` to follow the numeric score. The verdict follows `redLines`.
 - Runtime monitoring / intercepting other plugins' `fetch`/`exec`. Out of product scope for this package.

@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync, rmSync, mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -257,7 +257,7 @@ describe('collectPlugin', () => {
     }
   })
 
-  it('does not expand a relative import inside node_modules', () => {
+  it('follows a relative import inside the package node_modules', () => {
     const root = mkdtempSync(join(tmpdir(), 'trust-fs-nm-'))
     try {
       mkdirSync(join(root, 'lib'))
@@ -266,9 +266,90 @@ describe('collectPlugin', () => {
       writeFileSync(join(root, 'lib', 'index.js'), "import '../node_modules/hidden/payload.js'\n")
       writeFileSync(join(root, 'node_modules', 'hidden', 'payload.js'), "import { execSync } from 'node:child_process'\nexecSync('id')\n")
       const collected = collectPlugin(root, 'npm:nm@1.0.0')
-      expect(collected.sources['node_modules/hidden/payload.js']).toBeUndefined()
-      expect(collected.coverageNotes?.some(note => note.includes('node_modules'))).toBe(true)
+      const report = auditPlugin(collected)
+      expect(collected.sources['node_modules/hidden/payload.js']).toContain('execSync')
+      expect(report.capabilities).toContain('shell')
+      expect(verdict(report)).toBe('review')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('does not expand a bare package import', () => {
+    const root = mkdtempSync(join(tmpdir(), 'trust-fs-bare-'))
+    try {
+      mkdirSync(join(root, 'lib'))
+      mkdirSync(join(root, 'node_modules', 'lodash'), { recursive: true })
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'bare', version: '1.0.0', main: './lib/index.js' }))
+      writeFileSync(join(root, 'lib', 'index.js'), "import 'lodash'\n")
+      writeFileSync(join(root, 'node_modules', 'lodash', 'index.js'), "import { execSync } from 'node:child_process'\nexecSync('id')\n")
+      const collected = collectPlugin(root, 'npm:bare@1.0.0')
+      expect(collected.sources['node_modules/lodash/index.js']).toBeUndefined()
       expect(auditPlugin(collected).capabilities).not.toContain('shell')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('follows a formatted multiline import into runtime', () => {
+    const root = mkdtempSync(join(tmpdir(), 'trust-fs-multi-'))
+    try {
+      mkdirSync(join(root, 'lib'))
+      mkdirSync(join(root, 'runtime'))
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'multi', version: '1.0.0', main: './lib/index.js' }))
+      writeFileSync(join(root, 'lib', 'index.js'), "import {\n  boom\n} from '../runtime/payload.js'\nboom()\n")
+      writeFileSync(join(root, 'runtime', 'payload.js'), "import { execSync } from 'node:child_process'\nexport const boom = () => execSync('id')\n")
+      const collected = collectPlugin(root, 'npm:multi@1.0.0')
+      const report = auditPlugin(collected)
+      expect(Object.keys(collected.sources).sort()).toEqual(['lib/index.js', 'runtime/payload.js'])
+      expect(report.capabilities).toContain('shell')
+      expect(verdict(report)).toBe('review')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('scans a symlink whose real path stays inside the package', () => {
+    const root = mkdtempSync(join(tmpdir(), 'trust-fs-link-'))
+    try {
+      mkdirSync(join(root, 'lib'))
+      mkdirSync(join(root, 'hidden'))
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'link', version: '1.0.0', main: './lib/index.js' }))
+      writeFileSync(join(root, 'hidden', 'payload.js'), "import { execSync } from 'node:child_process'\nexecSync('id')\n")
+      symlinkSync(join(root, 'hidden', 'payload.js'), join(root, 'lib', 'payload.js'))
+      writeFileSync(join(root, 'lib', 'index.js'), "import './payload.js'\n")
+      const collected = collectPlugin(root, 'npm:link@1.0.0')
+      const report = auditPlugin(collected)
+      expect(collected.sources['hidden/payload.js']).toContain('execSync')
+      expect(report.capabilities).toContain('shell')
+      expect(verdict(report)).toBe('review')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('fails the scan when a symlink escapes the package', () => {
+    const root = mkdtempSync(join(tmpdir(), 'trust-fs-link-out-'))
+    try {
+      mkdirSync(join(root, 'pkg', 'lib'), { recursive: true })
+      writeFileSync(join(root, 'outside.js'), "import { execSync } from 'node:child_process'\nexecSync('id')\n")
+      symlinkSync(join(root, 'outside.js'), join(root, 'pkg', 'lib', 'payload.js'))
+      writeFileSync(join(root, 'pkg', 'package.json'), JSON.stringify({ name: 'link-out', version: '1.0.0', main: './lib/index.js' }))
+      writeFileSync(join(root, 'pkg', 'lib', 'index.js'), 'export const ok = 1\n')
+      expect(() => collectPlugin(join(root, 'pkg'), 'npm:link-out@1.0.0')).toThrow(/symlink escapes package/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('fails the scan when a primary entry resolves outside the package', () => {
+    const root = mkdtempSync(join(tmpdir(), 'trust-fs-main-out-'))
+    try {
+      mkdirSync(join(root, 'pkg', 'lib'), { recursive: true })
+      writeFileSync(join(root, 'outside.js'), "import { execSync } from 'node:child_process'\nexecSync('id')\n")
+      writeFileSync(join(root, 'pkg', 'package.json'), JSON.stringify({ name: 'main-out', version: '1.0.0', main: '../outside.js' }))
+      writeFileSync(join(root, 'pkg', 'lib', 'index.js'), 'export const ok = 1\n')
+      expect(() => collectPlugin(join(root, 'pkg'), 'npm:main-out@1.0.0')).toThrow(/primary entry escapes package/)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

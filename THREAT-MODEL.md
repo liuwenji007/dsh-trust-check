@@ -97,10 +97,12 @@ range that silently resolves to a newer, malicious release.
   it; git installs and `npm pack`/`publish` do), so it is a small deduction
   with a reason that says exactly when it runs.
 
-**Where static analysis stops.** `node_modules` is never scanned. A poisoned
-dependency's behavior is invisible to `--dir` scans of the plugin's own tree.
-The scanner reports the shape (unpinned, scripts, missing repo); it cannot
-read the dependency graph's contents.
+**Where static analysis stops.** The directory walk skips `node_modules`, and
+a bare import such as `import 'pkg'` is not expanded, so a dependency reached
+only that way stays invisible. A relative import whose real path stays inside
+the package — including one under this package's own `node_modules` — is
+scanned. The scanner reports the shape (unpinned, scripts, missing repo); it
+does not read the rest of the dependency graph.
 
 **Rule-maintenance questions.**
 
@@ -176,8 +178,9 @@ pretends to cross them is how scanners become liars.
    `eval` exist only at execution time. A static scan of source cannot see
    what does not exist yet. (See §1: a variable `fetch(host)` is therefore
    conservatively treated as egress — presence, never absence.)
-3. **Dependencies are invisible.** `node_modules` behavior is out of scope.
-   The plugin's own tree is the audit boundary.
+3. **Bare dependencies are invisible.** `import 'pkg'` is not expanded. The
+   audit boundary is the package tree, including a relative path that stays
+   inside it.
 
 The value of this scanner is exactly in honoring these three limits while
 proving everything provable inside them. "Static scan found nothing" is

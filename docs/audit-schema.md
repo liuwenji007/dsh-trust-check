@@ -137,7 +137,7 @@ Gate: `redLines.length > 0` ⇒ `red` ⇒ block by default.
 ## Out of scope
 
 - Remote tarball download (caller extracts, then `--dir`)
-- Scanning `node_modules` inside the package
+- Expanding bare package imports (`import 'lodash'`). A relative path inside this package, including under its own `node_modules`, is in scope
 - Safety guarantees (“no risk”); this scanner proves **presence**, never absence
 
 ## Related

@@ -4,7 +4,7 @@
  * node half and the standalone CLI. Pure reads, no network.
  */
 
-import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { isSkillFile } from './core/injection.ts'
@@ -157,7 +157,16 @@ function walk(
   skillFiles: Record<string, string>,
   budget: WalkBudget,
   limits: ScanLimits,
+  seen: Set<string> = new Set(),
 ): void {
+  let realDir = dir
+  try {
+    realDir = realpathSync(dir)
+  } catch {
+    realDir = dir
+  }
+  if (seen.has(realDir)) return
+  seen.add(realDir)
   let entries: string[]
   try {
     entries = readdirSync(dir)
@@ -172,10 +181,20 @@ function walk(
     } catch {
       continue
     }
-    if (stat.isSymbolicLink()) continue
+    if (stat.isSymbolicLink()) {
+      const located = locatePackagePath(root, abs)
+      if (located.kind === 'escape') {
+        throw new Error(`symlink escapes package: ${posixRel(root, abs)}`)
+      }
+      if (located.kind === 'dir') walk(located.abs, root, sources, skillFiles, budget, limits, seen)
+      else if (located.kind === 'file') {
+        readScannedFile(located.abs, root, sources, skillFiles, budget, limits, located.size)
+      }
+      continue
+    }
     if (stat.isDirectory()) {
       if (SKIP_DIRS.has(name)) continue
-      walk(abs, root, sources, skillFiles, budget, limits)
+      walk(abs, root, sources, skillFiles, budget, limits, seen)
       continue
     }
     if (!stat.isFile()) continue
@@ -220,18 +239,41 @@ function readScannedFile(
   else sources[rel] = content
 }
 
-/** Resolve a manifest entry path to an in-package file, if any. */
-function resolveManifestEntry(packageDir: string, raw: string): string | undefined {
-  const resolved = resolve(packageDir, raw)
-  if (!isInsidePackage(packageDir, resolved)) return undefined
+type LocatedPath =
+  | { kind: 'file'; abs: string; size: number }
+  | { kind: 'dir'; abs: string }
+  | { kind: 'escape' }
+  | { kind: 'missing' }
+
+/** Follow a symlink only when its real path stays inside the package. */
+function locatePackagePath(packageDir: string, candidate: string): LocatedPath {
+  if (!isInsidePackage(packageDir, candidate)) return { kind: 'escape' }
   let stat
   try {
-    stat = lstatSync(resolved)
+    stat = lstatSync(candidate)
   } catch {
-    return undefined
+    return { kind: 'missing' }
   }
-  if (!stat.isFile()) return undefined
-  return resolved
+  if (stat.isSymbolicLink()) {
+    let real: string
+    try {
+      real = realpathSync(candidate)
+    } catch {
+      return { kind: 'missing' }
+    }
+    if (!isInsidePackage(packageDir, real)) return { kind: 'escape' }
+    try {
+      stat = lstatSync(real)
+    } catch {
+      return { kind: 'missing' }
+    }
+    if (stat.isDirectory()) return { kind: 'dir', abs: real }
+    if (!stat.isFile()) return { kind: 'missing' }
+    return { kind: 'file', abs: real, size: stat.size }
+  }
+  if (stat.isDirectory()) return { kind: 'dir', abs: candidate }
+  if (!stat.isFile()) return { kind: 'missing' }
+  return { kind: 'file', abs: candidate, size: stat.size }
 }
 
 function pushNote(notes: string[], omitted: { count: number }, message: string): void {
@@ -254,26 +296,19 @@ function scanDeclaredEntries(
   omitted: { count: number },
 ): void {
   const primary = new Set(primaryEntryPaths(manifest))
-  for (const raw of manifestEntryPaths(manifest)) {
-    const resolved = resolve(packageDir, raw)
-    if (!isInsidePackage(packageDir, resolved)) continue
-    const abs = resolveManifestEntry(packageDir, raw)
-    if (abs === undefined) {
-      if (primary.has(raw)) {
-        throw new Error(`primary entry unreadable or missing: ${raw}`)
-      }
+  const declared = new Set([...manifestEntryPaths(manifest), ...primary])
+  for (const raw of declared) {
+    const located = locatePackagePath(packageDir, resolve(packageDir, raw))
+    if (located.kind === 'escape') {
+      if (primary.has(raw)) throw new Error(`primary entry escapes package: ${raw}`)
+      continue
+    }
+    if (located.kind !== 'file') {
+      if (primary.has(raw)) throw new Error(`primary entry unreadable or missing: ${raw}`)
       pushNote(coverageNotes, omitted, `optional export not found: ${raw}`)
       continue
     }
-    readScannedFile(abs, packageDir, sources, skillFiles, budget, limits)
-  }
-  for (const raw of primary) {
-    if (manifestEntryPaths(manifest).includes(raw)) continue
-    const resolved = resolve(packageDir, raw)
-    if (!isInsidePackage(packageDir, resolved)) continue
-    if (resolveManifestEntry(packageDir, raw) === undefined) {
-      throw new Error(`primary entry unreadable or missing: ${raw}`)
-    }
+    readScannedFile(located.abs, packageDir, sources, skillFiles, budget, limits, located.size)
   }
 }
 
@@ -363,6 +398,11 @@ function scanRoots(dir: string): string[] {
 
 /** Read one installed plugin directory into the engine's input shape. */
 export function collectPlugin(dir: string, spec: string, options?: CollectOptions): PluginInput {
+  try {
+    dir = realpathSync(dir)
+  } catch {
+    // Keep the caller path when the directory cannot be canonicalized.
+  }
   const limits = options?.limits ?? SCAN_LIMITS
   let manifest: Record<string, unknown> = {}
   try {
@@ -406,19 +446,27 @@ export function collectPlugin(dir: string, spec: string, options?: CollectOption
   }
 }
 
-const STATIC_RELATIVE = /(?:(?:import|export)\s+(?:[^'"\n]+?\s+from\s+)?|import\s*\(\s*|require\s*\(\s*)['"](\.[^'"]+)['"]/g
+const RELATIVE_SPECIFIERS = [
+  /\bfrom\s+['"](\.[^'"]+)['"]/g,
+  /\bimport\s+['"](\.[^'"]+)['"]/g,
+  /\bimport\s*\(\s*['"](\.[^'"]+)['"]/g,
+  /\brequire\s*\(\s*['"](\.[^'"]+)['"]/g,
+]
 const DYNAMIC_IMPORT = /(?:^|[^\w$])import\s*\(\s*(?!['"])/g
 const DYNAMIC_REQUIRE = /(?:^|[^\w$])require\s*\(\s*(?!['"])/g
 
 function extractRelativeSpecifiers(source: string): string[] {
+  const stripped = stripComments(source)
   const out: string[] = []
-  for (const match of stripComments(source).matchAll(STATIC_RELATIVE)) {
-    if (match[1] !== undefined) out.push(match[1])
+  for (const pattern of RELATIVE_SPECIFIERS) {
+    for (const match of stripped.matchAll(pattern)) {
+      if (match[1] !== undefined) out.push(match[1])
+    }
   }
   return out
 }
 
-function resolveInPackage(packageDir: string, fromFile: string, spec: string): string | 'escape' | 'node_modules' | undefined {
+function resolveInPackage(packageDir: string, fromFile: string, spec: string): string | 'escape' | undefined {
   const base = resolve(dirname(fromFile), spec)
   const candidates = [
     base,
@@ -429,16 +477,9 @@ function resolveInPackage(packageDir: string, fromFile: string, spec: string): s
     join(base, 'index.ts'),
   ]
   for (const candidate of candidates) {
-    if (!isInsidePackage(packageDir, candidate)) return 'escape'
-    const rel = posixRel(packageDir, candidate)
-    if (rel === 'node_modules' || rel.startsWith('node_modules/') || rel.includes('/node_modules/')) {
-      return 'node_modules'
-    }
-    try {
-      if (lstatSync(candidate).isFile()) return candidate
-    } catch {
-      // try the next candidate
-    }
+    const located = locatePackagePath(packageDir, candidate)
+    if (located.kind === 'escape') return 'escape'
+    if (located.kind === 'file') return located.abs
   }
   return undefined
 }
@@ -478,10 +519,6 @@ function followStaticImports(
       const target = resolveInPackage(packageDir, abs, spec)
       if (target === 'escape') {
         pushNote(coverageNotes, omitted, `import escapes package from ${rel}: ${spec}`)
-        continue
-      }
-      if (target === 'node_modules') {
-        pushNote(coverageNotes, omitted, `dependency import not expanded from ${rel}: ${spec}`)
         continue
       }
       if (target === undefined) {

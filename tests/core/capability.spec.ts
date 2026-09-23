@@ -362,6 +362,15 @@ describe('scanCapabilities', () => {
     expect(verdict(auditPlugin(input({ 'lib/index.js': source })))).toBe('review')
   })
 
+  it('reviews a relative literal continued by concat, replace, or a template piece', () => {
+    const source = [
+      "await fetch('/api/ok'.concat(host))",
+      "await fetch('/api/ok'.replace('ok', host))",
+      "await fetch('/api/ok'` + host)",
+    ].join('\n')
+    expect(verdict(auditPlugin(input({ 'lib/index.js': source })))).toBe('review')
+  })
+
   it('stays clear for complete relative literals, including a static template and extra args', () => {
     const source = [
       'await fetch("/api/ok")',
