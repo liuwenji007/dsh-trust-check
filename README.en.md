@@ -92,7 +92,7 @@ These mean "we saw this string in source", not "this address/path is safe"; runt
 
 ### Mark as expected
 
-After you confirm capabilities match why you installed the plugin, the fingerprint is stored in `~/.dsh/profiles/<profile>/trust-ack.json`. An upgrade that changes capabilities / destinations / path escapes / secrets / injections (including skill text size) returns to **review**. Accepting a red line goes through its own "confirm risk" action, which a plain mark-as-expected request cannot stand in for.
+After you confirm capabilities match why you installed the plugin, the fingerprint is stored in `~/.dsh/profiles/<profile>/trust-ack.json`. An upgrade that changes capabilities, destinations, path escapes, secrets, red lines, or skill text (by content hash, not byte length) must be confirmed again. The confirmation request sends the report's `ackFingerprint`; a mismatch returns 409 and asks you to review the refreshed report. Older acknowledgements without a `digest` no longer match. Accepting a red line still requires its own "confirm risk" action, and only after the fingerprint matches.
 
 **AI explain**: optional button; uses your DSH-configured model to explain the report summary only, **does not change the verdict**; unavailable when no model is configured.
 

@@ -4,7 +4,6 @@
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { fingerprintFromReport } from './ack-fingerprint.ts'
 import type { AuditReport, TrustAckEntry } from './types.ts'
 
 export type TrustAckStore = Record<string, TrustAckEntry>
@@ -34,7 +33,16 @@ export function writeAckStore(profileDir: string, store: TrustAckStore): void {
 
 export function setAck(profileDir: string, report: AuditReport): TrustAckEntry {
   const store = readAckStore(profileDir)
-  const entry = fingerprintFromReport(report)
+  const entry: TrustAckEntry = {
+    digest: report.ackFingerprint,
+    capabilities: [...report.capabilities],
+    destinations: [],
+    secretTouches: [],
+    pathEscapes: [],
+    injections: [],
+    redLines: [...report.redLines],
+    at: new Date().toISOString(),
+  }
   store[report.name] = entry
   writeAckStore(profileDir, store)
   return entry

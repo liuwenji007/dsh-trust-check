@@ -2,13 +2,7 @@
  * Pure ack fingerprint helpers — safe for browser bundles (no filesystem).
  */
 
-import { injectionFingerprint } from './injection.ts'
 import { AUDIT_SCHEMA_VERSION } from './response.ts'
-import {
-  destinationFingerprint,
-  pathEscapeFingerprint,
-  secretTouchFingerprint,
-} from './shape.ts'
 import type { AuditReport, AuditResponse, Capability, TrustAckEntry } from './types.ts'
 
 /** Backfill fields added after v0.1 shape layer for older cached JSON. */
@@ -18,6 +12,7 @@ export function normalizeAuditReport(report: AuditReport): AuditReport {
     destinations: (report.destinations ?? []).filter(d => d.kind !== 'relative'),
     pathEscapes: report.pathEscapes ?? [],
     secretTouches: report.secretTouches ?? [],
+    coverageNotes: report.coverageNotes ?? [],
     capabilities: report.capabilities ?? [],
     evidence: report.evidence ?? [],
     injections: report.injections ?? [],
@@ -38,32 +33,20 @@ export function normalizeAuditResponse(response: AuditResponse): AuditResponse {
 }
 
 export function fingerprintFromReport(report: AuditReport): TrustAckEntry {
-  const normalized = normalizeAuditReport(report)
   return {
-    capabilities: [...normalized.capabilities].sort() as Capability[],
-    destinations: destinationFingerprint(normalized.destinations),
-    secretTouches: secretTouchFingerprint(normalized.secretTouches),
-    pathEscapes: pathEscapeFingerprint(normalized.pathEscapes),
-    injections: injectionFingerprint(normalized.injections),
-    redLines: [...normalized.redLines].sort(),
+    digest: report.ackFingerprint,
+    capabilities: [...report.capabilities].sort() as Capability[],
+    destinations: [],
+    secretTouches: [],
+    pathEscapes: [],
+    injections: [],
+    redLines: [...(report.redLines ?? [])].sort(),
     at: new Date().toISOString(),
   }
 }
 
-function sortedEqual(a: readonly string[], b: readonly string[]): boolean {
-  if (a.length !== b.length) return false
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) return false
-  }
-  return true
-}
-
 export function ackMatchesReport(report: AuditReport, ack: TrustAckEntry): boolean {
-  const current = fingerprintFromReport(report)
-  return sortedEqual(current.capabilities, ack.capabilities ?? [])
-    && sortedEqual(current.destinations, ack.destinations ?? [])
-    && sortedEqual(current.secretTouches, ack.secretTouches ?? [])
-    && sortedEqual(current.pathEscapes ?? [], ack.pathEscapes ?? [])
-    && sortedEqual(current.injections ?? [], ack.injections ?? [])
-    && sortedEqual(current.redLines ?? [], ack.redLines ?? [])
+  return ack.digest !== undefined
+    && report.ackFingerprint !== undefined
+    && ack.digest === report.ackFingerprint
 }

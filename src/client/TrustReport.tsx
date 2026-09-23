@@ -447,11 +447,13 @@ function PluginCardBody({
   ack,
   t,
   onAckChange,
+  onReplaceReport,
 }: {
   report: AuditReport
   ack?: TrustAckEntry
   t: T
   onAckChange: () => void
+  onReplaceReport: (report: AuditReport) => void
 }) {
   const v = verdict(report, ack)
   const concernList = concerns(report)
@@ -460,6 +462,7 @@ function PluginCardBody({
   const [evidenceFocus, setEvidenceFocus] = useState<Capability | null>(null)
   const [ackLoading, setAckLoading] = useState(false)
   const [ackError, setAckError] = useState(false)
+  const [ackStale, setAckStale] = useState(false)
   const [explainLoading, setExplainLoading] = useState(false)
   const [explainText, setExplainText] = useState<string | null>(null)
   const [explainError, setExplainError] = useState(false)
@@ -471,9 +474,20 @@ function PluginCardBody({
       const res = await fetch('/dsh-trust-check/ack', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: report.name, acceptRisk }),
+        body: JSON.stringify({
+          name: report.name,
+          acceptRisk,
+          fingerprint: report.ackFingerprint,
+        }),
       })
+      if (res.status === 409) {
+        const data = await res.json() as { report?: AuditReport }
+        setAckStale(true)
+        if (data.report !== undefined) onReplaceReport(data.report)
+        return
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setAckStale(false)
       onAckChange()
     } catch {
       setAckError(true)
@@ -554,6 +568,7 @@ function PluginCardBody({
             {explainLoading ? t('explain.loading') : t('explain.button')}
           </button>
         </div>
+        {ackStale && <div className={css.errorInline}>{t('ack.stale')}</div>}
         {ackError && <div className={css.errorInline}>{t('ack.error')}</div>}
         {explainError && <div className={css.muted}>{t('explain.error')}</div>}
         {explainText !== null && (
@@ -632,6 +647,7 @@ function PluginRow({
   expanded,
   onToggle,
   onAckChange,
+  onReplaceReport,
 }: {
   report: AuditReport
   ack?: TrustAckEntry
@@ -639,6 +655,7 @@ function PluginRow({
   expanded: boolean
   onToggle: () => void
   onAckChange: () => void
+  onReplaceReport: (report: AuditReport) => void
 }) {
   const v = verdict(report, ack)
   const previewCaps = topCapabilities(report, 3)
@@ -666,7 +683,7 @@ function PluginRow({
         <span className={css.srOnly}>{expanded ? t('collapsePlugin') : t('expandPlugin')}</span>
       </button>
       {expanded && (
-        <PluginCardBody report={report} ack={ack} t={t} onAckChange={onAckChange} />
+        <PluginCardBody report={report} ack={ack} t={t} onAckChange={onAckChange} onReplaceReport={onReplaceReport} />
       )}
     </article>
   )
@@ -761,6 +778,13 @@ export function TrustReport({ useStore, actions, t }: TrustReportProps) {
           expanded={expanded.has(plugin.name)}
           onToggle={() => togglePlugin(plugin.name)}
           onAckChange={() => void refresh()}
+          onReplaceReport={next => {
+            if (report === null) return
+            actions.setReport({
+              ...report,
+              plugins: report.plugins.map(plugin => plugin.name === next.name ? next : plugin),
+            }, Date.now())
+          }}
         />
       ))}
 

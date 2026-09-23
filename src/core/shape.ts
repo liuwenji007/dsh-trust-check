@@ -6,9 +6,7 @@
 import { isCodeFile, stripComments } from './strip-comments.ts'
 import type {
   DestinationFinding,
-  DestinationKind,
   PathEscapeFinding,
-  PathEscapeKind,
   PluginInput,
   SecretTouchFinding,
   SecretTouchKind,
@@ -297,34 +295,12 @@ function destinationKey(kind: DestinationFinding['kind'], value: string): string
 }
 
 /**
- * Truncation order. A hostile plugin can pad the top of its first file with
- * harmless literals, so the cap must drop the least interesting rows rather
- * than whatever comes last in source order — red lines are derived from the
- * capped list.
+ * Display caps keep one row of each kind per round. Risk is scored from the
+ * uncapped lists, so a finding past the cap still creates a red line.
  */
-const DESTINATION_RANK: Readonly<Record<DestinationKind, number>> = {
-  ip: 0,
-  'http-host': 1,
-  'https-host': 2,
-  loopback: 3,
-  relative: 4,
-}
 
-const PATH_ESCAPE_RANK: Readonly<Record<PathEscapeKind, number>> = {
-  home: 0,
-  absolute: 1,
-  'windows-abs': 2,
-  traversal: 3,
-}
-
-const SECRET_TOUCH_RANK: Readonly<Record<SecretTouchKind, number>> = {
-  path: 0,
-  'env-key': 1,
-  api: 2,
-  read: 3,
-}
-
-function dedupeByKey<T>(rows: T[], keyOf: (row: T) => string, max: number): T[] {
+/** Dedupe, keeping the first row for each key. Display caps happen later. */
+function dedupeAll<T>(rows: T[], keyOf: (row: T) => string): T[] {
   const seen = new Set<string>()
   const out: T[] = []
   for (const row of rows) {
@@ -332,23 +308,65 @@ function dedupeByKey<T>(rows: T[], keyOf: (row: T) => string, max: number): T[] 
     if (seen.has(key)) continue
     seen.add(key)
     out.push(row)
-    if (out.length >= max) break
   }
   return out
 }
 
-/** Dedupe riskiest-first, keeping source order within one rank. */
-function rankedDedupe<T>(
+/** Keep every kind represented, with `kindOrder` served first in each round. */
+function capByKind<T>(
   rows: T[],
-  keyOf: (row: T) => string,
-  rankOf: (row: T) => number,
+  kindOf: (row: T) => string,
+  kindOrder: readonly string[],
   max: number,
 ): T[] {
-  const ordered = rows
-    .map((row, index) => ({ row, index }))
-    .sort((a, b) => rankOf(a.row) - rankOf(b.row) || a.index - b.index)
-    .map(entry => entry.row)
-  return dedupeByKey(ordered, keyOf, max)
+  const groups = new Map<string, T[]>()
+  for (const row of rows) {
+    const kind = kindOf(row)
+    const list = groups.get(kind) ?? []
+    list.push(row)
+    groups.set(kind, list)
+  }
+  const order = [
+    ...kindOrder.filter(kind => groups.has(kind)),
+    ...[...groups.keys()].filter(kind => !kindOrder.includes(kind)),
+  ]
+  const kept: T[] = []
+  for (let round = 0; kept.length < max; round++) {
+    let progressed = false
+    for (const kind of order) {
+      const queue = groups.get(kind)
+      const row = queue?.[round]
+      if (row === undefined) continue
+      kept.push(row)
+      progressed = true
+      if (kept.length >= max) break
+    }
+    if (!progressed) break
+  }
+  return kept
+}
+
+export function presentShapeFindings(full: ShapeScan): ShapeScan {
+  return {
+    destinations: capByKind(
+      full.destinations,
+      destination => destination.kind,
+      ['ip', 'http-host', 'https-host', 'loopback', 'relative'],
+      MAX_DESTINATIONS,
+    ),
+    pathEscapes: capByKind(
+      full.pathEscapes,
+      escape => escape.kind,
+      ['home', 'absolute', 'windows-abs', 'traversal'],
+      MAX_PATH_ESCAPES,
+    ),
+    secretTouches: capByKind(
+      full.secretTouches,
+      touch => touch.kind,
+      ['read', 'path', 'env-key', 'api'],
+      MAX_SECRET_TOUCHES,
+    ),
+  }
 }
 
 /**
@@ -605,24 +623,9 @@ export function scanShape(input: PluginInput): ShapeScan {
   }
 
   return {
-    destinations: rankedDedupe(
-      destinations,
-      d => destinationKey(d.kind, d.value),
-      d => DESTINATION_RANK[d.kind],
-      MAX_DESTINATIONS,
-    ),
-    pathEscapes: rankedDedupe(
-      pathEscapes,
-      p => `${p.kind}:${p.value}`,
-      p => PATH_ESCAPE_RANK[p.kind],
-      MAX_PATH_ESCAPES,
-    ),
-    secretTouches: rankedDedupe(
-      secretTouches,
-      s => `${s.kind}:${s.value}`,
-      s => SECRET_TOUCH_RANK[s.kind],
-      MAX_SECRET_TOUCHES,
-    ),
+    destinations: dedupeAll(destinations, d => destinationKey(d.kind, d.value)),
+    pathEscapes: dedupeAll(pathEscapes, p => `${p.kind}:${p.value}`),
+    secretTouches: dedupeAll(secretTouches, s => `${s.kind}:${s.value}`),
   }
 }
 

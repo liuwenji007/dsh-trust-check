@@ -12,7 +12,7 @@ import { explainWithLlm } from './host/llm-explain.ts'
 import { buildExplainPrompt } from './core/explain.ts'
 import { collectPlugin, readInstalled, resolveProfileDir } from './fs.ts'
 import { buildAuditResponse } from './core/response.ts'
-import type { AuditReport, AuditResponse } from './core/types.ts'
+import type { AuditReport, AuditResponse, TrustAckEntry } from './core/types.ts'
 
 export type { AuditReport, AuditResponse, TrustAckEntry } from './core/types.ts'
 export { AUDIT_SCHEMA_VERSION, buildAuditResponse } from './core/response.ts'
@@ -125,6 +125,29 @@ export function ackAllowed(report: AuditReport, acceptRisk: boolean): boolean {
   return report.redLines.length === 0 || acceptRisk
 }
 
+export function decideAckSave(
+  fresh: AuditReport,
+  clientFingerprint: string | undefined,
+  acceptRisk: boolean,
+): { status: 200; entry: TrustAckEntry } | { status: 400; error: string } | { status: 409; report: AuditReport } {
+  if (clientFingerprint !== fresh.ackFingerprint) {
+    return { status: 409, report: fresh }
+  }
+  if (!ackAllowed(fresh, acceptRisk)) {
+    return { status: 400, error: 'acknowledging a plugin with red lines requires acceptRisk: true' }
+  }
+  return {
+    status: 200,
+    entry: {
+      digest: fresh.ackFingerprint,
+      capabilities: fresh.capabilities,
+      destinations: [],
+      secretTouches: [],
+      at: new Date().toISOString(),
+    },
+  }
+}
+
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = []
   for await (const chunk of request) chunks.push(Buffer.from(chunk))
@@ -145,13 +168,26 @@ function findPluginReport(profile: string, name: string): AuditReport | undefine
 
 export function runAudit(profile: string): AuditResponse {
   const profileDir = resolveProfileDir(profile)
-  const installed = readInstalled(profileDir)
   const plugins: AuditReport[] = []
   const errors: AuditResponse['errors'] = []
+  let installed: Record<string, string>
+  try {
+    installed = readInstalled(profileDir)
+  } catch (error) {
+    errors.push({
+      name: '(profile)',
+      spec: profile,
+      message: error instanceof Error ? error.message : String(error),
+    })
+    return buildAuditResponse({ profile, plugins, errors, acks: {} })
+  }
 
   for (const [name, spec] of Object.entries(installed)) {
     const dir = join(profileDir, 'node_modules', name)
-    if (!existsSync(dir)) continue
+    if (!existsSync(dir)) {
+      errors.push({ name, spec, message: `declared plugin directory missing: ${dir}` })
+      continue
+    }
     try {
       plugins.push(auditPlugin(collectPlugin(dir, spec)))
     } catch (error) {
@@ -205,7 +241,11 @@ export function apply(ctx: Context, config?: Config): void {
             const method = request.method ?? 'GET'
             if (method === 'POST') {
               try {
-                const body = await readJsonBody(request) as { name?: string; acceptRisk?: boolean }
+                const body = await readJsonBody(request) as {
+                  name?: string
+                  acceptRisk?: boolean
+                  fingerprint?: string
+                }
                 if (typeof body.name !== 'string' || body.name === '') {
                   sendJson(response, 400, { error: 'name is required' })
                   return
@@ -215,10 +255,13 @@ export function apply(ctx: Context, config?: Config): void {
                   sendJson(response, 404, { error: 'plugin not found' })
                   return
                 }
-                if (!ackAllowed(report, body.acceptRisk === true)) {
-                  sendJson(response, 400, {
-                    error: 'acknowledging a plugin with red lines requires acceptRisk: true',
-                  })
+                const decision = decideAckSave(report, body.fingerprint, body.acceptRisk === true)
+                if (decision.status === 409) {
+                  sendJson(response, 409, { error: 'plugin-content-changed', report: decision.report })
+                  return
+                }
+                if (decision.status === 400) {
+                  sendJson(response, 400, { error: decision.error })
                   return
                 }
                 const entry = setAck(resolveProfileDir(profile), report)

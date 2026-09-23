@@ -10,7 +10,7 @@
  * No DSH host needed for profile or --dir mode.
  */
 import { existsSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import {
   auditPlugin,
   buildAuditResponse,
@@ -21,9 +21,7 @@ import {
   formatInjectionDetail,
   partitionDestinations,
   networkReach,
-  readAckStore,
-  readInstalled,
-  resolveProfileDir,
+  runAudit,
   verdict,
 } from '../lib/index.js'
 
@@ -167,25 +165,7 @@ if (args.dir !== undefined) {
     errors,
   })
 } else {
-  const profileDir = resolveProfileDir(args.profile)
-  const acks = readAckStore(profileDir)
-  const installed = readInstalled(profileDir)
-  for (const [name, spec] of Object.entries(installed)) {
-    const dir = join(profileDir, 'node_modules', name)
-    if (!existsSync(dir)) continue
-    try {
-      plugins.push(auditPlugin(collectPlugin(dir, spec)))
-    } catch (error) {
-      errors.push({ name, spec, message: error instanceof Error ? error.message : String(error) })
-    }
-  }
-  plugins.sort((a, b) => a.score - b.score)
-  response = buildAuditResponse({
-    profile: args.profile,
-    plugins,
-    errors,
-    acks,
-  })
+  response = runAudit(args.profile)
 }
 
 if (args.json) {
