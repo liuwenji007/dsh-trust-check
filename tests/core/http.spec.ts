@@ -1,5 +1,6 @@
+import { Readable } from 'node:stream'
 import { describe, expect, it } from 'vitest'
-import { ackAllowed, isLoopbackRequest, trustedAuditRequest } from '../../src/index.ts'
+import { BodyTooLarge, ackAllowed, isLoopbackRequest, readJsonBody, requestBodyStatus, trustedAuditRequest } from '../../src/index.ts'
 import type { AuditReport } from '../../src/core/types.ts'
 
 function requestOf(overrides: {
@@ -76,5 +77,27 @@ describe('ackAllowed', () => {
   it('requires the opt-in before a red line can be acknowledged', () => {
     expect(ackAllowed(reportWith(['runs install scripts']), false)).toBe(false)
     expect(ackAllowed(reportWith(['runs install scripts']), true)).toBe(true)
+  })
+})
+
+describe('readJsonBody', () => {
+  const asRequest = (payload: Buffer | string) =>
+    Readable.from([Buffer.isBuffer(payload) ? payload : Buffer.from(payload)]) as unknown as import('node:http').IncomingMessage
+
+  it('parses a JSON object and treats an empty body as {}', async () => {
+    await expect(readJsonBody(asRequest('{"name":"a"}'))).resolves.toEqual({ name: 'a' })
+    await expect(readJsonBody(asRequest(''))).resolves.toEqual({})
+  })
+
+  it('rejects an oversized body as 413 and invalid JSON as 400', async () => {
+    const tooLarge = readJsonBody(asRequest(Buffer.alloc(64 * 1024 + 1)))
+    await expect(tooLarge).rejects.toBeInstanceOf(BodyTooLarge)
+    await expect(tooLarge).rejects.toThrow(/exceeds/)
+    expect(requestBodyStatus(new BodyTooLarge(1))).toBe(413)
+
+    const invalid = readJsonBody(asRequest('{'))
+    await expect(invalid).rejects.toBeInstanceOf(SyntaxError)
+    expect(requestBodyStatus(new SyntaxError('bad'))).toBe(400)
+    expect(requestBodyStatus(new Error('other'))).toBeUndefined()
   })
 })

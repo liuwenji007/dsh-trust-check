@@ -18,10 +18,15 @@ function isAckEntry(value: unknown): value is TrustAckEntry {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+/** Plugin names are attacker-controlled; a plain {} would honor a `__proto__` key. */
+function emptyStore(): TrustAckStore {
+  return Object.create(null) as TrustAckStore
+}
+
 /** Throws on a corrupt file, so a write never replaces acks it could not read. */
 function readAckStoreStrict(profileDir: string): TrustAckStore {
   const path = ackPath(profileDir)
-  if (!existsSync(path)) return {}
+  if (!existsSync(path)) return emptyStore()
   let parsed: unknown
   try {
     parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown
@@ -31,7 +36,7 @@ function readAckStoreStrict(profileDir: string): TrustAckStore {
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new Error('trust-ack.json is not an object, refusing to overwrite it')
   }
-  const store: TrustAckStore = {}
+  const store = emptyStore()
   for (const [name, entry] of Object.entries(parsed)) {
     if (isAckEntry(entry)) store[name] = entry
   }
@@ -73,7 +78,7 @@ export function setAck(profileDir: string, report: AuditReport): TrustAckEntry {
 
 export function removeAck(profileDir: string, name: string): void {
   const store = readAckStoreStrict(profileDir)
-  if (!(name in store)) return
+  if (!Object.hasOwn(store, name)) return
   delete store[name]
   writeAckStore(profileDir, store)
 }

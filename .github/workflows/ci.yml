@@ -24,5 +24,5 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
-      # bin/ is not covered by unit tests; it imports the built lib/.
-      - run: node bin/trust-check.mjs --dir . --json
+      # bin/ imports the built lib/. Exit 0 or 1: this repo itself is `review`.
+      - run: node --input-type=module -e "import { spawnSync } from 'node:child_process'; const result = spawnSync(process.execPath, ['bin/trust-check.mjs', '--dir', '.', '--json', '--exit-code'], { stdio: 'inherit' }); if (result.status === null || result.status > 1) process.exit(result.status ?? 1)"

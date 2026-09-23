@@ -71,6 +71,8 @@
 - `schemaVersion: 2`：新增 `facts[]`，每条形如 `{ id, value, evidence }`；`id` 列表作为对外契约，集成方按 `id` 过滤。
 - 版本间对比：输入同一插件的两个版本，输出新增或消失的能力、去向、安装脚本、注入内容。
 - 允许调用方传入 registry 元数据（发布时间、npm provenance 等），在引擎保持离线的前提下产出来源与维护类事实。
+- `decideAckSave` 的 200 分支只返回 `{ status: 200 }`（现在返回的 `entry` 没有被使用，已标记废弃）。
+- CLI `--exit-code` 从可选变成默认行为，并写入 changelog。
 
 **之后：集成**
 

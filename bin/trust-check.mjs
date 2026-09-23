@@ -37,6 +37,7 @@ function parseArgs(argv) {
   const args = {
     profile: process.env.DSH_PROFILE ?? 'web',
     json: false,
+    exitCode: false,
     dir: undefined,
     spec: 'dir:.',
   }
@@ -61,16 +62,20 @@ function parseArgs(argv) {
       i++
     } else if (arg === '--json') {
       args.json = true
+    } else if (arg === '--exit-code') {
+      args.exitCode = true
     } else if (arg === '--help' || arg === '-h') {
       console.log(`Usage:
-  dsh-trust-check [--profile <name>] [--json]
-  dsh-trust-check --dir <package-dir> [--spec <install-spec>] [--json]
+  dsh-trust-check [--profile <name>] [--json] [--exit-code]
+  dsh-trust-check --dir <package-dir> [--spec <install-spec>] [--json] [--exit-code]
 
 Options:
   --profile <name>   Profile to audit (default: web or DSH_PROFILE)
   --dir <path>       Audit one package directory (mutually exclusive with --profile)
   --spec <spec>      Install spec label for --dir (default: dir:.)
   --json             Machine-readable AuditResponse JSON
+  --exit-code        Exit 0 clear/accepted/expected, 1 review, 2 red, 3 scan failed.
+                     Off by default. Exit 0 is "nothing detected", not a safety claim.
 `)
       process.exit(0)
     } else {
@@ -186,4 +191,21 @@ if (args.json) {
     ? `dir: ${args.dir}`
     : `profile: ${args.profile}`
   humanReport(label, response.plugins, response.errors, response.acks)
+}
+
+// Assigned, not process.exit(): a piped stdout write is async, and exiting
+// immediately can truncate the JSON a gate is about to parse.
+if (args.exitCode) process.exitCode = gateExitCode(response, args.dir !== undefined)
+
+/** Worst verdict across the response. Scan failure outranks every verdict. */
+function gateExitCode(response, dirMode) {
+  if (response.errors.length > 0) return 3
+  // An empty --dir result is a failed scan. An empty profile just has no plugins.
+  if (response.plugins.length === 0) return dirMode ? 3 : 0
+  const rank = { clear: 0, expected: 0, accepted: 0, review: 1, red: 2 }
+  let worst = 0
+  for (const plugin of response.plugins) {
+    worst = Math.max(worst, rank[verdict(plugin, response.acks?.[plugin.name])] ?? 3)
+  }
+  return worst
 }

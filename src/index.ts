@@ -139,6 +139,10 @@ export function ackAllowed(report: AuditReport, acceptRisk: boolean): boolean {
   return report.redLines.length === 0 || acceptRisk
 }
 
+/**
+ * @deprecated The `entry` on the 200 branch is unused; the route persists via `setAck`.
+ * Schema v2 will return `{ status: 200 }` only.
+ */
 export function decideAckSave(
   fresh: AuditReport,
   clientFingerprint: string | undefined,
@@ -164,18 +168,40 @@ export function decideAckSave(
 
 const MAX_BODY_BYTES = 64 * 1024
 
-async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+export class BodyTooLarge extends Error {
+  constructor(limit: number) {
+    super(`request body exceeds ${limit} bytes`)
+    this.name = 'BodyTooLarge'
+  }
+}
+
+/** Status for a body-read failure; undefined means the caller handles it. */
+export function requestBodyStatus(error: unknown): 413 | 400 | undefined {
+  if (error instanceof BodyTooLarge) return 413
+  if (error instanceof SyntaxError) return 400
+  return undefined
+}
+
+export async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = []
   let total = 0
   for await (const chunk of request) {
     const buffer = Buffer.from(chunk)
     total += buffer.length
-    if (total > MAX_BODY_BYTES) throw new Error(`request body exceeds ${MAX_BODY_BYTES} bytes`)
+    if (total > MAX_BODY_BYTES) throw new BodyTooLarge(MAX_BODY_BYTES)
     chunks.push(buffer)
   }
   const text = Buffer.concat(chunks).toString('utf8').trim()
   if (text === '') return {}
   return JSON.parse(text) as unknown
+}
+
+function sendBodyError(response: ServerResponse, error: unknown): boolean {
+  const status = requestBodyStatus(error)
+  if (status === undefined) return false
+  const message = error instanceof Error ? error.message : String(error)
+  sendJson(response, status, { error: status === 400 ? 'request body is not valid JSON' : message })
+  return true
 }
 
 function manifestName(dir: string): string | undefined {
@@ -324,6 +350,7 @@ export function apply(ctx: Context, config?: Config): void {
                 const entry = setAck(resolveProfileDir(profile), report)
                 sendJson(response, 200, { name: body.name, ack: entry })
               } catch (error) {
+                if (sendBodyError(response, error)) return
                 sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) })
               }
               return
@@ -373,6 +400,7 @@ export function apply(ctx: Context, config?: Config): void {
               const text = await llmExplain(hostCtx, prompt)
               sendJson(response, 200, { name: body.name, text, disclaimer: 'explanation only, not a security verdict' })
             } catch (error) {
+              if (sendBodyError(response, error)) return
               const message = error instanceof Error ? error.message : String(error)
               if (message.includes('not available') || message.includes('no model configured')) {
                 sendJson(response, 503, { error: message })

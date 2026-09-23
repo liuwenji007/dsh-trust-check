@@ -150,4 +150,14 @@ describe('ack store', () => {
       expect(existsSync(ackPath(dir))).toBe(false)
     })
   })
+
+  it('stores an ack named __proto__ without touching Object.prototype', () => {
+    withProfile(dir => {
+      setAck(dir, { ...report(), name: '__proto__', ackFingerprint: 'abc' })
+      expect(readAckStore(dir)['__proto__']?.digest).toBe('abc')
+      expect(Object.hasOwn(Object.prototype, 'digest')).toBe(false)
+      removeAck(dir, '__proto__')
+      expect(readAckStore(dir)['__proto__']).toBeUndefined()
+    })
+  })
 })

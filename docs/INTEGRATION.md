@@ -83,6 +83,19 @@ else { /* nothing detected; still not a safety claim */ }
 
 Prefer importing `verdict` when you already depend on the package (Path B): the CLI JSON does not embed the verdict string; you derive it.
 
+### `--exit-code` (optional)
+
+Without this flag the process exits 0 even when the scan failed or found a red line, so a shell `&&` chain does not fail closed. Add `--exit-code` to use the same codes as [`scripts/market-gate-demo.mjs`](../scripts/market-gate-demo.mjs):
+
+| Exit | Meaning |
+|---|---|
+| 0 | `clear`, or (profile mode) `accepted` / `expected`. Still not a safety claim |
+| 1 | `review` |
+| 2 | `red` |
+| 3 | scan failed: `errors` is non-empty, or `--dir` produced no report |
+
+Profile mode takes the worst verdict across plugins and honors `acks`. A profile with no plugins and no errors exits 0. Usage errors (unknown flag, missing directory) stay at exit 1 and print to stderr, before any report.
+
 **Working reference:** [`scripts/market-gate-demo.mjs`](../scripts/market-gate-demo.mjs) in this repo implements exactly this Path-A flow — spawn `--dir --json`, check `schemaVersion` + `errors`, read `plugins[0]`, derive the three-state gate, with malformed-report checks that fail closed. It is written only from this document (no API import), so it doubles as a conformance test: if the doc drifts from the CLI output, the demo breaks. Run it on an extracted package:
 
 ```sh
