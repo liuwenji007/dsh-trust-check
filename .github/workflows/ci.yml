@@ -25,4 +25,10 @@ jobs:
       - run: pnpm test
       - run: pnpm build
       # bin/ imports the built lib/. Exit 0 or 1: this repo itself is `review`.
-      - run: node --input-type=module -e "import { spawnSync } from 'node:child_process'; const result = spawnSync(process.execPath, ['bin/trust-check.mjs', '--dir', '.', '--json', '--exit-code'], { stdio: 'inherit' }); if (result.status === null || result.status > 1) process.exit(result.status ?? 1)"
+      - name: self-scan with --exit-code
+        shell: bash
+        run: |
+          set +e
+          node bin/trust-check.mjs --dir . --json --exit-code
+          status=$?
+          if [ "$status" -gt 1 ]; then exit "$status"; fi
