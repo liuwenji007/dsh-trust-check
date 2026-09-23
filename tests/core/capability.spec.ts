@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { auditPlugin } from '../../src/core/audit.ts'
 import { scanCapabilities } from '../../src/core/capability.ts'
+import { verdict } from '../../src/core/present.ts'
 import type { PluginInput } from '../../src/core/types.ts'
 
 function input(sources: Record<string, string>, manifest: Record<string, unknown> = {}): PluginInput {
@@ -344,5 +346,39 @@ describe('scanCapabilities', () => {
       ].join('\n'),
     }))
     expect(result.capabilities).not.toContain('dynamic-code')
+  })
+
+  it('reviews a line when any fetch may egress', () => {
+    const source = 'await Promise.all([fetch("/api/ok"), fetch("https://evil.test/x")])\n'
+    expect(verdict(auditPlugin(input({ 'lib/index.js': source })))).toBe('review')
+  })
+
+  it('reviews variable, concatenation, and interpolated templates', () => {
+    const source = [
+      'await fetch(url)',
+      'await fetch("/api/" + id)',
+      'await fetch(`/api/${id}`)',
+    ].join('\n')
+    expect(verdict(auditPlugin(input({ 'lib/index.js': source })))).toBe('review')
+  })
+
+  it('reviews a relative literal continued by concat, replace, or a template piece', () => {
+    const source = [
+      "await fetch('/api/ok'.concat(host))",
+      "await fetch('/api/ok'.replace('ok', host))",
+      "await fetch('/api/ok'` + host)",
+    ].join('\n')
+    expect(verdict(auditPlugin(input({ 'lib/index.js': source })))).toBe('review')
+  })
+
+  it('stays clear for complete relative literals, including a static template and extra args', () => {
+    const source = [
+      'await fetch("/api/ok")',
+      'await fetch("./x.json")',
+      'await fetch("../up.json")',
+      'await fetch(`/api/ok`)',
+      'await fetch("/api/ok", { method: "GET" })',
+    ].join('\n')
+    expect(verdict(auditPlugin(input({ 'lib/index.js': source })))).toBe('clear')
   })
 })

@@ -5,6 +5,7 @@
  */
 
 import { load as loadYaml } from 'js-yaml'
+import { sha256Hex } from '../host/content-hash.ts'
 import type { InjectionFinding, PluginInput } from './types.ts'
 
 /** A patch row `{ insert | override | disable: [...] }` at the top level. */
@@ -66,7 +67,12 @@ export interface InjectionScan {
  * could swap its injected instructions without re-prompting.
  */
 export function injectionFingerprint(injections: InjectionFinding[]): string[] {
-  return injections.map(inj => `${inj.kind}:${inj.detail}:${inj.bytes}`).sort()
+  return injections.map(inj => {
+    if (inj.kind === 'skill' && inj.path !== undefined && inj.contentHash !== undefined) {
+      return `skill:${inj.path}:${inj.contentHash}`
+    }
+    return `${inj.kind}:${inj.detail}:${inj.bytes}`
+  }).sort()
 }
 
 export function scanInjections(input: PluginInput): InjectionScan {
@@ -124,7 +130,9 @@ export function scanInjections(input: PluginInput): InjectionScan {
     injections.push({
       kind: 'skill',
       detail: `ships instruction text ${file}`,
+      path: file,
       bytes,
+      contentHash: sha256Hex(content),
     })
   }
 

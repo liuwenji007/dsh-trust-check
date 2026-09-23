@@ -26,8 +26,12 @@ Integrators should reject or warn on an unknown `schemaVersion`, not on `package
 | `dir` | `string` (optional) | `--dir` mode only: absolute path audited |
 | `generatedAt` | `string` | Always: ISO-8601 timestamp |
 | `plugins` | `AuditReport[]` | Always (may be empty) |
-| `errors` | `{ name, spec, message }[]` | Always (may be empty). Non-empty ⇒ that package tree could not be read |
+| `errors` | `{ name, spec, message }[]` | Always (may be empty). Non-empty ⇒ that package tree could not be read. A size limit, missing primary entry, missing profile, corrupt profile config, or missing declared directory is a scan failure, not `clear`. |
 | `acks` | `Record<string, TrustAckEntry>` (optional) | Profile mode only, when ack store is loaded |
+
+`AuditReport` may include optional `coverageNotes` (unexpanded static targets; not a verdict input) and `ackFingerprint` (SHA-256 of the full risk vectors, computed before display truncation). `schemaVersion` stays `1`.
+
+Acknowledgement `POST /dsh-trust-check/ack` takes `{ name, acceptRisk?, fingerprint }`. `fingerprint` is the `ackFingerprint` string from the report the user is looking at. A mismatch returns **409** with `{ error: "plugin-content-changed", report }`. The same digest is stored as `digest` on `TrustAckEntry`. Older ack records without `digest` do not match and must be confirmed again. Pre-install gates do not use ack.
 
 ### `--dir` vs `--profile`
 
@@ -133,7 +137,7 @@ Gate: `redLines.length > 0` ⇒ `red` ⇒ block by default.
 ## Out of scope
 
 - Remote tarball download (caller extracts, then `--dir`)
-- Scanning `node_modules` inside the package
+- Expanding bare package imports (`import 'lodash'`). A relative path inside this package, including under its own `node_modules`, is in scope
 - Safety guarantees (“no risk”); this scanner proves **presence**, never absence
 
 ## Related

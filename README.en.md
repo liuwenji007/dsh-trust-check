@@ -92,7 +92,7 @@ These mean "we saw this string in source", not "this address/path is safe"; runt
 
 ### Mark as expected
 
-After you confirm capabilities match why you installed the plugin, the fingerprint is stored in `~/.dsh/profiles/<profile>/trust-ack.json`. An upgrade that changes capabilities / destinations / path escapes / secrets / injections (including skill text size) returns to **review**. Accepting a red line goes through its own "confirm risk" action, which a plain mark-as-expected request cannot stand in for.
+After you confirm capabilities match why you installed the plugin, the fingerprint is stored in `~/.dsh/profiles/<profile>/trust-ack.json`. An upgrade that changes capabilities, destinations, path escapes, secrets, red lines, or skill text (by content hash, not byte length) must be confirmed again. The confirmation request sends the report's `ackFingerprint`; a mismatch returns 409 and asks you to review the refreshed report. Older acknowledgements without a `digest` no longer match. Accepting a red line still requires its own "confirm risk" action, and only after the fingerprint matches.
 
 **AI explain**: optional button; uses your DSH-configured model to explain the report summary only, **does not change the verdict**; unavailable when no model is configured.
 
@@ -155,7 +155,7 @@ Parse `--json` uniformly: `plugins[0]` for single `--dir`, or the full `plugins`
 
 - **Post-install checkup**: profile mode audits plugins **already installed**; install/postinstall/prepare may have run before your first scan. `--dir` can scan an extracted tree before install (but install scripts may still run during market extract/install).
 - Static scans miss/false-positive (runtime-loaded capabilities are invisible; dynamic `import('node:' + …)`, string concatenation, and obfuscated `eval`/`Function` can still bypass the rule table).
-- **Does not scan `node_modules`**: dependency behavior is out of scope.
+- **Does not expand the dependency tree**: the directory walk skips `node_modules`, and a bare `import 'lodash'` is not followed. A relative path that lands inside this package's `node_modules` is scanned.
 - **Credential-value reads cover**: seam service (`ctx.get('credentials')`, including `await` / optional `get?.`; receivers `ctx` / `this.ctx` / `*Ctx`), property access (`ctx.credentials`), destructuring off context (including `credentials: creds`), rebinds of those aliases (including `b = a`), and keytar/keychain password reads including default / `import * as` / `import { default as … }` / `require` renames. **Still missed on purpose**: destructuring down to a bare function name (`const { resolve } = ctx.credentials` then `resolve(…)`) — same shape as Promise executors and would red-line plugins like `dsh-pocket` / `agent-teams` without scope tracking; a secret path held in a variable then `readFileSync(p)`; receivers named neither `ctx` nor `*Ctx` (e.g. `context` / `Context`).
 - **`new URL` base args are not destinations**, so `const u = new URL('/x', 'http://evil'); fetch(u.href)` has no plaintext-http red line — the known cost of that exemption; do not widen it.
 - Client-side `fetch('/api')` same-origin calls are still flagged as network; the chip is labelled same-origin or outbound, but a missing outbound literal is not a proof of no outbound access, and the score is unchanged.

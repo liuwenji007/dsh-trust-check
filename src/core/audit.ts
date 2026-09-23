@@ -4,11 +4,12 @@
  * and any future CI gate.
  */
 
+import { sha256Hex } from '../host/content-hash.ts'
 import { scanCapabilities } from './capability.ts'
-import { scanInjections } from './injection.ts'
+import { injectionFingerprint, scanInjections } from './injection.ts'
 import { readProvenance } from './provenance.ts'
 import { scoreTrust } from './score.ts'
-import { scanShape } from './shape.ts'
+import { destinationFingerprint, pathEscapeFingerprint, presentShapeFindings, scanShape, secretTouchFingerprint } from './shape.ts'
 import type { AuditReport, Capability, Evidence, PluginInput } from './types.ts'
 
 /** Cap evidence rows so hostile plugins cannot explode JSON responses. */
@@ -80,10 +81,17 @@ function capEvidence(evidence: Evidence[], capabilities: Capability[]): Evidence
   return evidence.filter(row => kept.has(row))
 }
 
+function evidenceQueueOrder(capabilities: Capability[]): Capability[] {
+  const shell = capabilities.filter(capability => capability === 'shell')
+  const reads = capabilities.filter(capability => capability === 'fs-read')
+  const rest = capabilities.filter(capability => capability !== 'shell' && capability !== 'fs-read')
+  return [...shell, ...reads, ...rest]
+}
+
 export function auditPlugin(input: PluginInput): AuditReport {
   const { capabilities, evidence } = scanCapabilities(input)
   const { injections, skillBytes } = scanInjections(input)
-  const { destinations, pathEscapes, secretTouches } = scanShape(input)
+  const fullShape = scanShape(input)
   const provenance = readProvenance(input)
 
   const promptBytes = injections
@@ -95,8 +103,8 @@ export function auditPlugin(input: PluginInput): AuditReport {
 
   const { score, band, redLines, deductions } = scoreTrust({
     capabilities,
-    secretTouches,
-    destinations,
+    secretTouches: fullShape.secretTouches,
+    destinations: fullShape.destinations,
     injectedTokensEstimate,
     injections,
     hasBuildScript: provenance.hasBuildScript,
@@ -106,15 +114,25 @@ export function auditPlugin(input: PluginInput): AuditReport {
     pinned: provenance.pinned,
   })
 
+  const presented = presentShapeFindings(fullShape)
+  const ackFingerprint = sha256Hex(JSON.stringify({
+    capabilities: [...capabilities].sort(),
+    destinations: destinationFingerprint(fullShape.destinations),
+    secretTouches: secretTouchFingerprint(fullShape.secretTouches),
+    pathEscapes: pathEscapeFingerprint(fullShape.pathEscapes),
+    injections: injectionFingerprint(injections),
+    redLines: [...redLines].sort(),
+  }))
+
   const report = {
     name: provenance.name,
     version: provenance.version,
     spec: input.spec,
     capabilities,
-    evidence: capEvidence(evidence, capabilities),
-    destinations,
-    pathEscapes,
-    secretTouches,
+    evidence: capEvidence(evidence, evidenceQueueOrder(capabilities)),
+    destinations: presented.destinations,
+    pathEscapes: presented.pathEscapes,
+    secretTouches: presented.secretTouches,
     injections,
     injectedTokensEstimate,
     hasBuildScript: provenance.hasBuildScript,
@@ -126,6 +144,8 @@ export function auditPlugin(input: PluginInput): AuditReport {
     band,
     redLines,
     deductions,
+    coverageNotes: input.coverageNotes ?? [],
+    ackFingerprint,
   }
 
   return { ...report, summary: buildSummary(report) } as AuditReport

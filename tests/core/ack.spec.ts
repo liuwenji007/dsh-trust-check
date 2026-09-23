@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { ackMatchesReport, fingerprintFromReport } from '../../src/core/ack-fingerprint.ts'
-import type { AuditReport, Capability } from '../../src/core/types.ts'
+import { auditPlugin } from '../../src/core/audit.ts'
+import { decideAckSave } from '../../src/index.ts'
+import type { AuditReport } from '../../src/core/types.ts'
 
 const report = (): AuditReport => ({
   name: 'p',
@@ -25,16 +27,67 @@ const report = (): AuditReport => ({
 })
 
 describe('ack fingerprint', () => {
-  it('matches when capabilities destinations and secrets equal', () => {
-    const r = report()
+  it('matches when the stored digest equals the report fingerprint', () => {
+    const r = { ...report(), ackFingerprint: 'abc' }
     const fp = fingerprintFromReport(r)
+    expect(fp.digest).toBe('abc')
     expect(ackMatchesReport(r, fp)).toBe(true)
   })
 
-  it('fails when capability added', () => {
-    const r = report()
+  it('fails when the report digest changes', () => {
+    const r = { ...report(), ackFingerprint: 'abc' }
     const fp = fingerprintFromReport(r)
-    const changed = { ...r, capabilities: [...r.capabilities, 'shell'] as Capability[] }
-    expect(ackMatchesReport(changed, fp)).toBe(false)
+    expect(ackMatchesReport({ ...r, ackFingerprint: 'def' }, fp)).toBe(false)
+  })
+
+  it('fails when the ack has no digest', () => {
+    const r = { ...report(), ackFingerprint: 'abc' }
+    const fp = fingerprintFromReport(r)
+    expect(ackMatchesReport(r, { ...fp, digest: undefined })).toBe(false)
+  })
+})
+
+describe('decideAckSave', () => {
+  const plain = () => auditPlugin({
+    manifest: { name: 'plain', version: '1.0.0', repository: 'https://example.com/plain' },
+    sources: { 'lib/index.js': 'export const ok = 1\n' },
+    skillFiles: {},
+    patchText: undefined,
+    patchPath: undefined,
+    spec: 'npm:plain@1.0.0',
+  })
+
+  const shelled = () => auditPlugin({
+    manifest: { name: 'shelled', version: '1.0.0' },
+    sources: { 'lib/index.js': "import { execSync } from 'node:child_process'\nexecSync('id')\n" },
+    skillFiles: {},
+    patchText: undefined,
+    patchPath: undefined,
+    spec: 'npm:shelled@1.0.0',
+  })
+
+  it('returns 409 before acceptRisk when the submitted digest is stale', () => {
+    const fresh = shelled()
+    const decision = decideAckSave(fresh, '0'.repeat(64), true)
+    expect(decision.status).toBe(409)
+    if (decision.status === 409) expect(decision.report.ackFingerprint).toBe(fresh.ackFingerprint)
+  })
+
+  it('saves only when the submitted digest matches the fresh scan', () => {
+    const fresh = plain()
+    expect(decideAckSave(fresh, fresh.ackFingerprint, false).status).toBe(200)
+  })
+
+  it('rejects a matching red-line digest without acceptRisk', () => {
+    const fresh = auditPlugin({
+      manifest: { name: 'installs', version: '1.0.0', scripts: { postinstall: 'node setup.js' } },
+      sources: { 'lib/index.js': 'export const ok = 1\n' },
+      skillFiles: {},
+      patchText: undefined,
+      patchPath: undefined,
+      spec: 'npm:installs@1.0.0',
+    })
+    expect(fresh.redLines.length).toBeGreaterThan(0)
+    expect(decideAckSave(fresh, fresh.ackFingerprint, false).status).toBe(400)
   })
 })

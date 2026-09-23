@@ -73,6 +73,10 @@ export interface InjectionFinding {
   detail: string
   /** Estimated raw bytes injected; 0 means "flagged, size unknown". */
   bytes: number
+  /** Skill path when the finding is shipped instruction text. */
+  path?: string
+  /** SHA-256 of skill text. Bytes stay display-only. */
+  contentHash?: string
 }
 
 export type Band = 'green' | 'yellow' | 'red'
@@ -117,6 +121,10 @@ export interface AuditReport {
   deductions: Deduction[]
   /** One-line human summary. */
   summary: string
+  /** Static targets the collector could not expand. Does not change verdict. */
+  coverageNotes?: string[]
+  /** SHA-256 of the full risk vectors, computed before display truncation. */
+  ackFingerprint?: string
 }
 
 /**
@@ -136,6 +144,8 @@ export interface PluginInput {
   patchPath: string | undefined
   /** Install spec from the profile manifest. */
   spec: string
+  /** Limits the static collector could not expand. Display only. */
+  coverageNotes?: string[]
 }
 
 /** User-acknowledged capability/shape fingerprint for one plugin. */
@@ -149,6 +159,8 @@ export interface TrustAckEntry {
   injections?: string[]
   /** Optional for older ack files; required for red-line risk acceptance to re-prompt on change. */
   redLines?: string[]
+  /** Host digest of the full scan. Absence means the ack must be renewed. */
+  digest?: string
   at: string
 }
 

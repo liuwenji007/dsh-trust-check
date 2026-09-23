@@ -75,12 +75,14 @@ describe('verdict', () => {
   it('returns accepted when red lines are acknowledged', () => {
     const report = {
       ...baseReport(),
+      ackFingerprint: 'digest-red',
       redLines: ['runs code at install time (postinstall)'],
       capabilities: ['shell'] as Capability[],
       band: 'red' as const,
       score: 49,
     }
     const ack = {
+      digest: 'digest-red',
       capabilities: ['shell'] as Capability[],
       destinations: [],
       secretTouches: [],
@@ -210,12 +212,14 @@ describe('countVerdicts', () => {
   it('returns expected when ack fingerprint matches', () => {
     const report = {
       ...baseReport(),
+      ackFingerprint: 'digest-network',
       capabilities: ['network', 'fs-read'] as Capability[],
       destinations: [{ kind: 'https-host' as const, value: 'api.example.com', file: 'a.js', line: 1 }],
       pathEscapes: [],
       secretTouches: [],
     }
     const ack = {
+      digest: 'digest-network',
       capabilities: ['fs-read', 'network'] as Capability[],
       destinations: ['https-host:api.example.com'],
       secretTouches: [],

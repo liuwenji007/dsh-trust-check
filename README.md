@@ -92,7 +92,7 @@ npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
 
 ### 记为预期
 
-在设置页确认「这些能力符合我装它的目的」后，指纹写入 `~/.dsh/profiles/<profile>/trust-ack.json`。升级后能力 / 去向 / 工作区外路径 / 密钥触摸 / 注入（含技能文本大小）任一变化都会回到「需确认」。确认红线走单独的「确认风险」按钮，普通的记为预期请求无法顶替。
+在设置页确认「这些能力符合我装它的目的」后，指纹写入 `~/.dsh/profiles/<profile>/trust-ack.json`。升级后能力、去向、工作区外路径、密钥触摸、红线或技能正文（按内容哈希，而不是字节数）任一变化，都会要求重新确认。确认请求必须带上当前报告的 `ackFingerprint`；内容已经变化时返回 409，并提示重新确认。没有 `digest` 的旧确认一律失效。确认红线走单独的「确认风险」按钮，而且只在指纹一致之后才接受。
 
 **AI 解释**：可选按钮，通过 DSH 已配置的模型解释报告摘要，**不改裁决**；未配置模型时不可用。
 
@@ -155,7 +155,7 @@ npx dsh-trust-check --dir "$EXTRACTED_DIR" --spec "$INSTALL_SPEC" --json
 
 - **装后体检**：profile 模式审计的是**已经安装**的插件；install/postinstall/prepare 在你第一次扫描前就可能已经跑过。`--dir` 模式可在安装前对解压目录扫描（但安装脚本本身仍可能在 market 解包/安装阶段已执行）。
 - 静态扫描有漏判/误判（运行时才加载的能力看不到；动态 `import('node:' + …)`、字符串拼接、混淆后的 `eval`/`Function` 仍可能绕过规则表）。
-- **不扫 `node_modules`**：依赖里的行为不在审计范围内。
+- **不展开依赖树**：目录遍历跳过 `node_modules`，`import 'lodash'` 这类包名不跟。相对路径如果落在本包 `node_modules` 里，会跟进去扫。
 - **凭据读值判定覆盖到哪些写法**：接缝服务（`ctx.get('credentials')`，含 `await` / 可选链 `get?.`；接收者认 `ctx` / `this.ctx` / `*Ctx`）、属性直取（`ctx.credentials`）、从上下文解构（含改名 `credentials: creds`）、以及经这些来源再赋值的别名（含 `b = a`），其上的 `resolve` / `read` / `readRecord` / `get*` 都算读到值；`keytar` / `keychain` 的 `getPassword` / `findCredentials` 等，包括默认导入、`import * as`、`import { default as … }`、`require` 改名也算。**仍漏判**：解构到函数名（`const { resolve } = ctx.credentials` 后 `resolve(…)`）——它与 Promise executor 同名，按行匹配会把 `new Promise(resolve => …)` 误判成读值（实测会把 `dsh-pocket`、`agent-teams` 误红），需要作用域追踪；密钥路径先存进变量再 `readFileSync(p)` 同样漏判；接收者若既不叫 `ctx` 也不以 `Ctx` 结尾（如 `context` / `Context`）也不认。
 - **`new URL` 的 base 参数不记为去向**，因此 `const u = new URL('/x', 'http://evil'); fetch(u.href)` 这种写法不含明文 http 红线——这是该豁免的已知代价，不要再扩大 base 豁免范围。
 - 客户端 `fetch('/api')` 等同源调用仍记为 network；芯片会标「同源」或「外连」，但没有字面量外连不等于不出网，评分不变。
