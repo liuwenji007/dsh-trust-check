@@ -37,9 +37,14 @@ npx dsh-trust-check --json          # 机器可读输出
 # 审计任意已解压的包目录（无需 profile、无需 DSH）
 npx dsh-trust-check --dir ./path/to/plugin
 npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
+
+# 用退出码做脚本 / CI 闸门（可选）
+npx dsh-trust-check --dir ./pkg --exit-code
 ```
 
 `--dir` 与 `--profile` 互斥。两种模式的 `--json` 输出同为 `AuditResponse` 形状 `{ schemaVersion, profile, dir?, generatedAt, plugins, errors }`；单目录模式下 `profile` 为空字符串，`dir` 为绝对路径。详见 [docs/audit-schema.md](docs/audit-schema.md) / [docs/INTEGRATION.md](docs/INTEGRATION.md)。
+
+默认退出码始终为 0。加 `--exit-code` 后：`0` 未检出（profile 模式含已确认），`1` 需确认，`2` 有红线，`3` 扫描失败；profile 模式取所有插件中最严重的一项。**`0` 只代表本次静态扫描没有检出，不代表安全。** 参数写错（未知参数、`--dir` 等缺值）会直接报错并以 `1` 退出。
 
 | 设置 → 插件体检 | CLI `--dir --json` |
 | --- | --- |

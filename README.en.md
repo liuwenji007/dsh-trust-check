@@ -37,9 +37,14 @@ npx dsh-trust-check --json          # machine-readable output
 # Audit any extracted package directory (no profile, no DSH)
 npx dsh-trust-check --dir ./path/to/plugin
 npx dsh-trust-check --dir ./pkg --spec npm:foo@1.0.0 --json
+
+# Gate a script / CI step on the exit code (optional)
+npx dsh-trust-check --dir ./pkg --exit-code
 ```
 
 `--dir` and `--profile` are mutually exclusive. Both modes emit the same `AuditResponse` shape for `--json`: `{ schemaVersion, profile, dir?, generatedAt, plugins, errors }`; in single-directory mode `profile` is an empty string and `dir` is the absolute path. See [docs/audit-schema.md](docs/audit-schema.md) and [docs/INTEGRATION.md](docs/INTEGRATION.md).
+
+The exit code is always 0 by default. With `--exit-code`: `0` nothing detected (in profile mode, also acknowledged), `1` review, `2` red line, `3` scan failed; profile mode reports the worst plugin. **`0` only means this static pass found nothing — not that the plugin is safe.** Usage errors (unknown flag, missing value for `--dir` etc.) print to stderr and exit `1`.
 
 | Settings → Plugin Trust | CLI `--dir --json` |
 | --- | --- |
