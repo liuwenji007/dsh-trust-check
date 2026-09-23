@@ -2,7 +2,7 @@
 
 How to wire a **pre-install gate** (or CI check) against this package. Field-level JSON contract: **[audit-schema.md](./audit-schema.md)**.
 
-This scanner discloses capabilities. It is not an antivirus and never claims absence of risk.
+This scanner discloses capabilities. It is not an antivirus and never claims absence of risk. It produces facts; whether to block, prompt, or hide a plugin is your policy, not this package's. See [POSITIONING.md](./POSITIONING.md) (Chinese) for the division of responsibility.
 
 ## What you are integrating
 
@@ -36,11 +36,13 @@ Pin a released `dsh-trust-check` version in CI / market. Prefer checking **`sche
 
 Market pre-install has **no** `trust-ack.json`. Call `verdict(report)` with no ack (or reimplement from the table).
 
-| State | When (no ack) | Recommended UI |
+| State | When (no ack) | Suggested UI |
 |---|---|---|
 | **`red`** | `redLines.length > 0` | Block by default; optional “confirm risk” to continue |
 | **`review`** | no red lines, but privileged `capabilities` (or patch override/disable) | Show capability list; suggest confirm |
-| **`clear`** | no red lines and no privileged capabilities | May pass silently |
+| **`clear`** | no red lines and no privileged capabilities | Nothing detected in this static pass. Not a safety claim: keep the disclosure visible and do not label it “safe” or “verified”. Whether to skip a prompt is your policy. |
+
+To filter on red lines, map each `redLines` string with `classifyRedLine()` to a stable code (`install-script`, `core-tamper`, `creds-network`, `plaintext-http`, `literal-ip`) instead of matching on the message text.
 
 **Do not use for pre-install:**
 
@@ -76,7 +78,7 @@ const gate =
 
 if (gate === 'red') { /* block; allow confirm */ }
 else if (gate === 'review') { /* show capabilities; suggest confirm */ }
-else { /* may install silently */ }
+else { /* nothing detected; still not a safety claim */ }
 ```
 
 Prefer importing `verdict` when you already depend on the package (Path B): the CLI JSON does not embed the verdict string; you derive it.
@@ -108,7 +110,7 @@ switch (gate) {
     // show report.capabilities (and optional destinations for disclosure)
     break
   case 'clear':
-    // may pass
+    // nothing detected in this static pass; your policy decides whether to prompt
     break
 }
 ```

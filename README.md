@@ -2,9 +2,11 @@
 
 [English](README.en.md)
 
-DeepSeek Harness 插件静态信任审计：对已安装插件做**能力披露**——权限、注入、来源、安装脚本——代码判定、可复现、零 token。
+DeepSeek Harness 插件静态**能力披露**：权限、注入、来源、安装脚本——代码判定、可复现、零 token。
 
 > 不是"杀毒软件"，也不做安全承诺。它只做能证明的事：把插件**真实会碰什么、注入了什么、来源是否可核对**摊开给你看，结论每一条都附证据（文件 + 行号 + 片段），你可以自己复核。
+>
+> 本项目只产出事实，不下"安全 / 可信"结论，也不提供背书；过滤策略由集成方和用户决定。详见 [产品定位与边界](docs/POSITIONING.md)。
 
 ## 安装
 
@@ -128,10 +130,10 @@ import { auditPlugin, collectPlugin, verdict } from 'dsh-trust-check'
 
 const report = auditPlugin(collectPlugin(extractedDir, spec))
 
-// 闸门语义（写死，可直接抄进 market 确认弹窗）：
-// verdict(report) === 'red'   → 默认挡住，允许用户确认后继续
-// verdict(report) === 'review'  → 展示能力清单，建议用户确认
-// verdict(report) === 'clear'   → 可静默通过
+// 三态含义（是否拦截、是否弹窗由集成方决定）：
+// verdict(report) === 'red'     → 命中高置信度风险信号，建议默认挡住，允许用户确认后继续
+// verdict(report) === 'review'  → 带特权能力，建议展示能力清单
+// verdict(report) === 'clear'   → 本次静态扫描未检出，不代表安全
 ```
 
 CLI 等价调用（market 也可 spawn，无需 DSH）：
@@ -176,9 +178,12 @@ pnpm typecheck   # tsc --noEmit
 
 ## 路线图
 
-- v1（当前）：已装插件体检 + CLI `--dir` + Web 分项报告
-- v2：向 dsh-market 提安装确认 PR（本包已提供 `--dir` / `auditPlugin` 契约）
-- v3：作为 Agent CI 的数据层——"插件升级后行为是否漂移"的回归断言
+- 当前：已装插件体检 + CLI `--dir` + Web 分项报告；持续加固扫描覆盖面
+- v2：结构化事实 `facts[]`（`schemaVersion: 2`）+ 版本间升级漂移对比 + 调用方传入 registry 元数据
+- 之后：向插件市场、目录站点提供按事实过滤的接入示例（是否采用由对方决定）；CI 中的升级漂移断言
+- 有条件再做：社区具名人工审阅，独立仓库、绑定版本、可撤销
+
+完整说明见 [docs/POSITIONING.md](docs/POSITIONING.md)。
 
 ## License
 

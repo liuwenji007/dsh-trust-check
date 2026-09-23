@@ -2,9 +2,11 @@
 
 [中文](README.md)
 
-Static trust audit for DeepSeek Harness plugins: **capability disclosure** for permissions, injections, source, and install scripts — code-judged, reproducible, zero tokens.
+Static **capability disclosure** for DeepSeek Harness plugins: permissions, injections, source, and install scripts — code-judged, reproducible, zero tokens.
 
 > Not an antivirus, and it makes no safety promises. It proves only what is provable: what a plugin really touches, what it injects, and whether its source can be checked — with evidence (file + line + snippet) for every claim, so you can verify it yourself.
+>
+> This project produces facts, not "safe / trusted" verdicts, and it does not endorse plugins; filtering policy belongs to integrators and users. See [Positioning and boundaries](docs/POSITIONING.md) (Chinese).
 
 ## Install
 
@@ -128,10 +130,10 @@ import { auditPlugin, collectPlugin, verdict } from 'dsh-trust-check'
 
 const report = auditPlugin(collectPlugin(extractedDir, spec))
 
-// Gate semantics (fixed — copy into market confirm dialog):
-// verdict(report) === 'red'    → block by default; user may confirm to continue
-// verdict(report) === 'review' → show capability list; suggest confirm
-// verdict(report) === 'clear'  → may pass silently
+// What the three states mean (whether to block or prompt is the integrator's call):
+// verdict(report) === 'red'    → high-confidence risk signal; suggest blocking by default, user may confirm
+// verdict(report) === 'review' → privileged capabilities; suggest showing the capability list
+// verdict(report) === 'clear'  → nothing detected in this static pass; not a safety claim
 ```
 
 CLI equivalent (market can spawn without DSH):
@@ -176,9 +178,12 @@ Rule-table, skip-rule, and allowlist contributions: [CONTRIBUTING.md](CONTRIBUTI
 
 ## Roadmap
 
-- v1 (current): installed-plugin audit + CLI `--dir` + Web dimension-first report
-- v2: PR to dsh-market for install confirmation (this package provides `--dir` / `auditPlugin` contract)
-- v3: the data layer for Agent CI — "did this plugin's behavior drift on upgrade" regression assertions
+- Now: installed-plugin audit + CLI `--dir` + Web dimension-first report; ongoing scan-coverage hardening
+- v2: structured `facts[]` (`schemaVersion: 2`) + version-to-version drift diff + caller-supplied registry metadata
+- Later: fact-based filtering examples for plugin markets and catalog sites (adoption is their call); drift assertions in CI
+- Conditional: named community human review — separate repo, bound to a version, revocable
+
+Full write-up: [docs/POSITIONING.md](docs/POSITIONING.md) (Chinese).
 
 ## License
 

@@ -9,7 +9,7 @@
  *   node scripts/market-gate-demo.mjs <extracted-dir> [--spec <spec>]
  *
  * Exit codes (gate semantics):
- *   0 = clear (may install silently)
+ *   0 = clear (nothing detected; not a safety claim)
  *   1 = review (show capabilities, suggest confirm)
  *   2 = red   (block by default)
  *   3 = scan failed (errors non-empty / empty plugins) → fail closed

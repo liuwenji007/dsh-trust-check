@@ -64,7 +64,7 @@ Without a trust ack (`trust-ack.json`), `verdict(report)` is only:
 |---|---|---|
 | `red` | `redLines.length > 0` | Block by default; allow confirm-to-continue |
 | `review` | no red lines, but `capabilities.length > 0` (or patch override/disable) | Show capability list; suggest confirm |
-| `clear` | no red lines and no privileged capabilities | May pass silently |
+| `clear` | no red lines and no privileged capabilities | Nothing detected in this static pass; not a safety claim. Prompting is integrator policy |
 
 `accepted` / `expected` require an ack fingerprint match — **post-install Settings only**. Market pre-install has no ack; do not branch on those two.
 

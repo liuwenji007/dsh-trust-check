@@ -1,7 +1,7 @@
 {
   "name": "dsh-trust-check",
   "version": "0.1.10",
-  "description": "Static trust audit for DeepSeek Harness plugins: capabilities, injected prompts, token cost, provenance, and a reproducible 0-100 trust score",
+  "description": "Static capability disclosure for DeepSeek Harness plugins: capabilities, injected prompts, install scripts, and provenance, each with file:line evidence. Facts, not a safety verdict.",
   "license": "MIT",
   "type": "module",
   "repository": {
@@ -17,7 +17,7 @@
     "dsh-plugin",
     "deepseek-harness",
     "audit",
-    "security",
+    "capability-disclosure",
     "trust",
     "supply-chain"
   ],
@@ -46,6 +46,7 @@
     "cordis.patch.yml",
     "docs/audit-schema.md",
     "docs/INTEGRATION.md",
+    "docs/POSITIONING.md",
     "THREAT-MODEL.md"
   ],
   "scripts": {

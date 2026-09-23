@@ -166,6 +166,29 @@ scanner proves the tampering happened, not the tamperer's intent.
 
 ---
 
+## Where the audit runs: in-process vs out-of-process
+
+The Settings page ("plugin checkup") runs the audit **inside the DSH host
+process**, next to the plugins it audits. Those plugins have already been
+loaded and executed by the time the page is opened. A plugin running in the
+same process can, in principle, patch shared modules (`node:fs`, the web
+server, this package's routes) and change what the Settings page shows.
+
+So the in-process result is a convenience view — an inventory of installed
+plugins and a reminder when an upgrade changed their fingerprint — not an
+independent check. When the result needs to be trusted, run the CLI outside
+the host, on an extracted package, before install:
+
+```sh
+npx dsh-trust-check --dir <extracted-dir> --json
+```
+
+This is a property of where the code runs, not a rule gap; no rule change can
+fix it. It is also why pre-install `--dir` is the posture integrators should
+build on.
+
+---
+
 ## What this scanner will never prove
 
 Three limits are physical, not implementation gaps. Designing a rule that
