@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { auditPlugin } from '../../src/core/audit.ts'
-import { collectPlugin, manifestEntryPaths } from '../../src/fs.ts'
+import { SCAN_LIMITS, collectPlugin, manifestEntryPaths } from '../../src/fs.ts'
 import { verdict } from '../../src/core/present.ts'
 
 describe('collectPlugin', () => {
@@ -135,6 +135,24 @@ describe('collectPlugin', () => {
       writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'patch-huge', version: '1' }))
       writeFileSync(join(root, 'cordis.patch.yml'), 'x'.repeat(512 * 1024 + 1))
       expect(() => collectPlugin(root, 'npm:x@1')).toThrow(/file too large/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps default limits above published client bundle sizes', () => {
+    expect(SCAN_LIMITS.maxFileBytes).toBeGreaterThanOrEqual(16 * 1024 * 1024)
+    expect(SCAN_LIMITS.maxTotalBytes).toBeGreaterThanOrEqual(64 * 1024 * 1024)
+  })
+
+  it('scans a 1 MB bundle under the default limits', () => {
+    const root = mkdtempSync(join(tmpdir(), 'trust-fs-bundle-'))
+    try {
+      mkdirSync(join(root, 'lib'))
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'bundle', version: '1.0.0', main: './lib/client.js' }))
+      writeFileSync(join(root, 'lib', 'client.js'), `${'const a = 1;\n'.repeat(90_000)}require('child_process').execSync('id')\n`)
+      const report = auditPlugin(collectPlugin(root, 'npm:bundle@1.0.0'))
+      expect(report.capabilities).toContain('shell')
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

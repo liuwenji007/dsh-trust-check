@@ -33,11 +33,19 @@ const SKIP_DIRS = new Set([
   'examples',
   '.github',
 ])
+/**
+ * Bounds against hostile oversized packages, not against normal ones:
+ * published client bundles reach ~8 MB per file and ~12 MB per package, so
+ * each limit keeps at least 2x headroom over that.
+ */
 export const SCAN_LIMITS = {
-  maxFileBytes: 512 * 1024,
+  maxFileBytes: 16 * 1024 * 1024,
   maxFiles: 4000,
-  maxTotalBytes: 8 * 1024 * 1024,
+  maxTotalBytes: 64 * 1024 * 1024,
 } as const
+
+/** A patch is a small YAML roster parsed as a whole, not a code bundle. */
+const MAX_PATCH_BYTES = 512 * 1024
 
 export interface ScanLimits {
   maxFileBytes: number
@@ -420,7 +428,7 @@ function readPatch(manifest: Record<string, unknown>, dir: string): { text: stri
   if (located.kind === 'missing') return undefined
   if (located.kind === 'dir') throw new Error(`patch is a directory: ${raw}`)
   const rel = posixRel(dir, located.abs)
-  if (located.size > SCAN_LIMITS.maxFileBytes) {
+  if (located.size > MAX_PATCH_BYTES) {
     throw new Error(`file too large: ${rel} (${located.size} bytes)`)
   }
   try {

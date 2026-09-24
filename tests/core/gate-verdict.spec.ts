@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { auditPlugin } from '../../src/core/audit.ts'
 import { verdict } from '../../src/core/present.ts'
-import { collectPlugin } from '../../src/fs.ts'
+import { SCAN_LIMITS, collectPlugin } from '../../src/fs.ts'
 import { runAudit } from '../../src/index.ts'
 
 const previousHome = process.env.DSH_HOME
@@ -34,7 +34,7 @@ describe('pre-install gate', () => {
       writeFileSync(join(profileDir, 'node_modules', 'huge-plugin', 'package.json'), JSON.stringify({
         name: 'huge-plugin', version: '1.0.0', main: './lib/big.js',
       }))
-      writeFileSync(join(hugeDir, 'big.js'), 'x'.repeat(512 * 1024 + 1))
+      writeFileSync(join(hugeDir, 'big.js'), Buffer.alloc(SCAN_LIMITS.maxFileBytes + 1, 0x78))
       writeFileSync(join(shellDir, 'package.json'), JSON.stringify({
         name: 'shell-plugin', version: '1.0.0', main: './lib/index.js',
       }))
