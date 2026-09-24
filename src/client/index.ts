@@ -7,6 +7,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { TrustReport } from './TrustReport.tsx'
 import { createTrustStore } from './stores.ts'
+import { installSettingsNavIcon } from './settings-nav-icon.ts'
 import { en, zh, type TrustKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -52,6 +53,10 @@ export function apply(ctx: ClientContext): void {
   const store = () => handle
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-trust-check: dictionaries')
+
+  // Shell has no icon field on settings.section; claim the nav row and swap
+  // the fallback gear for the magnifying-glass mark (see settings-nav-icon.ts).
+  installSettingsNavIcon(ctx, () => sectionLabel(ctx))
 
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
