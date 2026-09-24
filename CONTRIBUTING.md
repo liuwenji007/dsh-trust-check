@@ -16,7 +16,7 @@ The cheapest, highest-value unit is **one detection rule plus one test**. The en
 | New secret-path / env pattern | [`src/core/shape.ts`](src/core/shape.ts) `SECRET_PATH` / `ENV_SENSITIVE` | Normal. Same test bar. See [Secret / path shape](#secret--path-shape--密钥路径形态). |
 | False-positive fixture | `tests/core/*.spec.ts` | Light. A snippet that currently flags and should not. |
 | Skip / narrow-detection (docs IP, CIDR table, placeholders) | [`src/core/shape.ts`](src/core/shape.ts) | **Heavy.** Widening a skip is fail-open risk — same bar as allowlists. See [Tightening without fail-open](#tightening-without-fail-open--收紧检测而不 fail-open). |
-| Allowlist / identifier-host / placeholder-host | [`src/core/destination-priority.ts`](src/core/destination-priority.ts) `DEST_WHITELIST`; [`src/core/shape.ts`](src/core/shape.ts) `IDENTIFIER_HOST_EXACT` / `PLACEHOLDER_HOST_EXACT` / docs IPs | **Heavy.** These *weaken* detection. See [Allowlist governance](#allowlist-governance--白名单治理) below. |
+| Allowlist / identifier-host / placeholder-host | [`src/core/destination-priority.ts`](src/core/destination-priority.ts) `DEST_WHITELIST`; [`src/core/shape.ts`](src/core/shape.ts) `IDENTIFIER_HOST_EXACT` / `IDENTIFIER_URL_EXACT` / `PLACEHOLDER_HOST_EXACT` / docs IPs | **Heavy.** These *weaken* detection. See [Allowlist governance](#allowlist-governance--白名单治理) below. |
 
 Open an issue from the matching template before a non-trivial PR: **false positive**, **false negative**, or **new seam rule**. Small rule+test PRs can skip the issue.
 
@@ -89,6 +89,7 @@ Three host tables hide destinations. They are not equivalent, and none of them i
 |---|---|---|
 | `DEST_WHITELIST` | HTTPS hosts of known package/source/model APIs render as "common" and fold away. **Plaintext HTTP is never downgraded**, even if the host is listed. | The host is a public registry, source forge, CDN, or first-party model API that DSH plugins routinely talk to. Subdomains inherit. A new `DestWhitelistReason` also needs a locale key `destWhitelist.<code>` in both languages. |
 | `IDENTIFIER_HOST_EXACT` | Exact host match for XML/SVG namespace identifiers (`www.w3.org`). Not a request. | The host is a standards-body namespace that an attacker cannot register. Exact match only — no subdomain inheritance. |
+| `IDENTIFIER_URL_EXACT` | Exact whole-literal match for a URL a format library uses as an identifier (Apple plist DTD, ID3 UFID owner). Not a request. | The host serves real traffic, so the host itself does not qualify for `IDENTIFIER_HOST_EXACT`. Cite the format spec, keep the entry a complete literal, and add probes for another path, a subdomain, and `+` / `.concat(` extension. |
 | `PLACEHOLDER_HOST_EXACT` (+ docs IPs / RFC 2606 TLDs) | Documentation / parser bases. | Documentation hosts and RFC 5737 docs IPv4 only. Generic single-label names (`proxy`, `server`, `host`) must **not** be added: they resolve on a LAN with a DNS search domain and would hide a real plaintext-HTTP red line. |
 
 **Allowlist / skip PRs are reviewed differently from rule PRs.** An entry that hides destinations weakens detection. The PR body must state:

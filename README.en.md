@@ -94,6 +94,7 @@ These mean "we saw this string in source", not "this address/path is safe"; runt
 - Skips placeholder bases like `http://local` / `http://dsh.invalid`, RFC 2606 `.example` / `.invalid` / `.test`, and shell switches (`/c`).
 - Comments are blanked before the scan, so an example URL in a JSDoc block is not a destination (bundlers usually keep those comments).
 - Namespace identifiers such as `xmlns="http://www.w3.org/2000/svg"` are excluded by exact host — an attacker cannot register those domains, so the exemption cannot be borrowed.
+- A few whole URLs that bundled format libraries use as identifiers, not requests (the Apple plist DTD `http://www.apple.com/DTDs/PropertyList-1.0.dtd`, the ID3 owner `http://musicbrainz.org`), are excluded by **exact literal**. Any other path or subdomain on those hosts, or the literal followed by `+` / `.concat(`, is still a destination.
 - When findings exceed the cap, the riskiest are kept: plaintext HTTP and literal IPs cannot be crowded out by harmless addresses.
 - Secret paths require a **path-only quoted string** (no whitespace): `"~/.ssh/config"`, `"/Users/x/.ssh/config"`, `'.ssh/config'`, `"~/.aws/credentials"`, or path forms like `/id_rsa` / `~/.netrc`. UI prose (`"Uses … ~/.ssh/config when empty"`), deny-list regexes, `startsWith('id_rsa')`, and a bare `'.ssh'` are not credential access.
 

@@ -116,6 +116,25 @@ const IDENTIFIER_HOST_EXACT = new Set([
 ])
 
 /**
+ * Whole URL strings that bundled format libraries use as identifiers. Unlike
+ * IDENTIFIER_HOST_EXACT these hosts serve real traffic, so only the exact
+ * literal is exempt: any other path on the same host, or the literal extended
+ * by concatenation, is still a destination.
+ */
+const IDENTIFIER_URL_EXACT = new Set([
+  // Apple property-list DOCTYPE system identifier.
+  'http://www.apple.com/DTDs/PropertyList-1.0.dtd',
+  // ID3v2 UFID owner identifier for MusicBrainz recording IDs.
+  'http://musicbrainz.org',
+])
+
+const CONCAT_AFTER_LITERAL = /^\s*(?:\+|\.\s*concat\s*\()/
+
+function isIdentifierUrlLiteral(line: string, url: string, literalEnd: number): boolean {
+  return IDENTIFIER_URL_EXACT.has(url) && !CONCAT_AFTER_LITERAL.test(line.slice(literalEnd))
+}
+
+/**
  * Harness loopback-style names. Shown as destinations (facts) but not as
  * plaintext-HTTP red lines. Exact hosts only — `fileserver.local` still flags.
  */
@@ -514,6 +533,7 @@ export function scanShape(input: PluginInput): ShapeScan {
         // `gateway.local`). Deliberately not a host denylist: `.local` resolves
         // and `new URL('/path', 'http://evil')` + fetch is still a real one.
         if (isUrlParserBase(line, url)) continue
+        if (isIdentifierUrlLiteral(line, url, (match.index ?? 0) + match[0].length)) continue
         const kind = classifyUrl(url)
         let value = url
         if (kind === 'https-host' || kind === 'http-host' || kind === 'loopback') {
