@@ -109,8 +109,8 @@ npx dsh-trust-check --dir ./pkg --exit-code
 1. 声明 install / postinstall / preinstall 安装脚本（**不含** `prepare`：`prepare` 只在 pack/git 安装时跑，记为扣分，不是红线）；
 2. `cordis.patch.yml` override / disable 了 `@deepseek-ai/*` 核心 bundle（匹配 `id` **或** `name`）；
 3. **读到**凭据/密钥的值（`credentials.resolve` / `read` / `readRecord` / `get*`，含经接缝别名 / 解构改名的调用、`keytar`/`keychain` 的 `getPassword` 等——含 `import * as` / `default as` 改名——或读文件调用同行的密钥路径）**且**有网络访问——只拿到句柄（`const c = ctx.credentials`、`ctx.get('credentials')`）或只读元数据（`describe`）记为 chip 披露，不算红线；
-4. 非 localhost 的明文 `http://` 外连（字面量）**且**有 network；
-5. 非 loopback、非文档例网、非绑定/广播的字面量 IP 外连 **且**有 network。
+4. 非 localhost、非 RFC 1918 内网 IP 的明文 `http://` 外连（字面量）**且**有 network；
+5. 非 loopback、非文档例网、非绑定/广播、非 RFC 1918 内网（`10/8`、`172.16/12`、`192.168/16`）的字面量 IP 外连 **且**有 network。内网 IP 仍列在去向里并标「内网/私人」，只是不判红线——远程攻击者收不到发往内网的数据；`169.254/16`（含云元数据地址）不在此列，照常判红线。
 
 命中红线时数值分封顶 49（避免「100 分 + 高风险」的误导）。**裁决只看 `redLines`，不看分数**：分数低（如 9 分）可能只是 shell + 网络 + 未锁版本叠加，应显示「需确认」而非「有红线」；JSON 里的 `band` 仍可能为 `red`（分数低于 50），但 UI/CLI 用 `verdict()` 呈现，二者不要混读。
 

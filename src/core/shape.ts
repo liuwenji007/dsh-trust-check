@@ -435,6 +435,20 @@ export function isDocumentationIp(ip: string): boolean {
   )
 }
 
+/**
+ * RFC 1918 private IPv4 (10/8, 172.16/12, 192.168/16). A remote attacker
+ * cannot receive traffic sent to these, so they stay listed as destinations
+ * but do not make a red line. Link-local 169.254/16 is deliberately excluded:
+ * it holds the cloud metadata endpoint, a credential source.
+ */
+export function isRfc1918Ip(ip: string): boolean {
+  const v = ip.trim().replace(/:\d+$/, '')
+  const parts = v.split('.')
+  if (parts.length !== 4 || parts.some(p => !/^\d{1,3}$/.test(p) || Number(p) > 255)) return false
+  const [a, b] = parts.map(Number)
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+}
+
 /** Documentation / parser base hosts that are not real destinations. */
 export function isPlaceholderHost(host: string): boolean {
   const h = normalizeHost(host)
@@ -679,7 +693,8 @@ export function shapeRedLines(
       && !isLoopbackHost(dest.value)
       && !isPlaceholderHost(dest.value)
       && !isIdentifierHost(dest.value)
-      && !isHarnessInternalHost(dest.value)) {
+      && !isHarnessInternalHost(dest.value)
+      && !isRfc1918Ip(dest.value)) {
       lines.push(`uses plaintext http:// to ${dest.value}`)
       break
     }
@@ -689,7 +704,8 @@ export function shapeRedLines(
     if (dest.kind === 'ip'
       && !isLoopbackIp(dest.value)
       && !isUnspecifiedIp(dest.value)
-      && !isDocumentationIp(dest.value)) {
+      && !isDocumentationIp(dest.value)
+      && !isRfc1918Ip(dest.value)) {
       lines.push(`uses literal IP ${dest.value} for network access`)
       break
     }

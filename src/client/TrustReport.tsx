@@ -445,12 +445,14 @@ function InjectionPanel({ report, t }: { report: AuditReport; t: T }) {
 function PluginCardBody({
   report,
   ack,
+  profile,
   t,
   onAckChange,
   onReplaceReport,
 }: {
   report: AuditReport
   ack?: TrustAckEntry
+  profile: string
   t: T
   onAckChange: () => void
   onReplaceReport: (report: AuditReport) => void
@@ -536,7 +538,9 @@ function PluginCardBody({
   return (
     <div className={css.cardBody}>
       <section className={`${css.decision} ${css[`decision-${v}`]}`}>
-        <p className={css.action}>{t(actionKey(v))}</p>
+        <p className={css.action}>
+          {t(actionKey(v)).replace('{profile}', profile).replace('{name}', report.name)}
+        </p>
         {drift && <div className={css.drift}>{t('drift.title')}</div>}
         {concernList.length > 0 && v !== 'expected' && (
           <div className={css.concerns}>
@@ -643,6 +647,7 @@ function PluginCardBody({
 function PluginRow({
   report,
   ack,
+  profile,
   t,
   expanded,
   onToggle,
@@ -651,6 +656,7 @@ function PluginRow({
 }: {
   report: AuditReport
   ack?: TrustAckEntry
+  profile: string
   t: T
   expanded: boolean
   onToggle: () => void
@@ -683,7 +689,14 @@ function PluginRow({
         <span className={css.srOnly}>{expanded ? t('collapsePlugin') : t('expandPlugin')}</span>
       </button>
       {expanded && (
-        <PluginCardBody report={report} ack={ack} t={t} onAckChange={onAckChange} onReplaceReport={onReplaceReport} />
+        <PluginCardBody
+          report={report}
+          ack={ack}
+          profile={profile}
+          t={t}
+          onAckChange={onAckChange}
+          onReplaceReport={onReplaceReport}
+        />
       )}
     </article>
   )
@@ -774,6 +787,7 @@ export function TrustReport({ useStore, actions, t }: TrustReportProps) {
           key={plugin.name}
           report={normalizeAuditReport(plugin)}
           ack={normalizedReport.acks?.[plugin.name]}
+          profile={normalizedReport.profile === '' ? 'web' : normalizedReport.profile}
           t={t}
           expanded={expanded.has(plugin.name)}
           onToggle={() => togglePlugin(plugin.name)}

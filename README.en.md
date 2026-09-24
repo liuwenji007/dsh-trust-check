@@ -109,8 +109,8 @@ After you confirm capabilities match why you installed the plugin, the fingerpri
 1. declares install / postinstall / preinstall scripts (**not** `prepare`: `prepare` runs on pack/git install only — a score deduction, not a red line);
 2. `cordis.patch.yml` overrides/disables an `@deepseek-ai/*` core bundle (matched by `id` **or** `name`);
 3. **reads** credential/secret *values* (`credentials.resolve` / `read` / `readRecord` / `get*`, including seam aliases and renamed destructures; keytar/keychain `getPassword` etc. including `import * as` / `default as`; or a secret path on the same line as a file read) **and** has network access — holding a handle only (`const c = ctx.credentials`, `ctx.get('credentials')`) or metadata (`describe`) is a capability chip, not a red line;
-4. plaintext `http://` to non-localhost (literal) **and** has network;
-5. non-loopback, non-documentation, non-bind/broadcast literal IP outbound **and** has network.
+4. plaintext `http://` to a literal host that is neither localhost nor an RFC 1918 private IP **and** has network;
+5. literal IP outbound that is not loopback, documentation, bind/broadcast, or RFC 1918 private (`10/8`, `172.16/12`, `192.168/16`) **and** has network. Private IPs are still listed as destinations and tagged private — a remote attacker cannot receive traffic sent to them, so they do not make a red line. `169.254/16` (including the cloud metadata endpoint) is not exempt and still red-lines.
 
 Red lines cap the numeric score at 49 (avoiding "100 + high risk"). **The verdict follows `redLines`, not the score**: a low score (e.g. 9) can come from shell + network + unpinned spec stacking and should show **review**, not red line(s). JSON `band` may still be `red` (score below 50), but UI/CLI use `verdict()` — do not mix them.
 

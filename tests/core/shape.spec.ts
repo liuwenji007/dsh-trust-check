@@ -41,13 +41,15 @@ describe('scanShape', () => {
     expect(lines.some(l => l.startsWith('uses plaintext http://'))).toBe(true)
   })
 
-  it('flags non-loopback literal IP with network', () => {
-    // RFC1918 alone still reds; RFC 5737 docs ranges are skipped elsewhere.
+  it('flags a public literal IP with network, but only lists an RFC 1918 one', () => {
+    const pub = scanShape(input({ 'a.js': 'const u = "45.33.32.156"' }))
+    expect(shapeRedLines(['network'], pub.destinations).some(l => l.startsWith('uses literal IP'))).toBe(true)
+
     const { destinations } = scanShape(input({
       'a.js': 'const u = "192.168.1.100"',
     }))
-    const lines = shapeRedLines(['network'], destinations)
-    expect(lines.some(l => l.startsWith('uses literal IP'))).toBe(true)
+    expect(destinations.some(d => d.kind === 'ip' && d.value === '192.168.1.100')).toBe(true)
+    expect(shapeRedLines(['network'], destinations)).toEqual([])
   })
 
   it('skips RFC 5737 documentation IPv4 ranges (not real outbound)', () => {
@@ -213,7 +215,7 @@ describe('scanShape', () => {
 
     const host = scanShape(input({ 'a.js': 'const u = "10.0.0.5/32"' }))
     expect(host.destinations.some(d => d.value === '10.0.0.5')).toBe(true)
-    expect(shapeRedLines(['network'], host.destinations).some(l => l.startsWith('uses literal IP'))).toBe(true)
+    expect(shapeRedLines(['network'], host.destinations)).toEqual([])
   })
 
   it('skips private IP range-table boundaries (SSRF denylist)', () => {
@@ -238,14 +240,33 @@ describe('scanShape', () => {
     expect(shapeRedLines(['network'], destinations)).toEqual([])
   })
 
-  it('still records a lone private literal IP used as a destination', () => {
+  it('still records a lone private literal IP used as a destination, without a red line', () => {
     const { destinations } = scanShape(input({
-      'a.js': 'fetch("http://192.168.1.100/x")',
+      'a.js': 'fetch("http://192.168.1.100:8123/x")',
     }))
     const alone = scanShape(input({ 'b.js': 'const host = "10.0.0.5"' }))
     expect(alone.destinations.some(d => d.kind === 'ip' && d.value === '10.0.0.5')).toBe(true)
-    expect(destinations.some(d => d.kind === 'http-host' && d.value === '192.168.1.100')).toBe(true)
-    expect(shapeRedLines(['network'], alone.destinations).some(l => l.includes('10.0.0.5'))).toBe(true)
+    expect(destinations.some(d => d.kind === 'http-host' && d.value === '192.168.1.100:8123')).toBe(true)
+    expect(shapeRedLines(['network'], alone.destinations)).toEqual([])
+    expect(shapeRedLines(['network'], destinations)).toEqual([])
+  })
+
+  it('keeps red lines for addresses that only look private', () => {
+    const probes = [
+      'fetch("http://169.254.169.254/latest/meta-data/iam/")',
+      'const metadata = "169.254.169.254"',
+      'const u = "172.32.0.1"',
+      'const u = "172.15.255.1"',
+      'const u = "100.64.0.1"',
+      'const u = "11.0.0.1"',
+      'const u = "192.169.1.1"',
+      'fetch("http://192.168.1.2.attacker.net/x")',
+      'fetch("http://10.0.0.5.nip.io/x")',
+    ]
+    for (const probe of probes) {
+      const { destinations } = scanShape(input({ 'a.js': probe }))
+      expect(shapeRedLines(['network'], destinations), probe).not.toEqual([])
+    }
   })
 
   it('does not treat ~/.ssh inside UI prose as a secret touch', () => {
