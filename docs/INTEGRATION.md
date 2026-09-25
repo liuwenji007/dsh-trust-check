@@ -49,7 +49,7 @@ To filter on red lines, map each `redLines` string with `classifyRedLine()` to a
 - `accepted` / `expected` — require a matching ack; Settings-only
 - `score` / `band` — a low score can still be `review`; **gate follows `redLines` via `verdict()`, not the numeric band**
 
-Stable fields to hard-parse: `name`, `version`, `spec`, `capabilities`, `redLines`.  
+Stable fields to hard-parse: `name`, `version`, `spec`, `capabilities`, `redLines`. The wording of `capabilities` values and `redLines` sentences is fixed too, so you can render and translate them — see the [wording contract](./audit-schema.md#wording-contract-capabilities-values-and-redlines-templates).  
 Everything else (`destinations`, `evidence`, `score`, …) is display-only and may change as noise rules evolve — see [audit-schema.md](./audit-schema.md).
 
 ## Path A — spawn CLI (no TypeScript import)
@@ -95,6 +95,8 @@ Without this flag the process exits 0 even when the scan failed or found a red l
 | 3 | scan failed: `errors` is non-empty, or `--dir` produced no report |
 
 Profile mode takes the worst verdict across plugins and honors `acks`. A profile with no plugins and no errors exits 0. Usage errors (unknown flag, missing directory) stay at exit 1 and print to stderr, before any report.
+
+**Pick one: parse JSON, or read the exit code.** Node's `execFile` / `execFileSync` (and their promisified forms) treat any non-zero exit as a failure and throw. With `--exit-code`, every `review` and `red` package would then land in your error path instead of being read. If you parse `--json` — which is what a catalog or card surface needs — leave `--exit-code` off. Use it only where the exit code *is* the decision, such as a shell `&&` chain or a CI step.
 
 **Working reference:** [`scripts/market-gate-demo.mjs`](../scripts/market-gate-demo.mjs) in this repo implements exactly this Path-A flow — spawn `--dir --json`, check `schemaVersion` + `errors`, read `plugins[0]`, derive the three-state gate, with malformed-report checks that fail closed. It is written only from this document (no API import), so it doubles as a conformance test: if the doc drifts from the CLI output, the demo breaks. Run it on an extracted package:
 

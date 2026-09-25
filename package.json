@@ -48,6 +48,7 @@
     "docs/audit-schema.md",
     "docs/INTEGRATION.md",
     "docs/POSITIONING.md",
+    "CHANGELOG.md",
     "THREAT-MODEL.md"
   ],
   "scripts": {
