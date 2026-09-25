@@ -122,12 +122,14 @@ npx dsh-trust-check --dir ./pkg --exit-code
 | **注入面** | `cordis.patch.yml` + `systemPrompt` / `ctx.skills.register` / `system-prompt/assemble` + 技能文本 | override / disable 了谁（`id` 或 `name`）、注入了什么 |
 | **成本** | 技能文本 + system-prompt 行内字面量字节数 | 估算每请求注入 token（字节 / 4，仅估算） |
 | **来源** | `package.json` 的 `repository`（缺失回退到 git 安装源）+ 安装 spec | 是否锁版本/锁 commit |
-| **更新风险** | 安装脚本（install/postinstall/preinstall；`prepare` 仅扣分） | 是否在安装时执行任意代码 |
+| **更新风险** | 安装脚本（install/postinstall/preinstall；`prepare` 仅扣分） | 是否声明了安装时执行的脚本 |
 
-## 给集成方（如 dsh-market）
+## 给集成方（如插件目录、市场、CI）
 
 装前怎么接闸门：**[docs/INTEGRATION.md](docs/INTEGRATION.md)**（英文）。  
-JSON 字段契约：**[docs/audit-schema.md](docs/audit-schema.md)**（`schemaVersion`、稳定五字段、易变字段）。
+JSON 字段契约：**[docs/audit-schema.md](docs/audit-schema.md)**（`schemaVersion`、稳定五字段、`capabilities` 取值与红线文案契约及建议中文、易变字段）。  
+版本变更：**[CHANGELOG.md](CHANGELOG.md)**，每个版本先列「Affects catalog results」，锁定版本的集成方升级前看这一节即可。  
+真实接入参考：awesome-dsh-plugin 在目录构建期调用本工具，适配层见 [`scripts/lib/capabilities.mjs`](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/scripts/lib/capabilities.mjs)（第三方代码，由对方维护）。
 
 本包导出稳定 API，供安装前确认弹窗或 CI 闸门使用：
 
@@ -185,8 +187,9 @@ pnpm typecheck   # tsc --noEmit
 ## 路线图
 
 - 当前：已装插件体检 + CLI `--dir` + Web 分项报告；持续加固扫描覆盖面
+- 集成：awesome-dsh-plugin 已在目录构建期接入扫描，dsh-market 与目录站只陈列事实（由对方维护，可替换）
 - v2：结构化事实 `facts[]`（`schemaVersion: 2`）+ 版本间升级漂移对比 + 调用方传入 registry 元数据
-- 之后：向插件市场、目录站点提供按事实过滤的接入示例（是否采用由对方决定）；CI 中的升级漂移断言
+- 之后：配合目录侧的版本升级与误报反馈；CI 中的升级漂移断言
 - 有条件再做：社区具名人工审阅，独立仓库、绑定版本、可撤销
 
 完整说明见 [docs/POSITIONING.md](docs/POSITIONING.md)。

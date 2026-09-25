@@ -60,11 +60,11 @@ function externalDestinations(report: AuditReport): boolean {
 }
 
 const CONCERN_EN: Partial<Record<ConcernCode, string>> = {
-  'install-script': 'May run arbitrary code at install time',
-  'core-tamper': 'Tamper with a core bundle',
-  'creds-network': 'Read credentials and access the network',
-  'plaintext-http': 'Uses plaintext HTTP outbound',
-  'literal-ip': 'Uses literal IP outbound',
+  'install-script': 'Runs scripts at install time',
+  'core-tamper': 'Overrides or disables a DSH core bundle',
+  'creds-network': 'Detected in code: reads credential values and has network access',
+  'plaintext-http': 'Detected in code: plaintext http:// outbound',
+  'literal-ip': 'Detected in code: connects to a literal IP address',
   'external-dest': 'External destination literals in source',
   'secret-touch': 'May touch secrets or sensitive env vars',
   'path-escape': 'May touch paths outside the workspace',

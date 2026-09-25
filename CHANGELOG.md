@@ -4,10 +4,18 @@ Each release lists **Affects catalog results** first: anything that can change w
 
 `schemaVersion` is the output-shape version (see [docs/audit-schema.md](docs/audit-schema.md)). It is noted on every release; a bump means the JSON shape or the wording contract broke.
 
-## Unreleased
+## 0.1.14 — 2026-09-25
+
+`schemaVersion`: 1. Detection is identical to 0.1.13: same `capabilities` and `redLines` on every package, and the `redLines` sentences are unchanged. Upgrading changes no catalog record.
+
+### Affects catalog results
+
+- None.
+- The JSX `placeholder` false positive mentioned in #401 has not produced a red line since 0.1.12: the value is an RFC 1918 address, which is now listed as a destination only. `placeholder` attributes get no exemption of their own, because a syntactic exemption can be borrowed (`{ placeholder: "<public ip>" }` read back into a request) to hide a real destination.
 
 ### Other
 
+- Red-line concerns in Settings and in the CLI's "why be careful" list now use the same factual wording as the [suggested translations](docs/audit-schema.md#wording-contract-capabilities-values-and-redlines-templates): declarations are stated plainly ("Runs scripts at install time", "Overrides or disables a DSH core bundle"), source matches are prefixed "Detected in code:". Replaces "May run arbitrary code" and "Tamper with a core bundle". A test keeps the CLI and Settings English text identical.
 - Documented the wording contract: `capabilities` values and `redLines` templates are fixed while `schemaVersion` is `1`, with suggested Chinese for each red-line code ([audit-schema.md](docs/audit-schema.md#wording-contract-capabilities-values-and-redlines-templates)).
 - `INTEGRATION.md`: do not combine `--exit-code` with `execFile`-style callers that parse `--json`; a non-zero exit is thrown before the JSON is read.
 

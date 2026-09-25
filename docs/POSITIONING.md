@@ -76,10 +76,11 @@
 - `decideAckSave` 的 200 分支只返回 `{ status: 200 }`（现在返回的 `entry` 没有被使用，已标记废弃）。
 - CLI `--exit-code` 从可选变成默认行为，并写入 changelog。
 
-**之后：集成**
+**集成**
 
-- 向插件市场和目录站点提供按事实过滤的接入示例；是否采用、默认规则如何设定，由对方决定。
-- CI 场景：插件升级时自动输出漂移报告，作为回归断言的数据来源。
+- 已接入：awesome-dsh-plugin 在目录构建期扫描，只取 `capabilities` / `redLines` 写入目录数据，dsh-market 与目录站陈列事实，区分“未检出”和“未扫描”，不做装前拦截。适配层在对方仓库里单独一个文件，扫描器可替换；是否采用、如何展示由对方决定。
+- 本项目这边：维护文案契约（见 [audit-schema.md](./audit-schema.md#wording-contract-capabilities-values-and-redlines-templates)），每次发版在 [CHANGELOG](../CHANGELOG.md) 先列影响目录结果的变更并附样本对比，处理插件作者的误报反馈。
+- 之后：CI 场景下，插件升级时自动输出漂移报告，作为回归断言的数据来源。
 
 **有条件再做：社区人工审阅**
 

@@ -122,12 +122,14 @@ Red lines cap the numeric score at 49 (avoiding "100 + high risk"). **The verdic
 | **Injections** | `cordis.patch.yml` + `systemPrompt` / `ctx.skills.register` / `system-prompt/assemble` + skill text | who it overrides/disables (`id` or `name`), what it injects |
 | **Cost** | skill text + system-prompt inline literal bytes | estimated injected tokens per request (bytes / 4, estimate only) |
 | **Source** | `package.json` `repository` (falls back to the git install source) + install spec | pinned version / pinned commit |
-| **Update risk** | install scripts (install/postinstall/preinstall; `prepare` is deduction-only) | arbitrary code at install time |
+| **Update risk** | install scripts (install/postinstall/preinstall; `prepare` is deduction-only) | whether scripts are declared to run at install time |
 
-## For integrators (e.g. dsh-market)
+## For integrators (plugin catalogs, markets, CI)
 
 How to wire a pre-install gate: **[docs/INTEGRATION.md](docs/INTEGRATION.md)**.  
-JSON field contract: **[docs/audit-schema.md](docs/audit-schema.md)** (`schemaVersion`, stable gate fields, volatile fields).
+JSON field contract: **[docs/audit-schema.md](docs/audit-schema.md)** (`schemaVersion`, stable gate fields, the wording contract for `capabilities` values and red-line templates with suggested Chinese, volatile fields).  
+Release changes: **[CHANGELOG.md](CHANGELOG.md)** lists "Affects catalog results" first on every release — the section to read before bumping a pin.  
+Real-world integration: awesome-dsh-plugin runs this tool at catalog build time; its adapter is [`scripts/lib/capabilities.mjs`](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/scripts/lib/capabilities.mjs) (third-party code, maintained there).
 
 Stable exports for pre-install confirmation or CI gates:
 
@@ -185,8 +187,9 @@ Rule-table, skip-rule, and allowlist contributions: [CONTRIBUTING.md](CONTRIBUTI
 ## Roadmap
 
 - Now: installed-plugin audit + CLI `--dir` + Web dimension-first report; ongoing scan-coverage hardening
+- Integration: awesome-dsh-plugin scans at catalog build time; dsh-market and the catalog site only display the facts (maintained there, replaceable)
 - v2: structured `facts[]` (`schemaVersion: 2`) + version-to-version drift diff + caller-supplied registry metadata
-- Later: fact-based filtering examples for plugin markets and catalog sites (adoption is their call); drift assertions in CI
+- Later: keep up with catalog pin bumps and false-positive reports; drift assertions in CI
 - Conditional: named community human review — separate repo, bound to a version, revocable
 
 Full write-up: [docs/POSITIONING.md](docs/POSITIONING.md) (Chinese).
