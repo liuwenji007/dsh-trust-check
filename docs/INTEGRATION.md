@@ -12,7 +12,7 @@ you extract the package  →  audit the tree  →  read plugins[0]  →  three-s
 
 **You** download / extract. **This package** only audits a directory it is given (`--dir` or `collectPlugin`). It does not fetch tarballs.
 
-Pin a released `dsh-trust-check` version in CI / market. Prefer checking **`schemaVersion === 1`** on the JSON payload over guessing from the npm version alone. `schemaVersion` bumps only when the **output shape** breaks; detection-rule churn does not bump it.
+Pin a released `dsh-trust-check` version in CI / market. Prefer checking **`schemaVersion === 2`** on the JSON payload over guessing from the npm version alone. `schemaVersion` bumps only when the **output shape** breaks; detection-rule churn does not bump it. Schema 2 adds `facts[]` and keeps the schema 1 capability values and red-line templates.
 
 ## Adopting a new release
 
@@ -39,9 +39,9 @@ A catalog pins a scanner version on purpose, so that a release cannot change sto
 
 ### Reading `--json`
 
-- Always check `schemaVersion` (currently `1`).
+- Always check `schemaVersion` (currently `2`).
 - Always check `errors`: non-empty means that tree (or installed entry) could not be read — treat as scan failure, not `clear`. This includes profiles that do not exist, a missing or corrupt profile `package.json`, a declared plugin directory that is absent, and a package whose scan hits a size limit or cannot read a primary entry.
-- `coverageNotes` on a report, when present, only describe static imports the scanner could not expand. They do not change `verdict()`. A hand-written gate keeps using `errors`, `redLines`, `capabilities`, and patch override/disable.
+- `coverageNotes` on a report, when present, describe static imports the scanner could not expand, and files whose comments could not be stripped (those files are scanned raw). They do not change `verdict()`. A hand-written gate keeps using `errors`, `redLines`, `capabilities`, and patch override/disable.
 - **`--dir`**: `profile` is `""`, `dir` is the absolute path. Use **`plugins[0]`**. Empty `plugins` with `errors` ⇒ fail closed.
 - **Empty / corrupt extract**: if the directory has no readable `package.json` **and** no scannable source/skill/patch files, collection throws and lands in `errors` (not a silent `clear` report). A `package.json`-only minimal package is still valid and may be `clear`.
 - **`--profile`**: iterate `plugins[]`. Optional `acks` is for Settings fingerprints only.
@@ -77,7 +77,7 @@ Pseudo-parse:
 
 ```js
 const body = JSON.parse(stdout)
-if (body.schemaVersion !== 1) throw new Error('unsupported audit schema')
+if (body.schemaVersion !== 2) throw new Error('unsupported audit schema')
 if (body.errors?.length) throw new Error(body.errors[0].message)
 const report = body.plugins[0]
 if (!report) throw new Error('no audit report')

@@ -8,7 +8,7 @@ import type { AuditReport, AuditResponse, TrustAckEntry } from './types.ts'
  * JSON output shape version. Bump only when fields are added/removed/renamed
  * in a way that breaks parsers. Detection-rule changes do not bump this.
  */
-export const AUDIT_SCHEMA_VERSION = 1
+export const AUDIT_SCHEMA_VERSION = 2
 
 export interface BuildAuditResponseInput {
   profile: string

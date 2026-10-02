@@ -150,7 +150,7 @@ CLI 等价调用（market 也可 spawn，无需 DSH）：
 npx dsh-trust-check --dir "$EXTRACTED_DIR" --spec "$INSTALL_SPEC" --json
 ```
 
-解析 `--json` 时统一读 `plugins[0]`（单目录）或 `plugins` 数组（profile 模式）；`errors` 非空表示目录不可读——**按扫描失败处理，不是 `clear`**。空目录 / 损坏解压（无可读 `package.json` 且无源码）会进 `errors`（fail closed）。`--json` 顶层含 **`schemaVersion`**（当前为 `1`）：只在输出**形状**破坏性变更时递增，检测规则改动不会 bump。细节见上两份文档；仓库内 Path A 冒烟样例：`scripts/market-gate-demo.mjs`。
+解析 `--json` 时统一读 `plugins[0]`（单目录）或 `plugins` 数组（profile 模式）；`errors` 非空表示目录不可读——**按扫描失败处理，不是 `clear`**。空目录 / 损坏解压（无可读 `package.json` 且无源码）会进 `errors`（fail closed）。`--json` 顶层含 **`schemaVersion`**（当前为 `2`）：只在输出**形状**破坏性变更时递增，检测规则改动不会 bump。schema 2 新增 `facts[]`，能力取值和红线模板与 schema 1 相同。细节见上两份文档；仓库内 Path A 冒烟样例：`scripts/market-gate-demo.mjs`。
 
 **本期不做**：远程 tarball 下载（拉包是 market 的职责）。独立验证姿势：先把包解到临时目录，再 `--dir`。
 

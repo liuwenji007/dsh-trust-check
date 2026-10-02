@@ -276,11 +276,21 @@ describe('scanCapabilities', () => {
 
     expect(scanCapabilities(input({
       'lib/index.js': 'const f = new Function("return 1")\n',
-    })).capabilities).toContain('dynamic-code')
+    })).capabilities).not.toContain('dynamic-code')
 
     expect(scanCapabilities(input({
       'lib/index.js': "import vm from 'node:vm'\nvm.runInNewContext(code)\n",
     })).capabilities).toContain('dynamic-code')
+  })
+
+  it('still treats a built, interpolated, or decoded argument as dynamic-code', () => {
+    for (const line of [
+      'new Function("return " + x)\n',
+      'new Function(`return ${x}`)\n',
+      'eval(atob("YQ=="))\n',
+    ]) {
+      expect(scanCapabilities(input({ 'lib/index.js': line })).capabilities, line).toContain('dynamic-code')
+    }
   })
 
   it('detects DSH subagent seams and not a generic delegate() helper', () => {

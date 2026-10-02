@@ -270,6 +270,40 @@ describe('collectPlugin', () => {
     }
   })
 
+  it('notes when comment stripping falls back to the raw file', () => {
+    const root = mkdtempSync(join(tmpdir(), 'trust-fs-fallback-'))
+    try {
+      mkdirSync(join(root, 'lib'))
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'fb', version: '1.0.0', main: './lib/index.js' }))
+      writeFileSync(join(root, 'lib', 'index.js'), 'const s = `unclosed\n')
+      const collected = collectPlugin(root, 'npm:fb@1.0.0')
+      expect(collected.coverageNotes?.some(note => note.includes('fell back to raw text in lib/index.js'))).toBe(true)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('notes a computed module name, a native binding, and a decoded eval', () => {
+    const root = mkdtempSync(join(tmpdir(), 'trust-fs-evasion-'))
+    try {
+      mkdirSync(join(root, 'lib'))
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'ev', version: '1.0.0', main: './lib/index.js' }))
+      writeFileSync(join(root, 'lib', 'index.js'), [
+        'require("child_" + "process")',
+        'process.binding("spawn_sync")',
+        'eval(atob("YQ=="))',
+        'require("node:fs")',
+      ].join('\n'))
+      const collected = collectPlugin(root, 'npm:ev@1.0.0')
+      const notes = collected.coverageNotes ?? []
+      expect(notes.some(note => note === 'computed module name in lib/index.js')).toBe(true)
+      expect(notes.some(note => note === 'native binding in lib/index.js')).toBe(true)
+      expect(notes.some(note => note === 'decoded eval in lib/index.js')).toBe(true)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('notes a dynamic import without changing the verdict', () => {
     const root = mkdtempSync(join(tmpdir(), 'trust-fs-dyn-'))
     try {

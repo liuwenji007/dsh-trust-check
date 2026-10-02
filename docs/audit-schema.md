@@ -8,7 +8,7 @@ This document freezes what **dsh-market** (and similar gates) should parse. It i
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schemaVersion` | `number` | **JSON shape version.** Current value: **`1`**. |
+| `schemaVersion` | `number` | **JSON shape version.** Current value: **`2`**. |
 
 **Bump rules**
 
@@ -29,7 +29,7 @@ Integrators should reject or warn on an unknown `schemaVersion`, not on `package
 | `errors` | `{ name, spec, message }[]` | Always (may be empty). Non-empty ⇒ that package tree could not be read. A size limit, missing primary entry, missing profile, corrupt profile config, or missing declared directory is a scan failure, not `clear`. |
 | `acks` | `Record<string, TrustAckEntry>` (optional) | Profile mode only, when ack store is loaded |
 
-`AuditReport` may include optional `coverageNotes` (unexpanded static targets; not a verdict input) and `ackFingerprint` (SHA-256 of the full risk vectors, computed before display truncation). `schemaVersion` stays `1`.
+`AuditReport` includes `facts` (`{ id, value, evidence }[]`). `id` is the stable filter key (`shell.import-or-call`, `network.fetch`, `computed-module-name`, …). Capability values and red-line templates are the same strings as schema 1. `coverageNotes` (unexpanded static targets, and files scanned raw) are not a verdict input. `ackFingerprint` is the SHA-256 of the risk vectors, computed before display truncation.
 
 Acknowledgement `POST /dsh-trust-check/ack` takes `{ name, acceptRisk?, fingerprint }`. `fingerprint` is the `ackFingerprint` string from the report the user is looking at. A mismatch returns **409** with `{ error: "plugin-content-changed", report }`. The same digest is stored as `digest` on `TrustAckEntry`. Older ack records without `digest` do not match and must be confirmed again. Pre-install gates do not use ack.
 
@@ -60,7 +60,7 @@ Pre-install gates should hard-depend only on these five fields:
 
 Integrators render these two fields as-is and translate them, so their wording is treated as part of the contract, not as free text.
 
-**Guarantees while `schemaVersion` is `1`:**
+**Guarantees while `schemaVersion` is `2`:** capability values and red-line templates are unchanged from schema 1. `facts[].id` may grow.
 
 - The `capabilities` values and the `redLines` templates below do not change wording.
 - A new capability value or red-line template may be **added** (detection can grow). Treat an unknown capability value or a red line that `classifyRedLine()` maps to `raw` as “show the original English text”, not as an error.
@@ -71,18 +71,20 @@ Which plugins produce which values *does* change between releases (that is detec
 
 ### `capabilities` values
 
-| Value | Meaning |
-|---|---|
-| `shell` | Runs system commands |
-| `fs-read` | Reads files |
-| `fs-write` | Writes files |
-| `network` | Network access |
-| `credentials` | Reaches the credential / secret store |
-| `env` | Reads environment variables |
-| `subagent` | Starts sub-agents |
-| `host-runtime` | Depends on a DSH host runtime package (`@deepseek-ai/dsh-core`, `@deepseek-ai/dsh-app`, …), derived from `package.json` |
-| `llm` | Calls a model |
-| `dynamic-code` | Evaluates code at runtime (`eval`, `new Function`, …) |
+Suggested wording is what a surface should show. Do not add a scope the scan did not observe (for example "in your project") or a mechanism it did not observe (for example "downloads"). `fs-read` is not limited to the workspace; leaving the workspace is `pathEscapes`. `dynamic-code` is runtime evaluation (`eval`, `new Function`, `vm`), not a download.
+
+| Value | Meaning | Suggested English | Suggested Chinese |
+|---|---|---|---|
+| `shell` | Runs system commands | Runs system commands | 会执行系统命令 |
+| `fs-read` | Reads files | Reads files | 会读取文件 |
+| `fs-write` | Writes files | Writes files | 会写入文件 |
+| `network` | Network access | Network access | 会访问网络 |
+| `credentials` | Reaches the credential / secret store | Reaches credentials or secrets | 会接触凭据或密钥 |
+| `env` | Reads environment variables | Reads environment variables | 会读取环境变量 |
+| `subagent` | Starts sub-agents | Starts sub-agents | 会启动子代理 |
+| `host-runtime` | Depends on a DSH host runtime package (`@deepseek-ai/dsh-core`, `@deepseek-ai/dsh-app`, …), derived from `package.json` | Depends on the DSH host runtime | 依赖 DSH 宿主运行时 |
+| `llm` | Calls a model | Calls a model | 会调用模型 |
+| `dynamic-code` | Evaluates code at runtime (`eval`, `new Function`, …) | Evaluates code at runtime | 会在运行时执行代码 |
 
 ### `redLines` templates
 
@@ -134,7 +136,7 @@ Safe to render; **do not** hard-depend for gating or parsing:
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "profile": "",
   "dir": "/tmp/extracted/quiet-plugin",
   "generatedAt": "2026-09-03T08:00:00.000Z",
@@ -157,7 +159,7 @@ Safe to render; **do not** hard-depend for gating or parsing:
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "profile": "",
   "dir": "/tmp/extracted/leaky-plugin",
   "generatedAt": "2026-09-03T08:00:00.000Z",

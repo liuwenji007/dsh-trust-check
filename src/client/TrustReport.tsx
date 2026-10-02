@@ -7,6 +7,7 @@ import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AuditReport, AuditResponse, Capability, Evidence, InjectionKind, TrustAckEntry } from '../core/types.ts'
 import {
   ackDrifted,
+  capabilityDelta,
   capabilityTier,
   concerns,
   countVerdicts,
@@ -460,6 +461,7 @@ function PluginCardBody({
   const v = verdict(report, ack)
   const concernList = concerns(report)
   const drift = ackDrifted(report, ack)
+  const added = capabilityDelta(report, ack).added
   const repoHref = repositoryHref(report.repository)
   const [evidenceFocus, setEvidenceFocus] = useState<Capability | null>(null)
   const [ackLoading, setAckLoading] = useState(false)
@@ -542,6 +544,11 @@ function PluginCardBody({
           {t(actionKey(v)).replace('{profile}', profile).replace('{name}', report.name)}
         </p>
         {drift && <div className={css.drift}>{t('drift.title')}</div>}
+        {drift && added.length > 0 && (
+          <div className={css.drift}>
+            {t('drift.added').replace('{list}', added.map(capability => t(`cap.${capability}`)).join(', '))}
+          </div>
+        )}
         {concernList.length > 0 && v !== 'expected' && (
           <div className={css.concerns}>
             <h3 className={css.concernTitle}>{t('concerns.title')}</h3>

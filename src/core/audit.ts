@@ -10,7 +10,7 @@ import { injectionFingerprint, scanInjections } from './injection.ts'
 import { readProvenance } from './provenance.ts'
 import { scoreTrust } from './score.ts'
 import { destinationFingerprint, pathEscapeFingerprint, presentShapeFindings, scanShape, secretTouchFingerprint } from './shape.ts'
-import type { AuditReport, Capability, Evidence, PluginInput } from './types.ts'
+import type { AuditReport, Capability, Evidence, Fact, PluginInput } from './types.ts'
 
 /** Cap evidence rows so hostile plugins cannot explode JSON responses. */
 export const MAX_EVIDENCE = 40
@@ -81,6 +81,31 @@ function capEvidence(evidence: Evidence[], capabilities: Capability[]): Evidence
   return evidence.filter(row => kept.has(row))
 }
 
+const COVERAGE_FACTS: ReadonlyArray<{ prefix: string, id: string }> = [
+  { prefix: 'computed module name in ', id: 'computed-module-name' },
+  { prefix: 'native binding in ', id: 'native-binding' },
+  { prefix: 'decoded eval in ', id: 'decoded-eval' },
+  { prefix: 'comment stripping fell back to raw text in ', id: 'comment-strip-fallback' },
+]
+
+function buildFacts(evidence: Evidence[], notes: string[]): Fact[] {
+  const groups = new Map<string, Fact>()
+  for (const row of evidence) {
+    if (row.rule === undefined) continue
+    const fact = groups.get(row.rule) ?? { id: row.rule, value: row.capability, evidence: [] }
+    fact.evidence.push({ file: row.file, line: row.line, snippet: row.snippet })
+    groups.set(row.rule, fact)
+  }
+  const facts = [...groups.values()]
+  for (const note of notes) {
+    for (const kind of COVERAGE_FACTS) {
+      if (!note.startsWith(kind.prefix)) continue
+      facts.push({ id: kind.id, value: note.slice(kind.prefix.length), evidence: [] })
+    }
+  }
+  return facts
+}
+
 function evidenceQueueOrder(capabilities: Capability[]): Capability[] {
   const shell = capabilities.filter(capability => capability === 'shell')
   const reads = capabilities.filter(capability => capability === 'fs-read')
@@ -130,6 +155,7 @@ export function auditPlugin(input: PluginInput): AuditReport {
     spec: input.spec,
     capabilities,
     evidence: capEvidence(evidence, evidenceQueueOrder(capabilities)),
+    facts: buildFacts(capEvidence(evidence, evidenceQueueOrder(capabilities)), input.coverageNotes ?? []),
     destinations: presented.destinations,
     pathEscapes: presented.pathEscapes,
     secretTouches: presented.secretTouches,

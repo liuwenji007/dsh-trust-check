@@ -21,6 +21,8 @@
 import type { Capability } from './types.ts'
 
 export interface CapabilityRule {
+  /** Stable id for evidence and `facts[]`. Not a sentence, and not renamed lightly. */
+  id: string
   capability: Capability
   pattern: RegExp
   label: string
@@ -29,17 +31,22 @@ export interface CapabilityRule {
 export const CAPABILITY_RULES: readonly CapabilityRule[] = [
   // --- shell ------------------------------------------------------------
   {
+    id: 'shell.import-or-call',
     capability: 'shell',
     pattern: /(?:require\(|from\s+|import\s*\(\s*)['"](?:node:)?child_process(?:\/promises)?['"]|\bexecSync\s*\(|\bspawnSync\s*\(|\bexecFileSync\s*\(|\bexecFile\s*\(|\bspawn\s*\(|\bctx\.bash\b/,
     label: 'Shell execution',
   },
   // --- filesystem --------------------------------------------------------
   {
+    id: 'fs-write.call',
     capability: 'fs-write',
     pattern: /\bwriteFileSync\s*\(|\bwriteFile\s*\(|\bappendFileSync\s*\(|\bappendFile\s*\(|\bmkdirSync\s*\(|\bunlinkSync\s*\(|\brmSync\s*\(|\brm\s*\(|\brenameSync\s*\(|\bcopyFileSync\s*\(|\bcpSync\s*\(|\bcreateWriteStream\s*\(/,
     label: 'Filesystem write',
   },
   {
+    // The import alternative stays. A call-site-only rule would miss
+    // `fs['read' + 'File']`, and the import is what still shows that.
+    id: 'fs-read.import-or-call',
     capability: 'fs-read',
     pattern: /(?:require\(|from\s+|import\s*\(\s*)['"](?:node:)?fs(?:\/promises)?['"]|\breadFileSync\s*\(|\breadFile\s*\(|\breaddirSync\s*\(|\breaddir\s*\(|\bstatSync\s*\(|\bexistsSync\s*\(|\bcreateReadStream\s*\(|\bctx\.fs\b/,
     label: 'Filesystem read',
@@ -53,6 +60,7 @@ export const CAPABILITY_RULES: readonly CapabilityRule[] = [
   // variable arguments are). Keeping it here would flag every relative-path
   // fetch as network and drown the signal.
   {
+    id: 'network.import-or-call',
     capability: 'network',
     pattern: /(?:require\(|from\s+|import\s*\(\s*)['"](?:node:)?(?:http2|http|https|net|tls|dgram|dns2?|undici)['"]|\bnew\s+WebSocket\b|\bhttp\.request\b|\bhttps\.request\b|(?<!['"])\b(?:http|https)\.get\s*\(|(?<!['"])\bhttp2\.connect\s*\(|\bBun\.serve\s*\(|(?:require\(|from\s+|import\s*\(\s*)['"](?:axios|undici|node-fetch|got|ws|superagent|ky|request|phin|ofetch|cross-fetch|gaxios|needle)['"]|\bctx\.web\b/,
     label: 'Network access',
@@ -66,6 +74,7 @@ export const CAPABILITY_RULES: readonly CapabilityRule[] = [
   // `.aws/credentials`, or a path separator / home prefix for `.netrc` /
   // `id_rsa`, so UI prose and deny-list array entries (`['.ssh']`) do not match.
   {
+    id: 'credentials.material',
     capability: 'credentials',
     pattern: /(?:require\(|from\s+|import\s*\(\s*)['"](?:keychain|keytar|dotenv)['"]|\bkeychain\.\w+|\bkeytar\.\w+|\bdotenv\.config\b|\bctx\.credentials\b|\bctx\.get\(\s*['"]credentials['"]\s*\)|['"`](?:(?:~\/|\.\/|\/|[A-Za-z]:\\)[^'"`\s]*\.ssh[^'"`\s]*|\.ssh\/[^'"`\s]+)['"`]|['"`](?:(?:~\/|\.\/|\/|[A-Za-z]:\\)[^'"`\s]*\.aws\/credentials[^'"`\s]*|\.aws\/credentials)['"`]|(?:~\/|\.\/|\/)\.netrc\b|\.gnupg(?:\/|\\|$)|\.docker\/config\.json|\.kube\/config|[/\\]id_rsa\b|[/\\]id_ed25519\b/,
     label: 'Credential / secret access',
@@ -75,24 +84,28 @@ export const CAPABILITY_RULES: readonly CapabilityRule[] = [
   // through the alias is still credential access, so the chip must show it —
   // otherwise a plugin can carry the red line with no matching chip.
   {
+    id: 'credentials.read',
     capability: 'credentials',
     pattern: /\bcredentials\.(?:resolve|readRecord|read|get[A-Z]\w*)\s*\(/,
     label: 'Credential / secret access',
   },
   // --- environment -------------------------------------------------------
   {
+    id: 'env.read',
     capability: 'env',
     pattern: /\bprocess\.env\b/,
     label: 'Reads environment variables',
   },
   // --- subagent ----------------------------------------------------------
   {
+    id: 'subagent.spawn',
     capability: 'subagent',
     pattern: /\bctx\.subagents\b|\bctx\.agentTeams\b|\bspawnTeammate\b/,
     label: 'Sub-agent spawning',
   },
   // --- llm ---------------------------------------------------------------
   {
+    id: 'llm.call',
     capability: 'llm',
     pattern: /\bctx\.llm\b|\bcreateChatCompletion\s*\(|\bchat\.completions\b|\bgenerateText\s*\(|\binvokeModel\s*\(/,
     label: 'Model (LLM) calls',
@@ -100,6 +113,7 @@ export const CAPABILITY_RULES: readonly CapabilityRule[] = [
   // --- dynamic code ------------------------------------------------------
   // Call-site / import form only, so this table does not match itself.
   {
+    id: 'dynamic-code.eval',
     capability: 'dynamic-code',
     pattern: /\beval\s*\(|\bnew\s+Function\s*\(|(?:require\(|from\s+|import\s*\(\s*)['"](?:node:)?vm['"]/,
     label: 'Dynamic code execution',

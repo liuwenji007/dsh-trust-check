@@ -8,7 +8,7 @@ import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from '
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { isSkillFile } from './core/injection.ts'
-import { stripComments } from './core/strip-comments.ts'
+import { blankComments } from './core/strip-comments.ts'
 import type { PluginInput } from './core/types.ts'
 
 /** In-box bundles the profile ships by default; never community plugins. */
@@ -516,9 +516,13 @@ const RELATIVE_SPECIFIERS = [
 ]
 const DYNAMIC_IMPORT = /(?:^|[^\w$])import\s*\(\s*(?!['"])/g
 const DYNAMIC_REQUIRE = /(?:^|[^\w$])require\s*\(\s*(?!['"])/g
+/** `require("literal" + …)` — the module name is built, not written out. */
+const COMPUTED_MODULE = /\brequire\s*\(\s*(['"`])(?:\\.|(?!\1).)*\1\s*\+/g
+const NATIVE_BINDING = /\bprocess\.(?:binding|dlopen)\s*\(/g
+/** `eval` / `Function` whose argument starts with a decode call. */
+const DECODED_EVAL = /\b(?:eval|Function)\s*\(\s*(?:atob|Buffer\.from)\s*\(/g
 
-function extractRelativeSpecifiers(source: string): string[] {
-  const stripped = stripComments(source)
+function extractRelativeSpecifiers(stripped: string): string[] {
   const out: string[] = []
   for (const pattern of RELATIVE_SPECIFIERS) {
     for (const match of stripped.matchAll(pattern)) {
@@ -564,7 +568,11 @@ function followStaticImports(
     const rel = posixRel(packageDir, abs)
     const content = sources[rel]
     if (content === undefined) continue
-    const stripped = stripComments(content)
+    const blanked = blankComments(content, rel)
+    if (blanked.fallback) {
+      pushNote(coverageNotes, omitted, `comment stripping fell back to raw text in ${rel}`)
+    }
+    const stripped = blanked.text
     if (DYNAMIC_IMPORT.test(stripped)) {
       DYNAMIC_IMPORT.lastIndex = 0
       pushNote(coverageNotes, omitted, `dynamic import target in ${rel}`)
@@ -577,7 +585,25 @@ function followStaticImports(
     } else {
       DYNAMIC_REQUIRE.lastIndex = 0
     }
-    for (const spec of extractRelativeSpecifiers(content)) {
+    if (COMPUTED_MODULE.test(stripped)) {
+      COMPUTED_MODULE.lastIndex = 0
+      pushNote(coverageNotes, omitted, `computed module name in ${rel}`)
+    } else {
+      COMPUTED_MODULE.lastIndex = 0
+    }
+    if (NATIVE_BINDING.test(stripped)) {
+      NATIVE_BINDING.lastIndex = 0
+      pushNote(coverageNotes, omitted, `native binding in ${rel}`)
+    } else {
+      NATIVE_BINDING.lastIndex = 0
+    }
+    if (DECODED_EVAL.test(stripped)) {
+      DECODED_EVAL.lastIndex = 0
+      pushNote(coverageNotes, omitted, `decoded eval in ${rel}`)
+    } else {
+      DECODED_EVAL.lastIndex = 0
+    }
+    for (const spec of extractRelativeSpecifiers(stripped)) {
       const target = resolveInPackage(packageDir, abs, spec)
       if (target === 'escape') {
         pushNote(coverageNotes, omitted, `import escapes package from ${rel}: ${spec}`)

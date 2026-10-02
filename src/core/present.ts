@@ -294,3 +294,17 @@ export function ackDrifted(report: AuditReport, ack?: TrustAckEntry): boolean {
   if (ack === undefined) return false
   return !ackMatchesReport(report, ack)
 }
+
+/** Capabilities gained or lost since the user last acknowledged this plugin. */
+export function capabilityDelta(
+  report: AuditReport,
+  ack?: TrustAckEntry,
+): { added: Capability[], removed: Capability[] } {
+  if (ack === undefined) return { added: [], removed: [] }
+  const before = new Set(ack.capabilities)
+  const after = new Set(report.capabilities)
+  return {
+    added: report.capabilities.filter(capability => !before.has(capability)),
+    removed: ack.capabilities.filter(capability => !after.has(capability)),
+  }
+}

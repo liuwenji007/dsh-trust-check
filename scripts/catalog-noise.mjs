@@ -6,6 +6,8 @@
  *   node scripts/catalog-noise.mjs expand   # append next Top/Random batch (keeps existing)
  *   node scripts/catalog-noise.mjs scan     # extract local tarballs, scan, write report
  *   node scripts/catalog-noise.mjs review   # write REVIEW.md checklist (TP/FP/FN)
+ *   node scripts/catalog-noise.mjs diff --old <scanner.mjs> [--new <scanner.mjs>]
+ *                                           # capabilities / redLines gained or lost
  *
  * This script never downloads. Put .tgz files in work/downloads/ yourself,
  * then run scan (extract + dsh-trust-check --dir).
@@ -44,13 +46,14 @@ const expandTopN = Number(flagValue(args, '--top') ?? '40')
 const expandRandomN = Number(flagValue(args, '--random') ?? '40')
 const expandSeed = Number(flagValue(args, '--seed') ?? '20260907')
 
-if (command !== 'sample' && command !== 'scan' && command !== 'expand' && command !== 'review') {
+if (command !== 'sample' && command !== 'scan' && command !== 'expand' && command !== 'review' && command !== 'diff') {
   console.error(`Usage:
   node scripts/catalog-noise.mjs sample  [--catalog <plugins.json>] [--work <dir>]
   node scripts/catalog-noise.mjs expand  [--catalog <plugins.json>] [--work <dir>]
                                          [--top 40] [--random 40] [--seed 20260907]
   node scripts/catalog-noise.mjs scan    [--work <dir>]
   node scripts/catalog-noise.mjs review  [--work <dir>]
+  node scripts/catalog-noise.mjs diff --old <scanner.mjs> [--new <scanner.mjs>] [--work <dir>]
 `)
   process.exit(1)
 }
@@ -58,7 +61,58 @@ if (command !== 'sample' && command !== 'scan' && command !== 'expand' && comman
 if (command === 'sample') writeSample(catalogPath, workDir)
 else if (command === 'expand') expandSample(catalogPath, workDir, expandTopN, expandRandomN, expandSeed)
 else if (command === 'review') writeReview(workDir)
+else if (command === 'diff') diffScanners(workDir, flagValue(args, '--old'), flagValue(args, '--new'))
 else scanWork(workDir)
+
+/** Capabilities and red lines one scanner reports for an extracted package. */
+function scanFacts(bin, dir) {
+  const ran = spawnSync(process.execPath, [bin, '--dir', dir, '--spec', 'sample', '--json'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+  })
+  if (ran.status !== 0) return null
+  try {
+    const plugin = JSON.parse(ran.stdout).plugins?.[0]
+    if (!plugin) return null
+    return { capabilities: plugin.capabilities ?? [], redLines: plugin.redLines ?? [] }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Print capabilities and red lines that differ between two scanner builds.
+ * This is the before/after for a CHANGELOG "Affects catalog results" note.
+ */
+function diffScanners(work, oldBin, newBin) {
+  if (oldBin === undefined) {
+    console.error('diff requires --old <scanner.mjs>')
+    process.exit(1)
+  }
+  const nextBin = newBin ?? join(ROOT, 'bin/trust-check.mjs')
+  const extracted = join(work, 'extracted')
+  const plugins = readdirSync(extracted).filter(name => existsSync(join(extracted, name, 'package.json')))
+  const changes = []
+  let failed = 0
+  for (const name of plugins) {
+    const dir = join(extracted, name)
+    const before = scanFacts(oldBin, dir)
+    const after = scanFacts(nextBin, dir)
+    if (before === null || after === null) {
+      failed += 1
+      continue
+    }
+    const added = after.capabilities.filter(item => !before.capabilities.includes(item))
+    const removed = before.capabilities.filter(item => !after.capabilities.includes(item))
+    const redAdded = after.redLines.filter(item => !before.redLines.includes(item))
+    const redRemoved = before.redLines.filter(item => !after.redLines.includes(item))
+    if (added.length || removed.length || redAdded.length || redRemoved.length) {
+      changes.push({ name, added, removed, redAdded, redRemoved })
+    }
+  }
+  console.log(JSON.stringify({ scanned: plugins.length - failed, failed, changed: changes.length, changes }, null, 2))
+}
 
 /** Flatten every cohort list on a sample.json (top / random / top2 / …). */
 function allEntries(sample) {

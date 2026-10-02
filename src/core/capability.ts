@@ -31,6 +31,42 @@ function isCompleteRelativeLiteral(arg: string): boolean {
   return arg.startsWith('/') || arg.startsWith('./') || arg.startsWith('../')
 }
 
+const VM_IMPORT = /(?:require\(|from\s+|import\s*\(\s*)['"](?:node:)?vm['"]/
+
+/**
+ * True when every `eval` / `new Function` on the line is a finished string
+ * literal (no interpolation, no concatenation) and the line does not import `vm`.
+ * A constant literal does not run outside code. A non-literal call still counts.
+ */
+function isConstantDynamicCode(line: string): boolean {
+  if (VM_IMPORT.test(line)) return false
+  const calls = [...line.matchAll(/\b(?:eval|new\s+Function)\s*\(/g)]
+  if (calls.length === 0) return false
+  for (const call of calls) {
+    const rest = line.slice((call.index ?? 0) + call[0].length).trimStart()
+    const quote = rest[0]
+    if (quote !== '"' && quote !== "'" && quote !== '`') return false
+    let i = 1
+    let closed = false
+    while (i < rest.length) {
+      if (rest[i] === '\\') {
+        i += 2
+        continue
+      }
+      if (quote === '`' && rest[i] === '$' && rest[i + 1] === '{') return false
+      if (rest[i] === quote) {
+        closed = true
+        break
+      }
+      i += 1
+    }
+    if (!closed) return false
+    const trailing = rest.slice(i + 1).trimStart()
+    if (trailing.startsWith('+') || trailing.startsWith('.') || trailing.startsWith('`')) return false
+  }
+  return true
+}
+
 function lineHasOutboundFetch(line: string): boolean {
   const re = /(?:^|[^\w$])fetch\s*\(\s*(['"`])?/g
   let match: RegExpExecArray | null
@@ -68,18 +104,20 @@ export function scanCapabilities(input: PluginInput): CapabilityScan {
 
   for (const [file, content] of Object.entries(input.sources)) {
     const originalLines = content.split('\n')
-    const scannedLines = stripComments(content).split('\n')
+    const scannedLines = stripComments(content, file).split('\n')
     for (let i = 0; i < scannedLines.length; i++) {
       const stripped = scannedLines[i]
       for (const rule of CAPABILITY_RULES) {
         const match = rule.pattern.exec(stripped)
         if (match !== null) {
+          if (rule.id === 'dynamic-code.eval' && isConstantDynamicCode(stripped)) continue
           capabilities.add(rule.capability)
           evidence.push({
             capability: rule.capability,
             file,
             line: i + 1,
             snippet: (originalLines[i] ?? stripped).trim().slice(0, 120),
+            rule: rule.id,
           })
         }
       }
@@ -93,6 +131,7 @@ export function scanCapabilities(input: PluginInput): CapabilityScan {
           file,
           line: i + 1,
           snippet: (originalLines[i] ?? stripped).trim().slice(0, 120),
+          rule: 'network.fetch',
         })
       }
     }
@@ -109,6 +148,7 @@ export function scanCapabilities(input: PluginInput): CapabilityScan {
       file: 'package.json',
       line: 1,
       snippet: 'declares a @deepseek-ai/dsh-host* / dsh-app* / dsh-core* dependency',
+      rule: 'host-runtime.manifest',
     })
   }
 

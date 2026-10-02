@@ -524,7 +524,7 @@ export function scanShape(input: PluginInput): ShapeScan {
   const secretTouches: SecretTouchFinding[] = []
 
   for (const [file, content] of Object.entries(input.sources)) {
-    const scanned = isCodeFile(file) ? stripComments(content) : content
+    const scanned = isCodeFile(file) ? stripComments(content, file) : content
     const lines = scanned.split('\n')
     // Locals bound to the credential seam in this file (`const x =
     // ctx.get('credentials')`). Reads through them are real reads, but matching

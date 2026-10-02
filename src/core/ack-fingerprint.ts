@@ -15,6 +15,7 @@ export function normalizeAuditReport(report: AuditReport): AuditReport {
     coverageNotes: report.coverageNotes ?? [],
     capabilities: report.capabilities ?? [],
     evidence: report.evidence ?? [],
+    facts: report.facts ?? [],
     injections: report.injections ?? [],
     redLines: report.redLines ?? [],
     buildScripts: report.buildScripts ?? [],

@@ -25,6 +25,15 @@ export interface Evidence {
   line: number
   /** The matched source line, trimmed. */
   snippet: string
+  /** Which rule produced this row. Optional so older cached JSON still loads. */
+  rule?: string
+}
+
+/** One structured fact. `id` is the stable filter key; `value` is what was seen. */
+export interface Fact {
+  id: string
+  value: string
+  evidence: Array<Pick<Evidence, 'file' | 'line' | 'snippet'>>
 }
 
 /** A literal network destination found in source (not runtime-built). */
@@ -95,6 +104,8 @@ export interface AuditReport {
   spec: string
   capabilities: Capability[]
   evidence: Evidence[]
+  /** Structured facts. Present from schemaVersion 2. */
+  facts?: Fact[]
   /** Literal destinations in source (URLs, IPs). Same-origin HTTP routes are omitted. */
   destinations: DestinationFinding[]
   /** Filesystem path literals that may leave the workspace. */

@@ -150,7 +150,7 @@ CLI equivalent (market can spawn without DSH):
 npx dsh-trust-check --dir "$EXTRACTED_DIR" --spec "$INSTALL_SPEC" --json
 ```
 
-Parse `--json` uniformly: `plugins[0]` for single `--dir`, or the full `plugins` array for profile mode; non-empty `errors` means the directory could not be read — **treat as scan failure, not `clear`**. An empty / corrupt extract (no readable `package.json` and no scannable sources) lands in `errors` (fail closed). Top-level **`schemaVersion`** is currently `1` — bump only on breaking **shape** changes, not when detection rules change. See the two docs above; in-repo Path A smoke demo: `scripts/market-gate-demo.mjs`.
+Parse `--json` uniformly: `plugins[0]` for single `--dir`, or the full `plugins` array for profile mode; non-empty `errors` means the directory could not be read — **treat as scan failure, not `clear`**. An empty / corrupt extract (no readable `package.json` and no scannable sources) lands in `errors` (fail closed). Top-level **`schemaVersion`** is currently `2` — bump only on breaking **shape** changes, not when detection rules change. Schema 2 adds `facts[]` and keeps the schema 1 capability values and red-line templates. See the two docs above; in-repo Path A smoke demo: `scripts/market-gate-demo.mjs`.
 
 **Out of scope for this release**: remote tarball download (market's job). Workflow: extract to a temp dir, then `--dir`.
 

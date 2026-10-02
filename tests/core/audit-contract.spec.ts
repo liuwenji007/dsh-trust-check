@@ -37,7 +37,7 @@ describe('audit contract (shape + pre-install gate)', () => {
     })
 
     expect(response.schemaVersion).toBe(AUDIT_SCHEMA_VERSION)
-    expect(response.schemaVersion).toBe(1)
+    expect(response.schemaVersion).toBe(2)
     expect(response.profile).toBe('')
     expect(response.dir).toBe('/tmp/extracted/quiet-plugin')
     expect(typeof response.generatedAt).toBe('string')
@@ -99,7 +99,7 @@ describe('audit contract (shape + pre-install gate)', () => {
       errors: [],
       acks: {},
     })
-    expect(response.schemaVersion).toBe(1)
+    expect(response.schemaVersion).toBe(2)
     expect(response.profile).toBe('web')
     expect(response.dir).toBeUndefined()
     expect(response.acks).toEqual({})

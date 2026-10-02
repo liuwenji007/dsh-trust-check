@@ -19,6 +19,7 @@ export { AUDIT_SCHEMA_VERSION, buildAuditResponse } from './core/response.ts'
 export { auditPlugin, MAX_EVIDENCE } from './core/audit.ts'
 export {
   ackDrifted,
+  capabilityDelta,
   capabilityTier,
   classifyRedLine,
   concerns,
@@ -49,11 +50,13 @@ export {
   normalizeAuditResponse,
 } from './core/ack-fingerprint.ts'
 export { injectionFingerprint } from './core/injection.ts'
-export { isCodeFile, stripComments } from './core/strip-comments.ts'
+export { blankComments, isCodeFile, stripComments } from './core/strip-comments.ts'
 export { buildExplainPrompt, EXPLAIN_SYSTEM } from './core/explain.ts'
 export { explainWithLlm, resolveExplainRoute } from './host/llm-explain.ts'
 export type { Concern, ConcernCode, NetworkReach, RedLineCode, Verdict } from './core/present.ts'
 export { collectPlugin, readInstalled, resolveProfileDir } from './fs.ts'
+export { readNpmProvenance } from './npm-provenance.ts'
+export type { NpmProvenance, NpmProvenanceOptions } from './npm-provenance.ts'
 
 export const name = 'dsh-trust-check'
 

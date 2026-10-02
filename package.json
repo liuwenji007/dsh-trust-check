@@ -1,6 +1,6 @@
 {
   "name": "dsh-trust-check",
-  "version": "0.1.14",
+  "version": "0.2.0",
   "description": "Static capability disclosure for DeepSeek Harness plugins: capabilities, injected prompts, install scripts, and provenance, each with file:line evidence. Facts, not a safety verdict.",
   "license": "MIT",
   "type": "module",
@@ -97,6 +97,7 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^26.2.0",
     "@types/react": "~18.3.1",
+    "js-tokens": "10",
     "lightningcss": "^1.32.0",
     "react": "^18.2.0",
     "tsdown": "^0.22.2",

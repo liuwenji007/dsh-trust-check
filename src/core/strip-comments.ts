@@ -2,93 +2,68 @@
  * Comment blanking for literal scanning. Comments are not shipped behaviour,
  * yet bundlers keep JSDoc, so an example URL in a doc block otherwise reads as
  * a real destination.
+ *
+ * Tokenization comes from js-tokens so regex literals and template
+ * interpolations stay in sync with the source. An unclosed template, block
+ * comment, or regex — or a tokenizer error — returns the original text, so a
+ * failure adds comments back into the scan instead of deleting real code.
  */
 
+import jsTokens from 'js-tokens'
+
 const CODE_FILE = /\.(?:[cm]?[jt]sx?)$/i
+const JSX_FILE = /\.[jt]sx$/i
+const COMMENT_TYPES = new Set(['MultiLineComment', 'SingleLineComment', 'HashbangComment'])
 
 /** Only code files have comment syntax; prose and skill files are scanned raw. */
 export function isCodeFile(file: string): boolean {
   return CODE_FILE.test(file)
 }
 
+export interface CommentBlank {
+  text: string
+  /** True when `text` is the original source because tokenization could not be trusted. */
+  fallback: boolean
+}
+
+function blanksComment(value: string): string {
+  return value.replace(/[^\n\r\u2028\u2029]/g, ' ')
+}
+
+function unclosedSpan(token: { type: string, closed?: boolean }): boolean {
+  if (token.closed !== false) return false
+  return token.type === 'NoSubstitutionTemplate'
+    || token.type === 'TemplateTail'
+    || token.type === 'MultiLineComment'
+    || token.type === 'RegularExpressionLiteral'
+    || token.type === 'JSXString'
+}
+
 /**
- * Blank `//` and block comments, preserving every line break and column so
- * reported line numbers still point at the original source.
- *
- * Quote tracking is approximate: a regex literal holding a quote character can
- * desynchronise it. A line that ends inside an unterminated quote is therefore
- * returned untouched, so the failure mode is an unstripped comment rather than
- * a real literal silently disappearing from the report.
+ * Blank comments, preserving every line break so reported line numbers still
+ * point at the original source. `file` selects JSX tokenization for `.jsx` / `.tsx`.
  */
-export function stripComments(text: string): string {
-  const lines = text.split('\n')
-  const out: string[] = []
-  let inBlock: boolean = false
-  let inTemplate: boolean = false
-
-  for (const line of lines) {
-    const blockAtStart: boolean = inBlock
-    const templateAtStart: boolean = inTemplate
-    let result = ''
-    let inSingle = false
-    let inDouble = false
-    let i = 0
-
-    while (i < line.length) {
-      const ch = line[i]
-
-      if (inBlock) {
-        if (ch === '*' && line[i + 1] === '/') {
-          inBlock = false
-          result += '  '
-          i += 2
-          continue
-        }
-        result += ' '
-        i += 1
-        continue
-      }
-
-      if (inSingle || inDouble || inTemplate) {
-        if (ch === '\\' && i + 1 < line.length) {
-          result += ch + line[i + 1]
-          i += 2
-          continue
-        }
-        if (inSingle && ch === "'") inSingle = false
-        else if (inDouble && ch === '"') inDouble = false
-        else if (inTemplate && ch === '`') inTemplate = false
-        result += ch
-        i += 1
-        continue
-      }
-
-      if (ch === '/' && line[i + 1] === '/') {
-        result += ' '.repeat(line.length - i)
-        break
-      }
-      if (ch === '/' && line[i + 1] === '*') {
-        inBlock = true
-        result += '  '
-        i += 2
-        continue
-      }
-
-      if (ch === "'") inSingle = true
-      else if (ch === '"') inDouble = true
-      else if (ch === '`') inTemplate = true
-      result += ch
-      i += 1
+export function blankComments(text: string, file?: string): CommentBlank {
+  try {
+    const parts: string[] = []
+    let fallback = false
+    const tokens = JSX_FILE.test(file ?? '') ? jsTokens(text, { jsx: true }) : jsTokens(text)
+    for (const token of tokens) {
+      if (unclosedSpan(token)) fallback = true
+      parts.push(COMMENT_TYPES.has(token.type) ? blanksComment(token.value) : token.value)
     }
-
-    if (inSingle || inDouble) {
-      out.push(line)
-      inBlock = blockAtStart
-      inTemplate = templateAtStart
-      continue
-    }
-    out.push(result)
+    const joined = parts.join('')
+    if (fallback || joined.length !== text.length) return { text, fallback: true }
+    return { text: joined, fallback: false }
+  } catch {
+    return { text, fallback: true }
   }
+}
 
-  return out.join('\n')
+/**
+ * Blank `//` and block comments. Same result as `blankComments`, without the
+ * fallback flag. Callers that can record coverage should use `blankComments`.
+ */
+export function stripComments(text: string, file?: string): string {
+  return blankComments(text, file).text
 }

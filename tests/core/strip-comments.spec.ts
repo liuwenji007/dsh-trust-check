@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isCodeFile, stripComments } from '../../src/core/strip-comments.ts'
+import { blankComments, isCodeFile, stripComments } from '../../src/core/strip-comments.ts'
 
 describe('isCodeFile', () => {
   it('accepts JS/TS extensions and rejects prose', () => {
@@ -57,5 +57,39 @@ describe('stripComments', () => {
   it('does not carry comment state out of a desynchronised line', () => {
     const source = ["const re = /'/  /* opened", 'const u = "https://kept.example.org"'].join('\n')
     expect(stripComments(source)).toContain('https://kept.example.org')
+  })
+
+  it('keeps code that follows a regex literal containing a backtick', () => {
+    const source = [
+      'const re = /`/',
+      'const mark = `/*`',
+      'const u = "https://kept.example.org"',
+      'const end = `*/`',
+    ].join('\n')
+    const stripped = stripComments(source)
+    expect(stripped).toContain('https://kept.example.org')
+    expect(blankComments(source).fallback).toBe(false)
+  })
+
+  it('keeps a string inside a template interpolation and still drops the line comment', () => {
+    const source = 'const s = `pre ${"https://kept.example.org"} post` // gone'
+    const stripped = stripComments(source)
+    expect(stripped).toContain('https://kept.example.org')
+    expect(stripped).not.toContain('gone')
+  })
+
+  it('returns the original text when a template never closes', () => {
+    const source = ['const s = `unclosed', 'const u = "https://kept.example.org" // still here'].join('\n')
+    const blanked = blankComments(source)
+    expect(blanked.fallback).toBe(true)
+    expect(blanked.text).toBe(source)
+    expect(blanked.text).toContain('still here')
+  })
+
+  it('tokenizes JSX when the file extension asks for it', () => {
+    const source = 'const view = <div title={"https://kept.example.org"}>hi</div> // gone'
+    const stripped = stripComments(source, 'view.tsx')
+    expect(stripped).toContain('https://kept.example.org')
+    expect(stripped).not.toContain('gone')
   })
 })

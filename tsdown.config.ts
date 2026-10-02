@@ -41,6 +41,9 @@ const node: UserConfig = {
   fixedExtension: false,
   dts: true,
   clean: true,
+  outputOptions: {
+    banner: '/* Includes js-tokens (https://github.com/lydell/js-tokens), Copyright Simon Lydell, MIT License. */',
+  },
 }
 
 const client: UserConfig = {
