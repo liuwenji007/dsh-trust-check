@@ -16,10 +16,14 @@ beforeAll(() => {
 }, 60_000)
 
 function run(args: string[], env: Record<string, string> = {}) {
+  // The CLI defaults to DSH_PROFILE. A host value would audit a profile this
+  // fixture did not create, and an empty home then exits 3 instead of 0.
+  const base = { ...process.env }
+  delete base.DSH_PROFILE
   return spawnSync(process.execPath, [join(root, 'bin/trust-check.mjs'), ...args], {
     cwd: root,
     encoding: 'utf8',
-    env: { ...process.env, ...env },
+    env: { ...base, ...env },
   })
 }
 
@@ -89,6 +93,16 @@ describe('cli --exit-code', () => {
       dependencies: { installs: 'npm:installs@1.0.0' },
     }))
     expect(run(['--exit-code'], { DSH_HOME: home }).status).toBe(2)
+  })
+
+  it('exits 3 when DSH_PROFILE names a profile the home does not have', () => {
+    const home = keep(mkdtempSync(join(tmpdir(), 'trust-cli-home-')))
+    const profile = join(home, 'profiles', 'web')
+    mkdirSync(profile, { recursive: true })
+    writeFileSync(join(profile, 'package.json'), JSON.stringify({ dependencies: {} }))
+    const result = run(['--exit-code'], { DSH_HOME: home, DSH_PROFILE: 'work' })
+    expect(result.status).toBe(3)
+    expect(result.stdout).toContain('profile directory does not exist')
   })
 
   afterAll(() => {

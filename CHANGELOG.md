@@ -4,6 +4,20 @@ Each release lists **Affects catalog results** first: anything that can change w
 
 `schemaVersion` is the output-shape version (see [docs/audit-schema.md](docs/audit-schema.md)). It is noted on every release; a bump means the JSON shape or the wording contract broke.
 
+## Unreleased
+
+`schemaVersion`: 1. Detection is identical to 0.1.14. Upgrading changes no catalog record.
+
+### Affects catalog results
+
+- None.
+
+### Other
+
+- Settings: the "nothing detected" note now names obfuscated code alongside dynamic import, runtime-built URLs, and dependency-tree behavior.
+- CLI tests no longer inherit `DSH_PROFILE` from the host. A profile name the home does not have still exits 3, and a test locks that.
+- Docs: [INTEGRATION.md](docs/INTEGRATION.md) says when a catalog should bump its pin, why a `schemaVersion` change also needs a reader change, and why a detection change needs `PROBE_ALL=1`. The [POSITIONING.md](docs/POSITIONING.md) roadmap now plans `--exit-code` as the default for human-readable output only (`--json` still opts in), and defers the decision on keeping `creds-network` in `redLines` to schema v2. No CLI behavior changed.
+
 ## 0.1.14 — 2026-09-25
 
 `schemaVersion`: 1. Detection is identical to 0.1.13: same `capabilities` and `redLines` on every package, and the `redLines` sentences are unchanged. Upgrading changes no catalog record.

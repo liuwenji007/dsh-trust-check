@@ -14,6 +14,20 @@ you extract the package  →  audit the tree  →  read plugins[0]  →  three-s
 
 Pin a released `dsh-trust-check` version in CI / market. Prefer checking **`schemaVersion === 1`** on the JSON payload over guessing from the npm version alone. `schemaVersion` bumps only when the **output shape** breaks; detection-rule churn does not bump it.
 
+## Adopting a new release
+
+A catalog pins a scanner version on purpose, so that a release cannot change stored records without review. The rules below are written against the [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) catalog, the integrator that scans on every build today.
+
+**Bump the pin when** that release's [CHANGELOG](../CHANGELOG.md) section **Affects catalog results** is not "None". Until then, stored records lag the current detection.
+
+**Leave the pin** when Affects catalog results is "None". Detection is identical, so staying on the older pin (0.1.13 while 0.1.14 is current, for example) stores the same facts.
+
+**A `schemaVersion` change is not a reason to bump by itself.** It means a bump has to update the catalog's reader in the same pull request. awesome-dsh-plugin's `factsFromScan` returns nothing for any `schemaVersion` other than its `SCANNER_SCHEMA`, so bumping the pin alone turns every scan into a failure and freezes the existing records.
+
+**Who opens the pull request.** The dsh-trust-check maintainer opens it against the catalog repository, with a before/after sample from [`scripts/catalog-noise.mjs`](../scripts/catalog-noise.mjs), so a reviewer can see which records change without reading the rule table. The same pull request updates the `tool` label (`dsh-trust-check@<version>`, hard-coded in `probe-capabilities.mjs` and in its test fixtures) along with `package.json` and the lockfile; otherwise new records carry the old version in `tool`.
+
+**Rescan everything after a bump that changes detection.** awesome-dsh-plugin's `shouldRescan` never compares `tool`. An npm-published entry is rescanned only when its plugin version changes, never by age; only branch tarballs expire after `RECHECK_DAYS`. A release whose Affects catalog results section is not "None" therefore needs `PROBE_ALL=1` on the next catalog pass, or most records keep the old scanner's facts.
+
 ## Two modes
 
 | Mode | Command | Use for |
