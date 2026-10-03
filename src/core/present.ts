@@ -301,10 +301,12 @@ export function capabilityDelta(
   ack?: TrustAckEntry,
 ): { added: Capability[], removed: Capability[] } {
   if (ack === undefined) return { added: [], removed: [] }
-  const before = new Set(ack.capabilities)
+  // The ack store only checks that each entry is an object.
+  const acked: Capability[] = Array.isArray(ack.capabilities) ? ack.capabilities : []
+  const before = new Set(acked)
   const after = new Set(report.capabilities)
   return {
     added: report.capabilities.filter(capability => !before.has(capability)),
-    removed: ack.capabilities.filter(capability => !after.has(capability)),
+    removed: acked.filter(capability => !after.has(capability)),
   }
 }

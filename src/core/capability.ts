@@ -34,35 +34,54 @@ function isCompleteRelativeLiteral(arg: string): boolean {
 const VM_IMPORT = /(?:require\(|from\s+|import\s*\(\s*)['"](?:node:)?vm['"]/
 
 /**
- * True when every `eval` / `new Function` on the line is a finished string
- * literal (no interpolation, no concatenation) and the line does not import `vm`.
- * A constant literal does not run outside code. A non-literal call still counts.
+ * Names that let constant code reach outside itself: `eval("require")` returns
+ * the module loader, and `new Function("return process")` returns the process.
+ */
+const REACHES_OUT = /\b(?:require|import|process|module|exports|global|globalThis|window|self|Function|eval|constructor|Reflect|Proxy)\b/
+
+/** Index just past the string literal at `start`, or -1 when it is unclosed or interpolated. */
+function literalEnd(text: string, start: number): number {
+  const quote = text[start]
+  if (quote !== '"' && quote !== "'" && quote !== '`') return -1
+  let i = start + 1
+  while (i < text.length) {
+    if (text[i] === '\\') {
+      i += 2
+      continue
+    }
+    if (quote === '`' && text[i] === '$' && text[i + 1] === '{') return -1
+    if (text[i] === quote) return i + 1
+    i += 1
+  }
+  return -1
+}
+
+function skipSpace(text: string, i: number): number {
+  while (i < text.length && /\s/.test(text[i])) i += 1
+  return i
+}
+
+/**
+ * True when every `eval` / `new Function` on the line takes only complete
+ * string literals, closes on the same line, names nothing in `REACHES_OUT`,
+ * and the line does not import `vm`. `new Function("a", body)` and
+ * `eval("" || code)` still count, because an argument is not a literal.
  */
 function isConstantDynamicCode(line: string): boolean {
   if (VM_IMPORT.test(line)) return false
   const calls = [...line.matchAll(/\b(?:eval|new\s+Function)\s*\(/g)]
   if (calls.length === 0) return false
   for (const call of calls) {
-    const rest = line.slice((call.index ?? 0) + call[0].length).trimStart()
-    const quote = rest[0]
-    if (quote !== '"' && quote !== "'" && quote !== '`') return false
-    let i = 1
-    let closed = false
-    while (i < rest.length) {
-      if (rest[i] === '\\') {
-        i += 2
-        continue
-      }
-      if (quote === '`' && rest[i] === '$' && rest[i + 1] === '{') return false
-      if (rest[i] === quote) {
-        closed = true
-        break
-      }
-      i += 1
+    let i = skipSpace(line, (call.index ?? 0) + call[0].length)
+    for (;;) {
+      const end = literalEnd(line, i)
+      if (end === -1) return false
+      if (REACHES_OUT.test(line.slice(i + 1, end - 1))) return false
+      i = skipSpace(line, end)
+      if (line[i] === ')') break
+      if (line[i] !== ',') return false
+      i = skipSpace(line, i + 1)
     }
-    if (!closed) return false
-    const trailing = rest.slice(i + 1).trimStart()
-    if (trailing.startsWith('+') || trailing.startsWith('.') || trailing.startsWith('`')) return false
   }
   return true
 }

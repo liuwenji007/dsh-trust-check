@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  capabilityDelta,
   classifyRedLine,
   concerns,
   countVerdicts,
@@ -11,7 +12,7 @@ import {
   topCapabilities,
   verdict,
 } from '../../src/core/present.ts'
-import type { AuditReport, Capability, Evidence } from '../../src/core/types.ts'
+import type { AuditReport, Capability, Evidence, TrustAckEntry } from '../../src/core/types.ts'
 
 const baseReport = (): AuditReport => ({
   name: 'test-plugin',
@@ -33,6 +34,19 @@ const baseReport = (): AuditReport => ({
   redLines: [],
   deductions: [],
   summary: 'no red lines · no privileged capabilities · pinned',
+})
+
+describe('capabilityDelta', () => {
+  it('lists capabilities gained and lost since the acknowledgment', () => {
+    const report = { ...baseReport(), capabilities: ['shell', 'network'] as Capability[] }
+    const ack = { capabilities: ['network', 'env'] } as TrustAckEntry
+    expect(capabilityDelta(report, ack)).toEqual({ added: ['shell'], removed: ['env'] })
+  })
+
+  it('treats a hand-edited ack without capabilities as acknowledging none', () => {
+    const report = { ...baseReport(), capabilities: ['shell'] as Capability[] }
+    expect(capabilityDelta(report, {} as TrustAckEntry)).toEqual({ added: ['shell'], removed: [] })
+  })
 })
 
 describe('verdict', () => {

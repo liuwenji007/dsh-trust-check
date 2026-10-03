@@ -50,7 +50,7 @@ try {
 }
 
 // --- doc: always check schemaVersion, then errors ------------------------
-if (body.schemaVersion !== 1) {
+if (body.schemaVersion !== 2) {
   console.error(`unsupported audit schema ${body.schemaVersion}`)
   process.exit(3)
 }

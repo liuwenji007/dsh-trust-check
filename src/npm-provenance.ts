@@ -19,7 +19,7 @@ export interface NpmProvenance {
   ref?: string
   /**
    * Whether `repository` and `declaredRepository` name the same GitHub
-   * repository. Omitted when either side is missing.
+   * repository. Omitted when either side is missing or is not a github.com URL.
    */
   repositoryMatches?: boolean
 }
@@ -38,10 +38,15 @@ interface AttestationEnvelope {
   }>
 }
 
+/**
+ * The host must be github.com itself, so `https://evil.example/github.com/a/b`
+ * does not name `a/b`. Accepts URL, scp (`git@github.com:a/b`), and `github:a/b` forms.
+ */
+const GITHUB_REPO = /^(?:git\+)?(?:(?:https?|ssh|git):\/\/(?:[^@/\s]+@)?(?:www\.)?github\.com\/|git@github\.com:|github:)([^/\s#]+)\/([^/\s#]+?)(?:\.git)?\/?(?:#.*)?$/i
+
 function githubRepo(value: string | undefined): string | undefined {
-  if (value === undefined || value === '') return undefined
-  const text = value.replace(/^git\+/, '').replace(/\.git$/, '')
-  const match = /github\.com[/:]([^/\s]+)\/([^/#\s]+)/.exec(text)
+  if (value === undefined) return undefined
+  const match = GITHUB_REPO.exec(value.trim())
   if (match === null) return undefined
   return `${match[1]}/${match[2]}`.toLowerCase()
 }

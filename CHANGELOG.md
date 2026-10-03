@@ -2,7 +2,7 @@
 
 Each release lists **Affects catalog results** first: anything that can change which plugins get which `capabilities` / `redLines`, or whether a package scans at all. Integrators that pin this package (catalog builds, CI gates) should read that section before bumping. Everything else is under **Other**.
 
-`schemaVersion` is the output-shape version (see [docs/audit-schema.md](docs/audit-schema.md)). It is noted on every release; a bump means the JSON shape or the wording contract broke.
+`schemaVersion` is the JSON contract version (see [docs/audit-schema.md](docs/audit-schema.md)). It is noted on every release; a bump means the JSON shape or the wording contract broke, or a field became a stable contract.
 
 ## Unreleased
 
@@ -18,17 +18,19 @@ Each release lists **Affects catalog results** first: anything that can change w
 
 ## 0.2.0 — 2026-10-03
 
-`schemaVersion`: 2. Adds `facts[]` (`{ id, value, evidence }`) and `evidence.rule`. Capability values and red-line templates are unchanged from schema 1. Comment blanking changed, so a catalog record can gain or lose a capability that lived only in a mis-read comment or in code the previous blanker dropped. On the 120-plugin sample against 0.1.14, `dsh-engram` loses `llm` (the only evidence was a doc comment) and three plugins (`dsh-permission-rules`, `michengai-dsh-agency-agents`, `opencues-dsh`) lose `dynamic-code`. No plugin gains a capability or a red line. A `new Function` / `eval` whose arguments are only complete string literals is no longer `dynamic-code`; a concatenated, interpolated, or decoded argument still is. `creds-network` stays a red line.
+`schemaVersion`: 2. Adds `facts[]` (`{ id, value, evidence }`) and `evidence.rule`. The bump is for `facts[].id`, which is a stable filter key from this release on. No schema 1 field is removed or renamed, so a reader written for schema 1 still parses the output once it accepts `2`. Capability values and red-line templates are unchanged from schema 1. Comment blanking changed, so a catalog record can gain or lose a capability that lived only in a mis-read comment or in code the previous blanker dropped. On the 120-plugin sample against 0.1.14, `dsh-engram` loses `llm` (the only evidence was a doc comment) and two plugins (`dsh-permission-rules`, `michengai-dsh-agency-agents`) lose `dynamic-code`. No plugin gains a capability or a red line. `creds-network` stays a red line.
 
 ### Affects catalog results
 
 - **Comment blanking follows regex literals and template interpolations.** A comment that the previous blanker left in the scan can stop counting, and code it had blanked is scanned. When a template, block comment, or regex is left unclosed, or tokenization fails, that file is scanned raw and the report gains a `coverageNotes` entry (`comment stripping fell back to raw text in <file>`). The note does not change `verdict()`.
+- **Constant `eval` / `new Function` is no longer `dynamic-code`.** Every argument must be a complete string literal, the call must close on the same line, and no literal may name `require`, `import`, `process`, `globalThis`, `Function`, `eval`, `constructor`, or a similar way out. `new Function("return this")` is exempt. `new Function("a", body)`, `eval("" || code)`, and `eval("require")("child_process")` still are `dynamic-code`.
 
 ### Other
 
 - Suggested English and Chinese for each capability value are in [audit-schema.md](docs/audit-schema.md#capabilities-values). Wording should not add a scope or a mechanism the scan did not observe.
 - Coverage notes for a computed `require` module name, `process.binding` / `process.dlopen`, and `eval` / `Function` wrapped around `atob` or `Buffer.from`. On the 120-plugin sample these matched no plugin. The same notes are also `facts[]` ids (`computed-module-name`, `native-binding`, `decoded-eval`).
-- `readNpmProvenance(name, version)` reads the registry attestation and reports the repository and commit it names. It does not check the signature. A failed lookup throws so the caller can omit the field; a 404 is `{ present: false }`, which is not a claim that the package is unsafe.
+- `facts[]` lists every rule that fired, including one whose evidence rows the 40-row cap dropped; that fact has empty `evidence`.
+- `readNpmProvenance(name, version)` reads the registry attestation and reports the repository and commit it names. It does not check the signature. `repositoryMatches` compares only github.com URLs, so a declared URL that merely contains `github.com/owner/repo` in its path does not match. A failed lookup throws so the caller can omit the field; a 404 is `{ present: false }`, which is not a claim that the package is unsafe.
 - Settings: the "nothing detected" note now names obfuscated code alongside dynamic import, runtime-built URLs, and dependency-tree behavior.
 - CLI tests no longer inherit `DSH_PROFILE` from the host. A profile name the home does not have still exits 3, and a test locks that.
 - Docs: [INTEGRATION.md](docs/INTEGRATION.md) says when a catalog should bump its pin, why a `schemaVersion` change also needs a reader change, and why a detection change needs `PROBE_ALL=1`. [POSITIONING.md](docs/POSITIONING.md) keeps `creds-network` and the `fs-read` import branch, and holds the market “new in this version” display until `scripts/capability-changes.mjs` has a few weeks of version changes.

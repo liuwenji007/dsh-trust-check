@@ -150,7 +150,7 @@ CLI equivalent (market can spawn without DSH):
 npx dsh-trust-check --dir "$EXTRACTED_DIR" --spec "$INSTALL_SPEC" --json
 ```
 
-Parse `--json` uniformly: `plugins[0]` for single `--dir`, or the full `plugins` array for profile mode; non-empty `errors` means the directory could not be read — **treat as scan failure, not `clear`**. An empty / corrupt extract (no readable `package.json` and no scannable sources) lands in `errors` (fail closed). Top-level **`schemaVersion`** is currently `2` — bump only on breaking **shape** changes, not when detection rules change. Schema 2 adds `facts[]` and keeps the schema 1 capability values and red-line templates. See the two docs above; in-repo Path A smoke demo: `scripts/market-gate-demo.mjs`.
+Parse `--json` uniformly: `plugins[0]` for single `--dir`, or the full `plugins` array for profile mode; non-empty `errors` means the directory could not be read — **treat as scan failure, not `clear`**. An empty / corrupt extract (no readable `package.json` and no scannable sources) lands in `errors` (fail closed). Top-level **`schemaVersion`** is currently `2` — it bumps on a breaking **shape** change or when a field becomes a stable contract, not when detection rules change. Schema 2 adds `facts[]`, whose `id` is a stable filter key; no schema 1 field is removed or renamed, and the capability values and red-line templates are unchanged. See the two docs above; in-repo Path A smoke demo: `scripts/market-gate-demo.mjs`.
 
 **Out of scope for this release**: remote tarball download (market's job). Workflow: extract to a temp dir, then `--dir`.
 
@@ -188,7 +188,7 @@ Rule-table, skip-rule, and allowlist contributions: [CONTRIBUTING.md](CONTRIBUTI
 
 - Now: installed-plugin audit + CLI `--dir` + Web dimension-first report; ongoing scan-coverage hardening
 - Integration: awesome-dsh-plugin scans at catalog build time; dsh-market and the catalog site only display the facts (maintained there, replaceable)
-- v2: structured `facts[]` (`schemaVersion: 2`) + version-to-version drift diff + caller-supplied registry metadata
+- v2: structured `facts[]` (`schemaVersion: 2`) since 0.2.0; next are a version-to-version drift diff and caller-supplied registry metadata
 - Later: keep up with catalog pin bumps and false-positive reports; drift assertions in CI
 - Conditional: named community human review — separate repo, bound to a version, revocable
 

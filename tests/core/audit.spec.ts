@@ -79,6 +79,17 @@ describe('auditPlugin', () => {
     expect(report.evidence.length).toBe(MAX_EVIDENCE)
   })
 
+  it('lists every rule that fired in facts even when the cap drops its rows', () => {
+    const noise = Array.from({ length: MAX_EVIDENCE * 2 }, () => 'keytar.getPassword(service)')
+    const report = auditPlugin(input({
+      sources: { 'lib/index.js': [...noise, 'credentials.resolve(key)'].join('\n') },
+    }))
+    expect(report.evidence.some(row => row.rule === 'credentials.read')).toBe(false)
+    const read = report.facts?.find(fact => fact.id === 'credentials.read')
+    expect(read).toEqual({ id: 'credentials.read', value: 'credentials', evidence: [] })
+    expect(report.facts?.find(fact => fact.id === 'credentials.material')?.evidence.length).toBe(MAX_EVIDENCE)
+  })
+
   it('keeps riskier capability evidence when a noisy one overflows the cap', () => {
     const noise = Array.from({ length: MAX_EVIDENCE * 2 }, () => 'await ctx.llm.chat(msg)')
     const report = auditPlugin(input({

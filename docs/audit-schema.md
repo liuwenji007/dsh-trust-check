@@ -8,12 +8,14 @@ This document freezes what **dsh-market** (and similar gates) should parse. It i
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schemaVersion` | `number` | **JSON shape version.** Current value: **`2`**. |
+| `schemaVersion` | `number` | **JSON contract version.** Current value: **`2`**. |
 
 **Bump rules**
 
-- Bump when fields are **added / removed / renamed** in a way that breaks parsers.
+- Bump when fields are **removed / renamed**, or **added** in a way that breaks parsers.
+- Bump when a field becomes a **stable contract** that integrators may gate or filter on. Schema 2 is this case: `facts[].id` became a stable filter key, and no schema 1 field changed.
 - Do **not** bump when detection rules change (capabilities, destinations, scores, evidence). Those are scanner behavior, not shape.
+- Do **not** bump for an optional field that carries no stability promise.
 
 Integrators should reject or warn on an unknown `schemaVersion`, not on `package.json` version alone.
 
@@ -29,7 +31,7 @@ Integrators should reject or warn on an unknown `schemaVersion`, not on `package
 | `errors` | `{ name, spec, message }[]` | Always (may be empty). Non-empty ⇒ that package tree could not be read. A size limit, missing primary entry, missing profile, corrupt profile config, or missing declared directory is a scan failure, not `clear`. |
 | `acks` | `Record<string, TrustAckEntry>` (optional) | Profile mode only, when ack store is loaded |
 
-`AuditReport` includes `facts` (`{ id, value, evidence }[]`). `id` is the stable filter key (`shell.import-or-call`, `network.fetch`, `computed-module-name`, …). Capability values and red-line templates are the same strings as schema 1. `coverageNotes` (unexpanded static targets, and files scanned raw) are not a verdict input. `ackFingerprint` is the SHA-256 of the risk vectors, computed before display truncation.
+`AuditReport` includes `facts` (`{ id, value, evidence }[]`). `id` is the stable filter key (`shell.import-or-call`, `network.fetch`, `computed-module-name`, …). Every rule that fired has a fact; its `evidence` holds only rows that survived the evidence cap and may be empty. Capability values and red-line templates are the same strings as schema 1. `coverageNotes` (unexpanded static targets, and files scanned raw) are not a verdict input. `ackFingerprint` is the SHA-256 of the risk vectors, computed before display truncation.
 
 Acknowledgement `POST /dsh-trust-check/ack` takes `{ name, acceptRisk?, fingerprint }`. `fingerprint` is the `ackFingerprint` string from the report the user is looking at. A mismatch returns **409** with `{ error: "plugin-content-changed", report }`. The same digest is stored as `digest` on `TrustAckEntry`. Older ack records without `digest` do not match and must be confirmed again. Pre-install gates do not use ack.
 

@@ -516,8 +516,12 @@ const RELATIVE_SPECIFIERS = [
 ]
 const DYNAMIC_IMPORT = /(?:^|[^\w$])import\s*\(\s*(?!['"])/g
 const DYNAMIC_REQUIRE = /(?:^|[^\w$])require\s*\(\s*(?!['"])/g
-/** `require("literal" + …)` — the module name is built, not written out. */
-const COMPUTED_MODULE = /\brequire\s*\(\s*(['"`])(?:\\.|(?!\1).)*\1\s*\+/g
+/**
+ * `require("literal" + …)` — the module name is built, not written out.
+ * The escape and plain-character branches must stay disjoint: overlapping
+ * branches backtrack exponentially on a long run of backslashes.
+ */
+const COMPUTED_MODULE = /\brequire\s*\(\s*(['"`])(?:\\[^\n]|(?!\1)[^\\\n])*\1\s*\+/g
 const NATIVE_BINDING = /\bprocess\.(?:binding|dlopen)\s*\(/g
 /** `eval` / `Function` whose argument starts with a decode call. */
 const DECODED_EVAL = /\b(?:eval|Function)\s*\(\s*(?:atob|Buffer\.from)\s*\(/g

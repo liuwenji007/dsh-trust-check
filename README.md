@@ -150,7 +150,7 @@ CLI 等价调用（market 也可 spawn，无需 DSH）：
 npx dsh-trust-check --dir "$EXTRACTED_DIR" --spec "$INSTALL_SPEC" --json
 ```
 
-解析 `--json` 时统一读 `plugins[0]`（单目录）或 `plugins` 数组（profile 模式）；`errors` 非空表示目录不可读——**按扫描失败处理，不是 `clear`**。空目录 / 损坏解压（无可读 `package.json` 且无源码）会进 `errors`（fail closed）。`--json` 顶层含 **`schemaVersion`**（当前为 `2`）：只在输出**形状**破坏性变更时递增，检测规则改动不会 bump。schema 2 新增 `facts[]`，能力取值和红线模板与 schema 1 相同。细节见上两份文档；仓库内 Path A 冒烟样例：`scripts/market-gate-demo.mjs`。
+解析 `--json` 时统一读 `plugins[0]`（单目录）或 `plugins` 数组（profile 模式）；`errors` 非空表示目录不可读——**按扫描失败处理，不是 `clear`**。空目录 / 损坏解压（无可读 `package.json` 且无源码）会进 `errors`（fail closed）。`--json` 顶层含 **`schemaVersion`**（当前为 `2`）：输出**形状**出现破坏性变更，或新增集成方可以依赖的稳定字段时递增，检测规则改动不会 bump。schema 2 新增 `facts[]`，其中 `facts[].id` 是稳定的过滤键；schema 1 的字段没有删改，能力取值和红线模板也与 schema 1 相同。细节见上两份文档；仓库内 Path A 冒烟样例：`scripts/market-gate-demo.mjs`。
 
 **本期不做**：远程 tarball 下载（拉包是 market 的职责）。独立验证姿势：先把包解到临时目录，再 `--dir`。
 
@@ -188,7 +188,7 @@ pnpm typecheck   # tsc --noEmit
 
 - 当前：已装插件体检 + CLI `--dir` + Web 分项报告；持续加固扫描覆盖面
 - 集成：awesome-dsh-plugin 已在目录构建期接入扫描，dsh-market 与目录站只陈列事实（由对方维护，可替换）
-- v2：结构化事实 `facts[]`（`schemaVersion: 2`）+ 版本间升级漂移对比 + 调用方传入 registry 元数据
+- v2：结构化事实 `facts[]`（`schemaVersion: 2`）从 0.2.0 起提供；接下来是版本间升级漂移对比 + 调用方传入 registry 元数据
 - 之后：配合目录侧的版本升级与误报反馈；CI 中的升级漂移断言
 - 有条件再做：社区具名人工审阅，独立仓库、绑定版本、可撤销
 

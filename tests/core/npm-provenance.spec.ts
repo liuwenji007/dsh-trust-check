@@ -37,6 +37,24 @@ describe('readNpmProvenance', () => {
     expect(result.repositoryMatches).toBe(true)
   })
 
+  it('matches only when github.com is the declared host', async () => {
+    const fetch = fakeFetch(200, {
+      attestations: [{ bundle: { dsseEnvelope: { payload: payload(slsa('https://github.com/npm/node-semver', 'abc123')) } } }],
+    })
+    const cases: Array<[string, boolean | undefined]> = [
+      ['git+https://evil.example/github.com/npm/node-semver.git', undefined],
+      ['https://github.com.evil.example/npm/node-semver', undefined],
+      ['git@github.com:npm/node-semver.git', true],
+      ['github:npm/node-semver', true],
+      ['git+https://github.com/npm/node-semver.git#main', true],
+      ['https://github.com/npm/other', false],
+    ]
+    for (const [declaredRepository, expected] of cases) {
+      const result = await readNpmProvenance('semver', '7.8.5', { declaredRepository, fetch })
+      expect(result.repositoryMatches, declaredRepository).toBe(expected)
+    }
+  })
+
   it('does not treat a missing attestation as a failed lookup', async () => {
     const result = await readNpmProvenance('quiet', '1.0.0', { fetch: fakeFetch(404, {}) })
     expect(result).toEqual({ present: false, signatureChecked: false })

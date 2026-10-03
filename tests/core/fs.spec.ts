@@ -304,6 +304,21 @@ describe('collectPlugin', () => {
     }
   })
 
+  it('scans a long run of backslashes in a require literal in linear time', () => {
+    const root = mkdtempSync(join(tmpdir(), 'trust-fs-backtrack-'))
+    try {
+      mkdirSync(join(root, 'lib'))
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'bt', version: '1.0.0', main: './lib/index.js' }))
+      writeFileSync(join(root, 'lib', 'index.js'), `require("${'\\'.repeat(5000)}"x\nrequire("a\\"b" + c)\n`)
+      const started = performance.now()
+      const collected = collectPlugin(root, 'npm:bt@1.0.0')
+      expect(performance.now() - started).toBeLessThan(1000)
+      expect(collected.coverageNotes).toContain('computed module name in lib/index.js')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('notes a dynamic import without changing the verdict', () => {
     const root = mkdtempSync(join(tmpdir(), 'trust-fs-dyn-'))
     try {

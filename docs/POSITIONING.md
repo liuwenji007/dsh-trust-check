@@ -70,7 +70,7 @@
 
 **v2：结构化事实与升级漂移**
 
-- `schemaVersion: 2`：新增 `facts[]`，每条形如 `{ id, value, evidence }`；`id` 列表作为对外契约，集成方按 `id` 过滤。
+- `schemaVersion: 2`（从 0.2.0 起）：新增 `facts[]`，每条形如 `{ id, value, evidence }`；`id` 列表作为对外契约，集成方按 `id` 过滤。升到 2 正是因为 `id` 成了稳定契约，schema 1 的字段没有删改。
 - 版本间对比：输入同一插件的两个版本，输出新增或消失的能力、去向、安装脚本、注入内容。
 - 允许调用方传入 registry 元数据（发布时间、npm provenance 等），在引擎保持离线的前提下产出来源与维护类事实。
 - `decideAckSave` 的 200 分支只返回 `{ status: 200 }`（现在返回的 `entry` 没有被使用，已标记废弃）。

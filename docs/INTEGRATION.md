@@ -12,7 +12,7 @@ you extract the package  →  audit the tree  →  read plugins[0]  →  three-s
 
 **You** download / extract. **This package** only audits a directory it is given (`--dir` or `collectPlugin`). It does not fetch tarballs.
 
-Pin a released `dsh-trust-check` version in CI / market. Prefer checking **`schemaVersion === 2`** on the JSON payload over guessing from the npm version alone. `schemaVersion` bumps only when the **output shape** breaks; detection-rule churn does not bump it. Schema 2 adds `facts[]` and keeps the schema 1 capability values and red-line templates.
+Pin a released `dsh-trust-check` version in CI / market. Prefer checking **`schemaVersion === 2`** on the JSON payload over guessing from the npm version alone. `schemaVersion` bumps when the **output shape** breaks or a field becomes a stable contract; detection-rule churn does not bump it. Schema 2 adds `facts[]`, whose `id` is a stable filter key. No schema 1 field is removed or renamed, and the capability values and red-line templates are unchanged, so a schema 1 reader only needs to accept `2`.
 
 ## Adopting a new release
 
@@ -22,7 +22,7 @@ A catalog pins a scanner version on purpose, so that a release cannot change sto
 
 **Leave the pin** when Affects catalog results is "None". Detection is identical, so staying on the older pin (0.1.13 while 0.1.14 is current, for example) stores the same facts.
 
-**A `schemaVersion` change is not a reason to bump by itself.** It means a bump has to update the catalog's reader in the same pull request. awesome-dsh-plugin's `factsFromScan` returns nothing for any `schemaVersion` other than its `SCANNER_SCHEMA`, so bumping the pin alone turns every scan into a failure and freezes the existing records.
+**A `schemaVersion` change is not a reason to bump by itself.** It means a bump has to update the catalog's reader in the same pull request. awesome-dsh-plugin's `factsFromScan` returns nothing for a `schemaVersion` it does not list as readable (`SCANNER_SCHEMA` on its main branch; `READABLE_SCHEMAS`, which holds 1 and 2, once its schema 2 reader lands), so bumping the pin before the reader accepts the new value turns every scan into a failure and freezes the existing records.
 
 **Who opens the pull request.** The dsh-trust-check maintainer opens it against the catalog repository, with a before/after sample from [`scripts/catalog-noise.mjs`](../scripts/catalog-noise.mjs), so a reviewer can see which records change without reading the rule table. The same pull request updates the `tool` label (`dsh-trust-check@<version>`, hard-coded in `probe-capabilities.mjs` and in its test fixtures) along with `package.json` and the lockfile; otherwise new records carry the old version in `tool`.
 

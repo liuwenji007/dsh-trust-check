@@ -293,6 +293,38 @@ describe('scanCapabilities', () => {
     }
   })
 
+  it('treats a literal first argument followed by a non-literal one as dynamic-code', () => {
+    for (const line of [
+      'new Function("a", body)\n',
+      'new Function("a", "b", userCode)(1, 2)\n',
+      'const f = new Function("x",\n  body)\n',
+      'eval("" || code)\n',
+      'eval("x" ? code : 0)\n',
+    ]) {
+      expect(scanCapabilities(input({ 'lib/index.js': line })).capabilities, line).toContain('dynamic-code')
+    }
+  })
+
+  it('treats a constant body that reaches the loader or the process as dynamic-code', () => {
+    for (const line of [
+      'const r = eval("require"); r("child_process").exec(cmd)\n',
+      'eval("require")("child_process").spawn(cmd)\n',
+      'new Function("return process")().mainModule\n',
+      "new Function('return globalThis')()\n",
+    ]) {
+      expect(scanCapabilities(input({ 'lib/index.js': line })).capabilities, line).toContain('dynamic-code')
+    }
+  })
+
+  it('still exempts complete literal arguments that name nothing outside the code', () => {
+    for (const line of [
+      'const g = new Function("return this")()\n',
+      'const f = new Function("a", "b", "return a + b")\n',
+    ]) {
+      expect(scanCapabilities(input({ 'lib/index.js': line })).capabilities, line).not.toContain('dynamic-code')
+    }
+  })
+
   it('detects DSH subagent seams and not a generic delegate() helper', () => {
     const real = scanCapabilities(input({
       'lib/index.js': [

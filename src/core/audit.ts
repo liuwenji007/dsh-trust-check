@@ -88,13 +88,20 @@ const COVERAGE_FACTS: ReadonlyArray<{ prefix: string, id: string }> = [
   { prefix: 'comment stripping fell back to raw text in ', id: 'comment-strip-fallback' },
 ]
 
-function buildFacts(evidence: Evidence[], notes: string[]): Fact[] {
+/**
+ * One fact per rule that fired anywhere. Ids come from the full evidence so a
+ * filter on `facts[].id` sees every rule; rows come from the capped evidence,
+ * so a fact whose rows were all capped away has empty `evidence`.
+ */
+function buildFacts(evidence: Evidence[], capped: Evidence[], notes: string[]): Fact[] {
   const groups = new Map<string, Fact>()
   for (const row of evidence) {
+    if (row.rule === undefined || groups.has(row.rule)) continue
+    groups.set(row.rule, { id: row.rule, value: row.capability, evidence: [] })
+  }
+  for (const row of capped) {
     if (row.rule === undefined) continue
-    const fact = groups.get(row.rule) ?? { id: row.rule, value: row.capability, evidence: [] }
-    fact.evidence.push({ file: row.file, line: row.line, snippet: row.snippet })
-    groups.set(row.rule, fact)
+    groups.get(row.rule)?.evidence.push({ file: row.file, line: row.line, snippet: row.snippet })
   }
   const facts = [...groups.values()]
   for (const note of notes) {
@@ -140,6 +147,7 @@ export function auditPlugin(input: PluginInput): AuditReport {
   })
 
   const presented = presentShapeFindings(fullShape)
+  const cappedEvidence = capEvidence(evidence, evidenceQueueOrder(capabilities))
   const ackFingerprint = sha256Hex(JSON.stringify({
     capabilities: [...capabilities].sort(),
     destinations: destinationFingerprint(fullShape.destinations),
@@ -154,8 +162,8 @@ export function auditPlugin(input: PluginInput): AuditReport {
     version: provenance.version,
     spec: input.spec,
     capabilities,
-    evidence: capEvidence(evidence, evidenceQueueOrder(capabilities)),
-    facts: buildFacts(capEvidence(evidence, evidenceQueueOrder(capabilities)), input.coverageNotes ?? []),
+    evidence: cappedEvidence,
+    facts: buildFacts(evidence, cappedEvidence, input.coverageNotes ?? []),
     destinations: presented.destinations,
     pathEscapes: presented.pathEscapes,
     secretTouches: presented.secretTouches,
