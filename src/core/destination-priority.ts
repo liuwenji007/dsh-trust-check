@@ -1,8 +1,12 @@
 /**
  * Destination presentation tiers: prioritize risky / private endpoints,
  * collapse relatively safe relative paths, loopback, and whitelisted hosts.
+ *
+ * IP classification reuses the engine predicates in shape.ts so a destination
+ * cannot be "not a red line" in one layer and "public IP" in another.
  */
 
+import { isDocumentationIp, isRfc1918Ip, isUnspecifiedIp } from './shape.ts'
 import type { DestinationFinding } from './types.ts'
 
 export type DestinationTier = 'critical' | 'notable' | 'safe'
@@ -77,24 +81,27 @@ export function matchDestWhitelist(host: string): DestWhitelistEntry | undefined
   return undefined
 }
 
-/** RFC1918, link-local, and common LAN ranges. */
+/**
+ * RFC 1918 private IPv4 only (`10/8`, `172.16/12`, `192.168/16`).
+ * Link-local `169.254/16` (cloud metadata) is not private here — same as the
+ * red-line predicate — so the UI does not soften it.
+ */
 export function isPrivateIp(ip: string): boolean {
-  const parts = ip.split('.').map(p => Number.parseInt(p, 10))
-  if (parts.length !== 4 || parts.some(n => Number.isNaN(n) || n < 0 || n > 255)) return false
-  const [a, b] = parts
-  if (a === 10) return true
-  if (a === 172 && b >= 16 && b <= 31) return true
-  if (a === 192 && b === 168) return true
-  if (a === 169 && b === 254) return true
-  return false
+  return isRfc1918Ip(ip)
 }
 
 export function isLoopbackIp(ip: string): boolean {
   return ip === '127.0.0.1' || ip.startsWith('127.')
 }
 
+/** IPs the literal-IP red line skips: no remote party can receive traffic. */
+function isNonRoutableIp(ip: string): boolean {
+  return isLoopbackIp(ip) || isUnspecifiedIp(ip) || isDocumentationIp(ip)
+}
+
 export function destinationTier(d: DestinationFinding): DestinationTier {
   if (d.kind === 'relative' || d.kind === 'loopback') return 'safe'
+  if (d.kind === 'ip' && isNonRoutableIp(d.value)) return 'safe'
   if (d.kind === 'https-host' && matchDestWhitelist(d.value) !== undefined) return 'safe'
   if (d.kind === 'http-host' || d.kind === 'ip') return 'critical'
   return 'notable'
@@ -103,7 +110,7 @@ export function destinationTier(d: DestinationFinding): DestinationTier {
 export function destinationHighlight(d: DestinationFinding): DestinationHighlight | undefined {
   if (d.kind === 'http-host') return 'plaintext'
   if (d.kind === 'ip') {
-    if (isLoopbackIp(d.value)) return undefined
+    if (isNonRoutableIp(d.value)) return undefined
     return isPrivateIp(d.value) ? 'private-ip' : 'public-ip'
   }
   return undefined
@@ -118,7 +125,7 @@ export function destinationWhitelistReason(d: DestinationFinding): DestWhitelist
 export function destinationSortKey(d: DestinationFinding): number {
   if (d.kind === 'http-host') return 0
   if (d.kind === 'ip' && isPrivateIp(d.value)) return 1
-  if (d.kind === 'ip') return 2
+  if (d.kind === 'ip' && !isNonRoutableIp(d.value)) return 2
   if (d.kind === 'https-host') return 3
   if (d.kind === 'loopback') return 10
   return 11

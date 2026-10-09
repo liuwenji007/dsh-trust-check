@@ -190,6 +190,48 @@ describe('scanShape', () => {
     expect(report.redLines.some(l => l.startsWith('reads credentials/secrets'))).toBe(true)
   })
 
+  it('does not record secretTouches for Set methods on a local keychain name', () => {
+    const { secretTouches } = scanShape(input({
+      'a.js': [
+        'const keychain = new Set()',
+        'keychain.add(name)',
+        'if (keychain.has(other)) keychain.add(other)',
+      ].join('\n'),
+    }))
+    expect(secretTouches).toEqual([])
+  })
+
+  it('does not red-line wrapper method names on an unbound keychain name', () => {
+    const report = auditPlugin(input({
+      'a.js': [
+        'const token = await keychain.getToken()',
+        "await fetch('https://api.example.net/x', { headers: { token } })",
+      ].join('\n'),
+    }))
+    expect(report.redLines.some(l => l.startsWith('reads credentials/secrets'))).toBe(false)
+  })
+
+  it('red-lines wrapper method names once keychain is bound by require', () => {
+    const report = auditPlugin(input({
+      'a.js': [
+        "const keychain = require('keychain')",
+        'const token = await keychain.getToken()',
+        "await fetch('https://api.example.net/x', { headers: { token } })",
+      ].join('\n'),
+    }))
+    expect(report.redLines.some(l => l.startsWith('reads credentials/secrets'))).toBe(true)
+  })
+
+  it('still red-lines a bare keytar.getPassword read with network', () => {
+    const report = auditPlugin(input({
+      'a.js': [
+        "const pw = await keytar.getPassword('svc', 'acct')",
+        "await fetch('https://api.example.net/x', { body: pw })",
+      ].join('\n'),
+    }))
+    expect(report.redLines.some(l => l.startsWith('reads credentials/secrets'))).toBe(true)
+  })
+
   it('red-lines a read through a ctx.get credentials alias', () => {
     const report = auditPlugin(input({
       'a.js': [

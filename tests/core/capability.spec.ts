@@ -120,6 +120,39 @@ describe('scanCapabilities', () => {
     expect(clean.capabilities).not.toContain('credentials')
   })
 
+  it('does not treat a Set named keychain as OS keychain access', () => {
+    const local = scanCapabilities(input({
+      'lib/index.js': [
+        'const keychain = new Set()',
+        'keychain.add(name)',
+        'if (keychain.has(rebound)) keychain.add(rebound)',
+      ].join('\n'),
+    }))
+    expect(local.capabilities).not.toContain('credentials')
+  })
+
+  it('still treats keytar material methods as credentials', () => {
+    const read = scanCapabilities(input({
+      'lib/index.js': "const s = await keytar.getPassword('svc', 'acct')\n",
+    }))
+    expect(read.capabilities).toContain('credentials')
+    const write = scanCapabilities(input({
+      'lib/index.js': "await keychain.setPassword('svc', 'acct', secret)\n",
+    }))
+    expect(write.capabilities).toContain('credentials')
+  })
+
+  it('treats keytar method references without a direct call as credentials', () => {
+    for (const line of [
+      'const find = promisify(keytar.findPassword)',
+      'const get = keytar.getPassword.bind(keytar)',
+      "await keytar.default.getPassword('svc', 'acct')",
+    ]) {
+      const result = scanCapabilities(input({ 'lib/index.js': `${line}\n` }))
+      expect(result.capabilities, line).toContain('credentials')
+    }
+  })
+
   it('detects child_process/promises imports as shell', () => {
     const result = scanCapabilities(input({
       'lib/index.js': "import { exec } from 'node:child_process/promises'\nawait exec('id')\n",

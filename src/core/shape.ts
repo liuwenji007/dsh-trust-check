@@ -3,6 +3,11 @@
  * Proves presence only; runtime-constructed URLs are invisible.
  */
 
+import {
+  KEYCHAIN_BARE_READ_METHODS,
+  KEYCHAIN_MEMBER_SOURCE,
+  KEYCHAIN_READ_METHODS,
+} from './keychain-api.ts'
 import { isCodeFile, stripComments } from './strip-comments.ts'
 import type {
   DestinationFinding,
@@ -35,7 +40,10 @@ const ENV_SENSITIVE = /process\.env\.([A-Z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD
  * A deny-list bare `'.ssh'` also does not match (needs `~/`/`/` prefix or `.ssh/…`).
  */
 const SECRET_PATH = /['"`]((?:~\/|\.\/|\/|[A-Za-z]:\\)[^'"`\s]*\.ssh[^'"`\s]*|\.ssh\/[^'"`\s]+)['"`]|['"`]((?:~\/|\.\/|\/|[A-Za-z]:\\)[^'"`\s]*\.aws\/credentials[^'"`\s]*|\.aws\/credentials)['"`]|(?:~\/|\.\/|\/)\.netrc\b|\.gnupg(?:\/|\\|$)|\.docker\/config\.json|\.kube\/config|[/\\]id_rsa\b|[/\\]id_ed25519\b/g
-const CREDENTIALS_IMPORT = /(?:require\(|from\s+|import\s*\(\s*)['"](?:keychain|keytar|dotenv)['"]|\bkeychain\.\w+|\bkeytar\.\w+|\bdotenv\.config\b|\bctx\.credentials\b/g
+const CREDENTIALS_IMPORT = new RegExp(
+  String.raw`(?:require\(|from\s+|import\s*\(\s*)['"](?:keychain|keytar|dotenv)['"]|${KEYCHAIN_MEMBER_SOURCE}|\bdotenv\.config\b|\bctx\.credentials\b`,
+  'g',
+)
 /**
  * Credential API calls that return secret *material* (`resolve('API_KEY')`
  * yields the value). Handle access and `describe`/`set`/`unset` do not.
@@ -55,7 +63,10 @@ const CREDENTIALS_IMPORT = /(?:require\(|from\s+|import\s*\(\s*)['"](?:keychain|
  */
 const CREDENTIALS_READ = /(?<![\w$])credentials\s*\.\s*(?:resolve|read|readRecord|get[A-Z]\w*)\s*\(|(?<![\w$])readRecord\s*\(/g
 /** Keychain libraries: these calls return the secret itself, not a handle. */
-const KEYCHAIN_READ = /\b(?:keytar|keychain)\.(?:getPassword|getCredentials|findCredentials|findPassword)\s*\(/g
+const KEYCHAIN_READ = new RegExp(
+  String.raw`\b(?:keytar|keychain)\.(?:default\.)?(?:${KEYCHAIN_BARE_READ_METHODS})\s*\(`,
+  'g',
+)
 /** A read call on the same line as a secret-path literal lifts it to a read. */
 const SECRET_FILE_READ = /\b(?:readFile|readFileSync|createReadStream)\s*\(/
 const HOME_ESCAPE = /['"`](~\/[^'"`]+|\$\{?HOME\}?\/[^'"`]+)['"`]/g
@@ -206,7 +217,7 @@ const CTX_RECEIVER = /(?:[A-Za-z_$][\w$]*\.)?(?:ctx|[a-z][\w$]*Ctx)|this\.ctx/
 const SEAM_RECEIVERS = new RegExp(`(?:${CTX_RECEIVER.source})\\s*\\.\\s*get\\s*(?:\\?\\.\\s*)?\\(\\s*['"]credentials['"]\\s*\\)|(?:${CTX_RECEIVER.source})\\s*\\.\\s*credentials\\b`)
 const KEYCHAIN_MODULE_NAMES = ['keytar', 'keychain']
 const SEAM_METHODS = 'resolve|read|readRecord|get[A-Z]\\w*'
-const KEYCHAIN_METHODS = 'getPassword|getCredentials|getSecret|getToken|findCredentials|findPassword|findAnyCredential'
+const KEYCHAIN_METHODS = KEYCHAIN_READ_METHODS
 const KEYCHAIN_FROM = "['\"](?:keytar|keychain)['\"]"
 
 /**
@@ -228,10 +239,15 @@ export function collectSeamAliases(lines: readonly string[]): string[] {
   const names = new Set<string>([...KEYCHAIN_MODULE_NAMES])
   const seam = new Set<string>()
   const keychain = new Set<string>(KEYCHAIN_MODULE_NAMES)
+  const boundModuleNames = new Set<string>()
   const assignAwait = new RegExp(`\\b(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*await\\s+(?:${SEAM_RECEIVERS.source})`, 'g')
   const assignDirect = new RegExp(`\\b(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*(?:${SEAM_RECEIVERS.source})(?!\\s*\\()`, 'g')
   const addSeam = (name: string) => { names.add(name); seam.add(name) }
-  const addKeychain = (name: string) => { names.add(name); keychain.add(name) }
+  const addKeychain = (name: string) => {
+    names.add(name)
+    keychain.add(name)
+    if (KEYCHAIN_MODULE_NAMES.includes(name)) boundModuleNames.add(name)
+  }
   for (const line of lines) {
     for (const m of line.matchAll(assignAwait)) {
       if (m[1] !== undefined) addSeam(m[1])
@@ -264,13 +280,20 @@ export function collectSeamAliases(lines: readonly string[]): string[] {
     if (required?.[1] !== undefined) addKeychain(required[1])
   }
   // The prefix keeps the alias kind with the name; a single string[] keeps the
-  // public signature and the call site simple. The module names themselves are
-  // already unambiguous, so only renamed aliases carry the prefix.
-  return [...names].map(name =>
-    (keychain.has(name) && name !== 'keytar' && name !== 'keychain' ? `${KEYCHAIN_PREFIX}${name}` : name))
+  // public signature and the call site simple. Bare `keytar` / `keychain` are
+  // always seeded but carry the prefix only once an import binds them: an
+  // unbound local `keychain` object gets the library-only read set.
+  return [...names].map(name => {
+    if (!keychain.has(name)) return name
+    if (KEYCHAIN_MODULE_NAMES.includes(name) && !boundModuleNames.has(name)) return name
+    return `${KEYCHAIN_PREFIX}${name}`
+  })
 }
 
-/** Marks a keychain-module alias so the call regex uses the keychain method set. */
+/**
+ * Marks an import-bound keychain alias so the call regex uses the full
+ * keychain read set; bare unbound module names use the library-only set.
+ */
 const KEYCHAIN_PREFIX = 'keychain:'
 
 /**
@@ -286,12 +309,12 @@ export function credentialReadCalls(line: string, seamAliases: readonly string[]
   const calls = [...(line.match(CREDENTIALS_READ) ?? [])]
   for (const entry of seamAliases) {
     const prefixed = entry.startsWith(KEYCHAIN_PREFIX)
-    const isKeychain = prefixed || entry === 'keytar' || entry === 'keychain'
+    const bareModule = entry === 'keytar' || entry === 'keychain'
     // Only strip the kind prefix — never slice bare `keytar`/`keychain`, which
     // would yield an empty receiver and match stray `.getPassword(` forms.
     const alias = prefixed ? entry.slice(KEYCHAIN_PREFIX.length) : entry
     if (!alias || !line.includes(`${alias}.`)) continue
-    const methods = isKeychain ? KEYCHAIN_METHODS : SEAM_METHODS
+    const methods = prefixed ? KEYCHAIN_METHODS : bareModule ? KEYCHAIN_BARE_READ_METHODS : SEAM_METHODS
     const re = new RegExp(`(?<![\\w$])${escapeForRegExp(alias)}\\s*\\.\\s*(?:${methods})\\s*\\(`, 'g')
     calls.push(...(line.match(re) ?? []))
   }

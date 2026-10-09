@@ -18,6 +18,7 @@
  * never "guaranteed no X".
  */
 
+import { KEYCHAIN_MEMBER_SOURCE } from './keychain-api.ts'
 import type { Capability } from './types.ts'
 
 export interface CapabilityRule {
@@ -69,14 +70,17 @@ export const CAPABILITY_RULES: readonly CapabilityRule[] = [
   // Strong secret-material access only. `process.env` is its own low-weight
   // `env` rule below — every server plugin reads env vars, so it must not be
   // treated as "reads secrets". `keychain`/`keytar`/`dotenv` match imports or
-  // method calls, not the word in prose ("a synced keychain" is not access).
+  // named material methods (see keychain-api.ts), not `keychain.add` on a Set
+  // and not the word in prose ("a synced keychain" is not access).
   // Path keys require path-only quoted strings (no whitespace) for `.ssh` /
   // `.aws/credentials`, or a path separator / home prefix for `.netrc` /
   // `id_rsa`, so UI prose and deny-list array entries (`['.ssh']`) do not match.
   {
     id: 'credentials.material',
     capability: 'credentials',
-    pattern: /(?:require\(|from\s+|import\s*\(\s*)['"](?:keychain|keytar|dotenv)['"]|\bkeychain\.\w+|\bkeytar\.\w+|\bdotenv\.config\b|\bctx\.credentials\b|\bctx\.get\(\s*['"]credentials['"]\s*\)|['"`](?:(?:~\/|\.\/|\/|[A-Za-z]:\\)[^'"`\s]*\.ssh[^'"`\s]*|\.ssh\/[^'"`\s]+)['"`]|['"`](?:(?:~\/|\.\/|\/|[A-Za-z]:\\)[^'"`\s]*\.aws\/credentials[^'"`\s]*|\.aws\/credentials)['"`]|(?:~\/|\.\/|\/)\.netrc\b|\.gnupg(?:\/|\\|$)|\.docker\/config\.json|\.kube\/config|[/\\]id_rsa\b|[/\\]id_ed25519\b/,
+    pattern: new RegExp(
+      String.raw`(?:require\(|from\s+|import\s*\(\s*)['"](?:keychain|keytar|dotenv)['"]|${KEYCHAIN_MEMBER_SOURCE}|\bdotenv\.config\b|\bctx\.credentials\b|\bctx\.get\(\s*['"]credentials['"]\s*\)|['"\`](?:(?:~\/|\.\/|\/|[A-Za-z]:\\)[^'"\`\s]*\.ssh[^'"\`\s]*|\.ssh\/[^'"\`\s]+)['"\`]|['"\`](?:(?:~\/|\.\/|\/|[A-Za-z]:\\)[^'"\`\s]*\.aws\/credentials[^'"\`\s]*|\.aws\/credentials)['"\`]|(?:~\/|\.\/|\/)\.netrc\b|\.gnupg(?:\/|\\|$)|\.docker\/config\.json|\.kube\/config|[/\\]id_rsa\b|[/\\]id_ed25519\b`,
+    ),
     label: 'Credential / secret access',
   },
   // The seam is often reached through a local alias (`const credentials =

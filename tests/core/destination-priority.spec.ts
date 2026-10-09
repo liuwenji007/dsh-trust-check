@@ -17,15 +17,23 @@ const d = (kind: DestinationFinding['kind'], value: string): DestinationFinding 
 })
 
 describe('destination priority', () => {
-  it('detects private IPv4 ranges', () => {
+  it('detects RFC 1918 private IPv4 only', () => {
     expect(isPrivateIp('10.0.0.1')).toBe(true)
     expect(isPrivateIp('192.168.1.5')).toBe(true)
     expect(isPrivateIp('8.8.8.8')).toBe(false)
+    // Link-local / cloud metadata is not "private" in the UI sense — same as red lines.
+    expect(isPrivateIp('169.254.169.254')).toBe(false)
   })
 
-  it('tiers relative and loopback as safe', () => {
+  it('tiers relative, loopback, bind/broadcast, and documentation IPs as safe', () => {
     expect(destinationTier(d('relative', '/context'))).toBe('safe')
     expect(destinationTier(d('loopback', 'localhost'))).toBe('safe')
+    expect(destinationTier(d('ip', '0.0.0.0'))).toBe('safe')
+    expect(destinationTier(d('ip', '255.255.255.255'))).toBe('safe')
+    // Same as the literal-IP red line, which skips RFC 5737 ranges.
+    expect(destinationTier(d('ip', '203.0.113.1'))).toBe('safe')
+    expect(destinationTier(d('ip', '192.0.2.1'))).toBe('safe')
+    expect(destinationTier(d('ip', '198.51.100.50'))).toBe('safe')
   })
 
   it('whitelists common HTTPS hosts including subdomains', () => {
@@ -66,7 +74,21 @@ describe('destination priority', () => {
   it('highlights plaintext http and private ip', () => {
     expect(destinationHighlight(d('http-host', 'evil.test'))).toBe('plaintext')
     expect(destinationHighlight(d('ip', '192.168.0.9'))).toBe('private-ip')
-    expect(destinationHighlight(d('ip', '203.0.113.1'))).toBe('public-ip')
+    expect(destinationHighlight(d('ip', '8.8.8.8'))).toBe('public-ip')
+    expect(destinationHighlight(d('ip', '169.254.169.254'))).toBe('public-ip')
+    expect(destinationHighlight(d('ip', '203.0.113.1'))).toBeUndefined()
+    expect(destinationHighlight(d('ip', '0.0.0.0'))).toBeUndefined()
+    expect(destinationHighlight(d('ip', '255.255.255.255'))).toBeUndefined()
+  })
+
+  it('folds bind/broadcast into the safe list, not the priority list', () => {
+    const { priority, safe } = partitionDestinations([
+      d('ip', '0.0.0.0'),
+      d('ip', '8.8.8.8'),
+      d('ip', '255.255.255.255'),
+    ])
+    expect(priority.map(x => x.value)).toEqual(['8.8.8.8'])
+    expect(safe.map(x => x.value)).toEqual(['0.0.0.0', '255.255.255.255'])
   })
 
   it('partitions whitelist into safe and drops relative HTTP routes; keeps unknown https in priority', () => {
