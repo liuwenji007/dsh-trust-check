@@ -10,6 +10,7 @@ Each release lists **Affects catalog results** first: anything that can change w
 
 ### Affects catalog results
 
+- **`fetch('blob:…')` / `fetch('data:…')` literals are not `network`** ([#9](https://github.com/liuwenji007/dsh-trust-check/issues/9)). Scheme fetch never enters HTTP. Concatenation (`'blob:' + id`) and variable arguments (`fetch(url)`, even when `url` is a `blob:` URL the host minted at runtime) still count — that over-approximation is unchanged.
 - **`www.xfa.org` is a namespace identifier, not a plaintext destination** ([#8](https://github.com/liuwenji007/dsh-trust-check/issues/8)). pdf.js bundles the XFA namespace table (`http://www.xfa.org/schema/xci/`, …), which raised `uses plaintext http:// to www.xfa.org`. The host is Adobe-held and serves no traffic; it is matched exactly, so `cdn.xfa.org` and `www.xfa.org.<anything>` still count. `dsh-herta@0.1.5` still has a plaintext-HTTP red line after this: the same pdf.js table names `ns.adobe.com`, and the bundle also carries `http://docx/` and OOXML namespace hosts; those are tracked separately in #8.
 - **Identifier hosts are only exempt with a path.** A literal such as `"http://www.w3.org"` with nothing after the host is now a destination and can raise the plaintext-HTTP red line, because whatever is appended to it at runtime picks the host. `http://www.w3.org/2000/svg` and the other namespace forms are unaffected. The bare `http://musicbrainz.org` identifier is only exempt as an operand of `==` / `===` / `!=` / `!==`, which is how music-metadata uses it; stored in a table or array (`["http://musicbrainz.org", …]`) it is a destination, because `.join('')` can extend it into another host.
 - **Template URLs report their host when `${…}` comes after it.** `` `http://host/x?d=${v}` `` was skipped entirely; the static host is now a destination like any other literal. This also holds when `${…}` directly follows a complete dotted host (`` `https://api.github.com${endpoint}` ``, `` `http://127.0.0.1:${port}` ``), so an empty `${""}` no longer hides a host. The reported host is the static part even if the interpolation extends it at runtime. `${…}` before the host is complete (`` `http://${host}/` ``, `` `http://api.${region}.net/` ``) or after a single-label host (`` `http://localhost${port}` ``) is still not reported.
@@ -18,6 +19,7 @@ Each release lists **Affects catalog results** first: anything that can change w
 
 ### Other
 
+- Docs: relative-path `fetch('/api')` is *not* `network` (the previous README line said it still counted). Matches the scanner and the `blob:` / `data:` carve-out above.
 - Bind / broadcast addresses (`0.0.0.0`, `255.255.255.255`) and RFC 5737 documentation IPs stay in destinations but are no longer labeled public IP, and fold with the safe list — matching the literal-IP red line, which already skipped them. Link-local `169.254/16` is not softened to private.
 
 ## 0.2.0 — 2026-10-03

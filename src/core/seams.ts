@@ -55,11 +55,12 @@ export const CAPABILITY_RULES: readonly CapabilityRule[] = [
   // --- network -----------------------------------------------------------
   // NOTE: `fetch(` is intentionally NOT in this table. A bare fetch call is
   // ambiguous — `fetch('/api/x')` is a same-origin call into the DSH host,
-  // which is not network egress. Whether a fetch is outbound depends on its
-  // argument, so capability.ts special-cases it per call site (literal
-  // same-origin paths are not network; absolute URLs, template strings, and
-  // variable arguments are). Keeping it here would flag every relative-path
-  // fetch as network and drown the signal.
+  // and `fetch('blob:…')` / `fetch('data:…')` are scheme fetch, not egress.
+  // Whether a fetch is outbound depends on its argument, so capability.ts
+  // special-cases it per call site (relative and blob/data literals are not
+  // network; absolute URLs, template strings, and variable arguments are).
+  // Keeping it here would flag every relative-path fetch as network and drown
+  // the signal.
   {
     id: 'network.import-or-call',
     capability: 'network',
