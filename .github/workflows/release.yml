@@ -43,6 +43,11 @@ jobs:
             exit 1
           fi
 
+      # The release body is what dsh-market shows as the update notes, and
+      # --generate-notes lists nothing when commits land without a PR.
+      - name: CHANGELOG must have a section for this version
+        run: node scripts/release-notes.mjs "$GITHUB_REF_NAME" > release-notes.md
+
       - name: choose the npm dist-tag
         id: channel
         run: |
@@ -66,8 +71,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          printf '\n\nnpm: https://www.npmjs.com/package/dsh-trust-check/v/%s · dist-tag: %s\n' \
+            "${GITHUB_REF_NAME#v}" "${{ steps.channel.outputs.dist }}" >> release-notes.md
           gh release create "$GITHUB_REF_NAME" \
             --title "dsh-trust-check ${GITHUB_REF_NAME#v}" \
             --generate-notes \
             ${{ steps.channel.outputs.pre == 'true' && '--prerelease' || '' }} \
-            --notes "npm: https://www.npmjs.com/package/dsh-trust-check/v/${GITHUB_REF_NAME#v} · dist-tag: ${{ steps.channel.outputs.dist }}"
+            --notes-file release-notes.md
