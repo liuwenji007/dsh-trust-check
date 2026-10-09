@@ -6,15 +6,16 @@ Each release lists **Affects catalog results** first: anything that can change w
 
 ## Unreleased
 
-`schemaVersion`: 2.
+`schemaVersion`: 2. On the 120-plugin sample against 0.2.0, no plugin gains or loses a capability or a red line.
 
 ### Affects catalog results
 
-- None yet.
+- **`keychain` / `keytar` only match material methods.** A call like `keychain.add` on a local `Set` is no longer `credentials` and no longer a secret-touch. Imports of those modules, and material methods such as `getPassword` / `setPassword` — called or referenced (`promisify(keytar.findPassword)`, `keytar.default.getPassword`) — still are.
+- **Wrapper method names need a bound import to count as a secret read.** `getSecret` / `getToken` / `findAnyCredential` on a bare `keychain` / `keytar` name no longer feed `creds-network`; after `require('keychain')` or `import … from 'keytar'` they still do. `getPassword` / `getCredentials` / `findPassword` / `findCredentials` count either way.
 
 ### Other
 
-- None yet.
+- Bind / broadcast addresses (`0.0.0.0`, `255.255.255.255`) and RFC 5737 documentation IPs stay in destinations but are no longer labeled public IP, and fold with the safe list — matching the literal-IP red line, which already skipped them. Link-local `169.254/16` is not softened to private.
 
 ## 0.2.0 — 2026-10-03
 
