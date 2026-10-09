@@ -142,8 +142,16 @@ const IDENTIFIER_HOST_EXACT = new Set([
 const IDENTIFIER_URL_EXACT = new Set([
   // Apple property-list DOCTYPE system identifier.
   'http://www.apple.com/DTDs/PropertyList-1.0.dtd',
-  // ID3v2 UFID owner identifier for MusicBrainz recording IDs.
-  'http://musicbrainz.org',
+])
+
+/**
+ * Hosts whose bare `http://<host>` literal is an identifier only as an operand
+ * of `==` / `===` / `!=` / `!==`. Stored, appended or joined, the bare literal
+ * picks the host of whatever follows it, so it stays a destination.
+ */
+const COMPARED_IDENTIFIER_HOSTS = new Set([
+  // ID3v2 UFID owner identifier for MusicBrainz recording IDs (music-metadata).
+  'musicbrainz.org',
 ])
 
 const CONCAT_AFTER_LITERAL = /^\s*(?:\+|\.\s*concat\s*\()/
@@ -166,8 +174,14 @@ function hasClosedAuthority(url: string): boolean {
  */
 const TEMPLATE_STATIC_HOST = /^https?:\/\/(?:[^@/?#]*@)?[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?::\d*)?$/
 
+/** `http://<host>` with nothing after the host, for a host in `COMPARED_IDENTIFIER_HOSTS`. */
+function isComparedIdentifierUrl(url: string): boolean {
+  const m = /^http:\/\/([^/?#@:]+)$/i.exec(url)
+  return m?.[1] !== undefined && COMPARED_IDENTIFIER_HOSTS.has(m[1].toLowerCase())
+}
+
 /**
- * A bare-authority entry (`http://musicbrainz.org`) can be extended into
+ * A bare-authority identifier (`http://musicbrainz.org`) can be extended into
  * another host by means `CONCAT_AFTER_LITERAL` cannot see (`.join('')`), so it
  * is only exempt as an operand of `==` / `===` / `!=` / `!==`.
  */
@@ -177,10 +191,10 @@ function isIdentifierUrlLiteral(
   literalStart: number,
   literalEnd: number,
 ): boolean {
-  if (!IDENTIFIER_URL_EXACT.has(url)) return false
   const after = line.slice(literalEnd)
   if (CONCAT_AFTER_LITERAL.test(after)) return false
-  if (hasClosedAuthority(url)) return true
+  if (IDENTIFIER_URL_EXACT.has(url) && hasClosedAuthority(url)) return true
+  if (!isComparedIdentifierUrl(url)) return false
   return COMPARED_BEFORE_LITERAL.test(line.slice(0, literalStart))
     || COMPARED_AFTER_LITERAL.test(after)
 }

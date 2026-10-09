@@ -81,15 +81,16 @@ Do not silence a false positive by stuffing `DEST_WHITELIST` unless the host bel
 
 ## Allowlist governance / 白名单治理
 
-Three host tables hide destinations. They are not equivalent, and none of them is a safety claim. Documentation **IPv4** ranges live next to placeholders in `shape.ts` (`isDocumentationIp`), not in `DEST_WHITELIST`.
+These host tables hide destinations. They are not equivalent, and none of them is a safety claim. Documentation **IPv4** ranges live next to placeholders in `shape.ts` (`isDocumentationIp`), not in `DEST_WHITELIST`.
 
-三张主机表会隐藏去向。它们不等价，也没有一张是安全承诺。文档 **IPv4** 网段在 `shape.ts`（`isDocumentationIp`），不在 `DEST_WHITELIST`。
+下面这些主机表会隐藏去向。它们不等价，也没有一张是安全承诺。文档 **IPv4** 网段在 `shape.ts`（`isDocumentationIp`），不在 `DEST_WHITELIST`。
 
 | Table | Effect | Allowed when |
 |---|---|---|
 | `DEST_WHITELIST` | HTTPS hosts of known package/source/model APIs render as "common" and fold away. **Plaintext HTTP is never downgraded**, even if the host is listed. | The host is a public registry, source forge, CDN, or first-party model API that DSH plugins routinely talk to. Subdomains inherit. A new `DestWhitelistReason` also needs a locale key `destWhitelist.<code>` in both languages. |
 | `IDENTIFIER_HOST_EXACT` | Exact host match for XML/SVG namespace identifiers (`www.w3.org`). Not a request. | The host is a standards-body namespace that an attacker cannot register. Exact match only — no subdomain inheritance. Only literals with a path qualify: a bare `http://host` can be extended into another host at runtime. Add probes for a subdomain, a `host.attacker.net` suffix, and the bare host followed by `+` / `.join('')`. |
-| `IDENTIFIER_URL_EXACT` | Exact whole-literal match for a URL a format library uses as an identifier (Apple plist DTD, ID3 UFID owner). Not a request. | The host serves real traffic, so the host itself does not qualify for `IDENTIFIER_HOST_EXACT`. Cite the format spec, keep the entry a complete literal, and add probes for another path, a subdomain, and `+` / `.concat(` extension. An entry with no path is only exempt as an `==` / `===` / `!=` / `!==` operand. |
+| `IDENTIFIER_URL_EXACT` | Exact whole-literal match for a URL a format library uses as an identifier (Apple plist DTD). Not a request. | The host serves real traffic, so the host itself does not qualify for `IDENTIFIER_HOST_EXACT`. Cite the format spec, keep the entry a complete literal **with a path**, and add probes for another path, a subdomain, and `+` / `.concat(` extension. |
+| `COMPARED_IDENTIFIER_HOSTS` | Bare `http://<host>` identifier (ID3 UFID owner `http://musicbrainz.org`), exempt only as an `==` / `===` / `!=` / `!==` operand. | Same bar as `IDENTIFIER_URL_EXACT`, for an identifier with no path. Store the bare host, not the URL: a stored bare URL is itself a destination, so the scanner's own table would red-line its self-scan. Add probes for the literal stored, `.join('')`, and `+` extension. |
 | `PLACEHOLDER_HOST_EXACT` (+ docs IPs / RFC 2606 TLDs) | Documentation / parser bases. | Documentation hosts and RFC 5737 docs IPv4 only. Generic single-label names (`proxy`, `server`, `host`) must **not** be added: they resolve on a LAN with a DNS search domain and would hide a real plaintext-HTTP red line. |
 
 **Allowlist / skip PRs are reviewed differently from rule PRs.** An entry that hides destinations weakens detection. The PR body must state:
