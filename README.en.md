@@ -83,7 +83,7 @@ Besides capability chips, the report extracts three kinds of literal facts from 
 - **Workspace path escapes**: absolute paths, home directory, traversal, …
 - **Secret touches**: paths, sensitive env names.
 
-These mean "we saw this string in source", not "this address/path is safe"; runtime-built URLs are invisible.
+These mean "we saw this string in source", not "this address/path is safe"; runtime-built URLs are invisible (a template URL still reports its host when `${…}` comes after the host or directly follows a complete dotted host, as in `` `https://api.github.com${path}` ``; `${…}` before the host is complete hides it).
 
 **Allowlist**: common host / registry domains (GitHub, npm, npmmirror, Tencent Cloud mirrors, …), the curated DSH catalog and GitHub proxies, and common model-vendor APIs (DeepSeek, OpenAI, Anthropic, Google Gemini). Allowlisted entries are collapsed by default with a short note; plaintext HTTP is never downgraded by the allowlist.
 
@@ -93,8 +93,8 @@ These mean "we saw this string in source", not "this address/path is safe"; runt
 - Skips RFC 5737 documentation ranges (`192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`), and `0.0.0.0` / `255.255.255.255` (bind / broadcast, not unicast outbound).
 - Skips placeholder bases like `http://local` / `http://dsh.invalid`, RFC 2606 `.example` / `.invalid` / `.test`, and shell switches (`/c`).
 - Comments are blanked before the scan, so an example URL in a JSDoc block is not a destination (bundlers usually keep those comments).
-- Namespace identifiers such as `xmlns="http://www.w3.org/2000/svg"` are excluded by exact host — an attacker cannot register those domains, so the exemption cannot be borrowed.
-- A few whole URLs that bundled format libraries use as identifiers, not requests (the Apple plist DTD `http://www.apple.com/DTDs/PropertyList-1.0.dtd`, the ID3 owner `http://musicbrainz.org`), are excluded by **exact literal**. Any other path or subdomain on those hosts, or the literal followed by `+` / `.concat(`, is still a destination.
+- Namespace identifiers such as `xmlns="http://www.w3.org/2000/svg"` and pdf.js's `http://www.xfa.org/schema/…` are excluded by exact host — an attacker cannot register those domains, so the exemption cannot be borrowed. Only literals with a path qualify: a bare `"http://www.w3.org"` becomes another host once anything is appended, so it is still a destination.
+- A few whole URLs that bundled format libraries use as identifiers, not requests (the Apple plist DTD `http://www.apple.com/DTDs/PropertyList-1.0.dtd`, the ID3 owner `http://musicbrainz.org`), are excluded by **exact literal**. Any other path or subdomain on those hosts, or the literal followed by `+` / `.concat(`, is still a destination. The bare `http://musicbrainz.org` is only exempt as an `==` / `===` / `!=` / `!==` operand.
 - When findings exceed the cap, the riskiest are kept: plaintext HTTP and literal IPs cannot be crowded out by harmless addresses.
 - Secret paths require a **path-only quoted string** (no whitespace): `"~/.ssh/config"`, `"/Users/x/.ssh/config"`, `'.ssh/config'`, `"~/.aws/credentials"`, or path forms like `/id_rsa` / `~/.netrc`. UI prose (`"Uses … ~/.ssh/config when empty"`), deny-list regexes, `startsWith('id_rsa')`, and a bare `'.ssh'` are not credential access.
 

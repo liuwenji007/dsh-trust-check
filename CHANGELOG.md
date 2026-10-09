@@ -6,12 +6,15 @@ Each release lists **Affects catalog results** first: anything that can change w
 
 ## Unreleased
 
-`schemaVersion`: 2. On the 120-plugin sample against 0.2.0, no plugin gains or loses a capability or a red line.
+`schemaVersion`: 2. On the 120-plugin sample against 0.2.0, no plugin gains or loses a capability or a red line. 23 plugins gain destinations from template URLs (HTTPS hosts, plus loopback `127.0.0.1` in two); none gains a plaintext-HTTP destination. `opencues-dsh` shows four fewer HTTPS hosts (`www.gov.uk`, `api.coingecko.com`, …) because the new ones fill the 20-row display cap first. `ackFingerprint` changes for 24 plugins, so a red line the user already accepted prompts again after upgrading for `deepseek-harness-tui-dsh-tui`, `dsh-free-search`, `dsh-pet`, and `dsh-plugin-deepseek-vision`.
 
 ### Affects catalog results
 
+- **`www.xfa.org` is a namespace identifier, not a plaintext destination** ([#8](https://github.com/liuwenji007/dsh-trust-check/issues/8)). pdf.js bundles the XFA namespace table (`http://www.xfa.org/schema/xci/`, …), which raised `uses plaintext http:// to www.xfa.org`. The host is Adobe-held and serves no traffic; it is matched exactly, so `cdn.xfa.org` and `www.xfa.org.<anything>` still count.
+- **Identifier hosts are only exempt with a path.** A literal such as `"http://www.w3.org"` with nothing after the host is now a destination and can raise the plaintext-HTTP red line, because whatever is appended to it at runtime picks the host. `http://www.w3.org/2000/svg` and the other namespace forms are unaffected. The bare `http://musicbrainz.org` identifier is only exempt as an operand of `==` / `===` / `!=` / `!==`, which is how music-metadata uses it.
+- **Template URLs report their host when `${…}` comes after it.** `` `http://host/x?d=${v}` `` was skipped entirely; the static host is now a destination like any other literal. This also holds when `${…}` directly follows a complete dotted host (`` `https://api.github.com${endpoint}` ``, `` `http://127.0.0.1:${port}` ``), so an empty `${""}` no longer hides a host. The reported host is the static part even if the interpolation extends it at runtime. `${…}` before the host is complete (`` `http://${host}/` ``, `` `http://api.${region}.net/` ``) or after a single-label host (`` `http://localhost${port}` ``) is still not reported.
 - **`keychain` / `keytar` only match material methods.** A call like `keychain.add` on a local `Set` is no longer `credentials` and no longer a secret-touch. Imports of those modules, and material methods such as `getPassword` / `setPassword` — called or referenced (`promisify(keytar.findPassword)`, `keytar.default.getPassword`) — still are.
-- **Wrapper method names need a bound import to count as a secret read.** `getSecret` / `getToken` / `findAnyCredential` on a bare `keychain` / `keytar` name no longer feed `creds-network`; after `require('keychain')` or `import … from 'keytar'` they still do. `getPassword` / `getCredentials` / `findPassword` / `findCredentials` count either way.
+- **Wrapper method names need a bound import to count as a secret read.** `getSecret` / `getToken` / `findAnyCredential` on a bare `keychain` / `keytar` name, or on an alias of one (`const k = keychain`), no longer feed `creds-network`; after `require('keychain')` or `import … from 'keytar'` they still do. `getPassword` / `getCredentials` / `findPassword` / `findCredentials` count either way.
 
 ### Other
 

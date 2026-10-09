@@ -1,6 +1,6 @@
 /**
  * Shape scanner: literal destinations, workspace path escapes, and secret touches.
- * Proves presence only; runtime-constructed URLs are invisible.
+ * Proves presence only; runtime-constructed hosts are invisible.
  */
 
 import {
@@ -117,6 +117,11 @@ const PLACEHOLDER_TLD = /\.(?:example|invalid|test)$/i
  * the host rather than on nearby `xmlns` text is deliberate: an attacker
  * cannot register these, so the exemption cannot be borrowed, whereas a
  * syntactic check could be by writing `xmlns` beside an exfil URL.
+ *
+ * Only literals whose authority is already closed (`http://www.w3.org/…`)
+ * qualify. A bare `"http://www.w3.org"` becomes another host once anything is
+ * appended (`+ ".attacker.net"`, `.join('')`, `+ "@attacker.net"`), and
+ * namespace identifiers always carry a path anyway.
  */
 const IDENTIFIER_HOST_EXACT = new Set([
   'www.w3.org',
@@ -124,6 +129,8 @@ const IDENTIFIER_HOST_EXACT = new Set([
   'schemas.xmlsoap.org',
   'purl.org',
   'json-schema.org',
+  // XFA spec namespaces (pdf.js); Adobe-held since 1998, no A record.
+  'www.xfa.org',
 ])
 
 /**
@@ -140,9 +147,42 @@ const IDENTIFIER_URL_EXACT = new Set([
 ])
 
 const CONCAT_AFTER_LITERAL = /^\s*(?:\+|\.\s*concat\s*\()/
+const COMPARED_BEFORE_LITERAL = /[=!]==?\s*$/
+const COMPARED_AFTER_LITERAL = /^\s*[=!]==?/
 
-function isIdentifierUrlLiteral(line: string, url: string, literalEnd: number): boolean {
-  return IDENTIFIER_URL_EXACT.has(url) && !CONCAT_AFTER_LITERAL.test(line.slice(literalEnd))
+/** `scheme://host` followed by `/`, `?` or `#`: appending can no longer change the host. */
+const AUTHORITY_CLOSED = /^https?:\/\/[^/?#]+[/?#]/i
+
+function hasClosedAuthority(url: string): boolean {
+  return AUTHORITY_CLOSED.test(url)
+}
+
+/**
+ * Template head that ends right after a complete dotted host (optionally a
+ * port colon): `` `http://attacker.net${path}` ``. The static host is reported
+ * even though `${…}` could still extend it, because otherwise an empty
+ * `${""}` hides any literal host. `api.${region}.net` (head ends in `.`) and
+ * `${host}` stay invisible.
+ */
+const TEMPLATE_STATIC_HOST = /^https?:\/\/(?:[^@/?#]*@)?[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?::\d*)?$/
+
+/**
+ * A bare-authority entry (`http://musicbrainz.org`) can be extended into
+ * another host by means `CONCAT_AFTER_LITERAL` cannot see (`.join('')`), so it
+ * is only exempt as an operand of `==` / `===` / `!=` / `!==`.
+ */
+function isIdentifierUrlLiteral(
+  line: string,
+  url: string,
+  literalStart: number,
+  literalEnd: number,
+): boolean {
+  if (!IDENTIFIER_URL_EXACT.has(url)) return false
+  const after = line.slice(literalEnd)
+  if (CONCAT_AFTER_LITERAL.test(after)) return false
+  if (hasClosedAuthority(url)) return true
+  return COMPARED_BEFORE_LITERAL.test(line.slice(0, literalStart))
+    || COMPARED_AFTER_LITERAL.test(after)
 }
 
 /**
@@ -240,6 +280,8 @@ export function collectSeamAliases(lines: readonly string[]): string[] {
   const seam = new Set<string>()
   const keychain = new Set<string>(KEYCHAIN_MODULE_NAMES)
   const boundModuleNames = new Set<string>()
+  /** Keychain alias → the module name it was rebound from (`const k = keychain`). */
+  const keychainRoot = new Map<string, string>()
   const assignAwait = new RegExp(`\\b(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*await\\s+(?:${SEAM_RECEIVERS.source})`, 'g')
   const assignDirect = new RegExp(`\\b(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*(?:${SEAM_RECEIVERS.source})(?!\\s*\\()`, 'g')
   const addSeam = (name: string) => { names.add(name); seam.add(name) }
@@ -268,7 +310,10 @@ export function collectSeamAliases(lines: readonly string[]): string[] {
     if (rebound?.[1] !== undefined && rebound[2] !== undefined && names.has(rebound[2])) {
       names.add(rebound[1])
       if (seam.has(rebound[2])) seam.add(rebound[1])
-      if (keychain.has(rebound[2])) keychain.add(rebound[1])
+      if (keychain.has(rebound[2])) {
+        keychain.add(rebound[1])
+        keychainRoot.set(rebound[1], keychainRoot.get(rebound[2]) ?? rebound[2])
+      }
     }
     const defaultImport = new RegExp(`\\bimport\\s+([A-Za-z_$][\\w$]*)\\s+from\\s*${KEYCHAIN_FROM}`).exec(line)
     if (defaultImport?.[1] !== undefined) addKeychain(defaultImport[1])
@@ -282,10 +327,14 @@ export function collectSeamAliases(lines: readonly string[]): string[] {
   // The prefix keeps the alias kind with the name; a single string[] keeps the
   // public signature and the call site simple. Bare `keytar` / `keychain` are
   // always seeded but carry the prefix only once an import binds them: an
-  // unbound local `keychain` object gets the library-only read set.
+  // unbound local `keychain` object, and any alias rebound from it, gets the
+  // library-only read set.
   return [...names].map(name => {
     if (!keychain.has(name)) return name
-    if (KEYCHAIN_MODULE_NAMES.includes(name) && !boundModuleNames.has(name)) return name
+    const root = keychainRoot.get(name) ?? name
+    if (KEYCHAIN_MODULE_NAMES.includes(root) && !boundModuleNames.has(root)) {
+      return name === root ? name : `${KEYCHAIN_BARE_PREFIX}${name}`
+    }
     return `${KEYCHAIN_PREFIX}${name}`
   })
 }
@@ -295,6 +344,8 @@ export function collectSeamAliases(lines: readonly string[]): string[] {
  * keychain read set; bare unbound module names use the library-only set.
  */
 const KEYCHAIN_PREFIX = 'keychain:'
+/** Alias of an unbound `keytar` / `keychain` name: library-only read set. */
+const KEYCHAIN_BARE_PREFIX = 'keychain-bare:'
 
 /**
  * Value-returning credential calls on one line, including calls through a local
@@ -309,10 +360,13 @@ export function credentialReadCalls(line: string, seamAliases: readonly string[]
   const calls = [...(line.match(CREDENTIALS_READ) ?? [])]
   for (const entry of seamAliases) {
     const prefixed = entry.startsWith(KEYCHAIN_PREFIX)
-    const bareModule = entry === 'keytar' || entry === 'keychain'
+    const barePrefixed = entry.startsWith(KEYCHAIN_BARE_PREFIX)
+    const bareModule = barePrefixed || entry === 'keytar' || entry === 'keychain'
     // Only strip the kind prefix — never slice bare `keytar`/`keychain`, which
     // would yield an empty receiver and match stray `.getPassword(` forms.
-    const alias = prefixed ? entry.slice(KEYCHAIN_PREFIX.length) : entry
+    const alias = prefixed
+      ? entry.slice(KEYCHAIN_PREFIX.length)
+      : barePrefixed ? entry.slice(KEYCHAIN_BARE_PREFIX.length) : entry
     if (!alias || !line.includes(`${alias}.`)) continue
     const methods = prefixed ? KEYCHAIN_METHODS : bareModule ? KEYCHAIN_BARE_READ_METHODS : SEAM_METHODS
     const re = new RegExp(`(?<![\\w$])${escapeForRegExp(alias)}\\s*\\.\\s*(?:${methods})\\s*\\(`, 'g')
@@ -560,17 +614,27 @@ export function scanShape(input: PluginInput): ShapeScan {
       const rangeTable = isIpRangeTableLine(line)
 
       for (const match of line.matchAll(URL_LITERAL)) {
-        const url = match[1]
-        if (url === undefined) continue
-        if (url.includes('${')) continue
+        const literal = match[1]
+        if (literal === undefined) continue
+        let url = literal
+        // After the authority, `${` leaves the static host intact
+        // (`http://attacker.net/?d=${secret}`). Inside it, only a head that
+        // already names a complete host is kept, and parsed without the rest.
+        const interpolation = literal.indexOf('${')
+        if (interpolation !== -1 && !hasClosedAuthority(literal.slice(0, interpolation))) {
+          const head = literal.slice(0, interpolation)
+          if (!TEMPLATE_STATIC_HOST.test(head)) continue
+          url = head
+        }
         if (isPlaceholderUrl(url)) continue
         // `new URL(req.url, 'http://anything')` uses the base only to parse a
         // request target; the origin is never contacted. Without this the base
         // host reads as a plaintext-http destination (`dsh-remote.local`,
         // `gateway.local`). Deliberately not a host denylist: `.local` resolves
         // and `new URL('/path', 'http://evil')` + fetch is still a real one.
-        if (isUrlParserBase(line, url)) continue
-        if (isIdentifierUrlLiteral(line, url, (match.index ?? 0) + match[0].length)) continue
+        if (isUrlParserBase(line, literal)) continue
+        const literalStart = match.index ?? 0
+        if (isIdentifierUrlLiteral(line, url, literalStart, literalStart + match[0].length)) continue
         const kind = classifyUrl(url)
         let value = url
         if (kind === 'https-host' || kind === 'http-host' || kind === 'loopback') {
@@ -580,7 +644,8 @@ export function scanShape(input: PluginInput): ShapeScan {
             value = url
           }
         }
-        if (isPlaceholderHost(value) || isIdentifierHost(value)) continue
+        if (isPlaceholderHost(value)) continue
+        if (isIdentifierHost(value) && hasClosedAuthority(url)) continue
         destinations.push({ kind, value, file, line: lineNo })
       }
 
@@ -715,7 +780,6 @@ export function shapeRedLines(
     if (dest.kind === 'http-host'
       && !isLoopbackHost(dest.value)
       && !isPlaceholderHost(dest.value)
-      && !isIdentifierHost(dest.value)
       && !isHarnessInternalHost(dest.value)
       && !isRfc1918Ip(dest.value)) {
       lines.push(`uses plaintext http:// to ${dest.value}`)

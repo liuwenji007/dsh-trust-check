@@ -83,7 +83,7 @@ npx dsh-trust-check --dir ./pkg --exit-code
 - **工作区外路径**：绝对路径、家目录、路径穿越等。
 - **密钥触摸**：路径、敏感 env 名。
 
-这些只代表「在源码里看到了什么」，不代表「地址/路径安全」；运行时拼接的 URL 看不到。
+这些只代表「在源码里看到了什么」，不代表「地址/路径安全」；运行时拼接的 URL 看不到（模板 URL 的 `${…}` 若在主机名之后，或紧跟在完整的带点主机名后面（`` `https://api.github.com${path}` ``），主机名仍会记为去向；`${…}` 出现在主机名写完之前则看不到）。
 
 **白名单**：常见托管/registry 域名（GitHub、npm、npmmirror、腾讯云镜像等）、DSH 精选目录与 GitHub 代理、常见模型厂商 API（DeepSeek、OpenAI、Anthropic、Google Gemini）。命中白名单的条目默认收起并附简短说明；明文 HTTP 永远不会因白名单降级。
 
@@ -93,8 +93,8 @@ npx dsh-trust-check --dir ./pkg --exit-code
 - 跳过 RFC 5737 文档例网（`192.0.2.0/24`、`198.51.100.0/24`、`203.0.113.0/24`），以及 `0.0.0.0` / `255.255.255.255`（绑定/广播，非单播出站）。
 - 跳过 `http://local` / `http://dsh.invalid` 一类占位 base、RFC 2606 的 `.example` / `.invalid` / `.test`、cmd 开关（`/c`）等误判噪音。
 - 注释在扫描前被抹掉，JSDoc 里的示例 URL 不算去向（打包产物通常保留注释）。
-- `xmlns="http://www.w3.org/2000/svg"` 一类命名空间标识按主机名精确排除——攻击者注册不到这些域名，这条豁免无法被借用。
-- 打包进来的格式库里，少数完整 URL 只是标识而非请求（Apple plist 的 DTD `http://www.apple.com/DTDs/PropertyList-1.0.dtd`、ID3 的 `http://musicbrainz.org`），按**整串字面量**精确排除；同主机的其他路径、子域名，或字面量后面紧跟 `+` / `.concat(` 拼接，仍记为去向。
+- `xmlns="http://www.w3.org/2000/svg"`、pdf.js 的 `http://www.xfa.org/schema/…` 一类命名空间标识按主机名精确排除——攻击者注册不到这些域名，这条豁免无法被借用。只有带路径的字面量才豁免：不带路径的 `"http://www.w3.org"` 后面拼上任何内容都会变成别的主机，所以仍记为去向。
+- 打包进来的格式库里，少数完整 URL 只是标识而非请求（Apple plist 的 DTD `http://www.apple.com/DTDs/PropertyList-1.0.dtd`、ID3 的 `http://musicbrainz.org`），按**整串字面量**精确排除；同主机的其他路径、子域名，或字面量后面紧跟 `+` / `.concat(` 拼接，仍记为去向。不带路径的 `http://musicbrainz.org` 只在作为 `==` / `===` / `!=` / `!==` 的比较对象时豁免。
 - 超出上限时按风险高低截断，明文 HTTP 与字面量 IP 不会被无害地址挤掉。
 - 密钥路径只认**无空白的路径形引号串**（`"~/.ssh/config"`、`"/Users/x/.ssh/config"`、`'.ssh/config'`、`"~/.aws/credentials"`）或 `/id_rsa`、`~/.netrc` 等路径形态；UI 文案（`"Uses … ~/.ssh/config when empty"`）、deny-list 正则、`startsWith('id_rsa')`、裸 `'.ssh'` 不算凭据访问。
 
