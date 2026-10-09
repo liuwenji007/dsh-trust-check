@@ -78,8 +78,8 @@ Suggested wording is what a surface should show. Do not add a scope the scan did
 | Value | Meaning | Suggested English | Suggested Chinese |
 |---|---|---|---|
 | `shell` | Runs system commands | Runs system commands | 会执行系统命令 |
-| `fs-read` | Reads files | Reads files | 会读取文件 |
-| `fs-write` | Writes files | Writes files | 会写入文件 |
+| `fs-read` | Reads files | Reads files on this machine | 会读取本机文件 |
+| `fs-write` | Writes files | Writes files on this machine | 会写入本机文件 |
 | `network` | Network access | Network access | 会访问网络 |
 | `credentials` | Reaches the credential / secret store | Reaches credentials or secrets | 会接触凭据或密钥 |
 | `env` | Reads environment variables | Reads environment variables | 会读取环境变量 |
