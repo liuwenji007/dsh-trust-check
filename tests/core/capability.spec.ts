@@ -456,4 +456,31 @@ describe('scanCapabilities', () => {
     ].join('\n')
     expect(verdict(auditPlugin(input({ 'lib/index.js': source })))).toBe('clear')
   })
+
+  it('does not treat blob: or data: scheme-fetch literals as network', () => {
+    // Related to #9: scheme fetch never enters HTTP. Variable args (the
+    // dsh-rewind case) still count — only complete literals are skipped.
+    const result = scanCapabilities(input({
+      'lib/client.js': [
+        "await fetch('blob:http://localhost/uuid')",
+        'await fetch("data:image/png;base64,AAAA")',
+        'await fetch(`data:text/plain,hello`)',
+      ].join('\n'),
+    }))
+    expect(result.capabilities).not.toContain('network')
+  })
+
+  it('still flags blob:/data: when concatenated or when the arg is a variable', () => {
+    for (const probe of [
+      "await fetch('blob:' + id)",
+      "await fetch('data:text/plain,'.concat(body))",
+      'await fetch(url)',
+      "await fetch(new URL('/x', 'http://evil.example').href)",
+      "await fetch('//evil.example/x')",
+      "await fetch(base + '/x')",
+    ]) {
+      const result = scanCapabilities(input({ 'lib/client.js': probe }))
+      expect(result.capabilities, probe).toContain('network')
+    }
+  })
 })

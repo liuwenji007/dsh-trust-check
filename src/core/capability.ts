@@ -22,13 +22,21 @@ function manifestUsesHostRuntime(manifest: Record<string, unknown>): boolean {
 /**
  * Decide whether any `fetch(` call on one source line is network egress.
  *
- * A complete relative path literal cannot egress. Absolute URLs, variables,
- * concatenation, method calls, and interpolated templates are egress. A comma
- * or closing parenthesis after the literal starts the next argument.
+ * A complete relative path literal cannot egress. `blob:` / `data:` literals
+ * are scheme fetch (Fetch Standard §4.3) and never enter HTTP fetch. Absolute
+ * URLs, variables, concatenation, method calls, and interpolated templates are
+ * egress. A comma or closing parenthesis after the literal starts the next
+ * argument.
  */
 function isCompleteRelativeLiteral(arg: string): boolean {
   if (arg.includes('${')) return false
   return arg.startsWith('/') || arg.startsWith('./') || arg.startsWith('../')
+}
+
+/** Scheme-fetch only — no DNS, no connection, no CORS (Fetch Standard §4.3). */
+function isNonHttpSchemeLiteral(arg: string): boolean {
+  if (arg.includes('${')) return false
+  return /^(?:blob|data):/i.test(arg)
 }
 
 const VM_IMPORT = /(?:require\(|from\s+|import\s*\(\s*)['"](?:node:)?vm['"]/
@@ -101,7 +109,7 @@ function lineHasOutboundFetch(line: string): boolean {
     const trailing = rest.slice(end + 1).replace(/^\s*/, '')
     if (trailing.startsWith('+') || trailing.startsWith('.') || trailing.startsWith('`')) return true
     if (/^https?:\/\//i.test(arg) || arg.startsWith('//')) return true
-    if (isCompleteRelativeLiteral(arg)) continue
+    if (isCompleteRelativeLiteral(arg) || isNonHttpSchemeLiteral(arg)) continue
     return true
   }
   return false

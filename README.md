@@ -168,7 +168,7 @@ npx dsh-trust-check --dir "$EXTRACTED_DIR" --spec "$INSTALL_SPEC" --json
 - **不展开依赖树**：目录遍历跳过 `node_modules`，`import 'lodash'` 这类包名不跟。相对路径如果落在本包 `node_modules` 里，会跟进去扫。
 - **凭据读值判定覆盖到哪些写法**：接缝服务（`ctx.get('credentials')`，含 `await` / 可选链 `get?.`；接收者认 `ctx` / `this.ctx` / `*Ctx`）、属性直取（`ctx.credentials`）、从上下文解构（含改名 `credentials: creds`）、以及经这些来源再赋值的别名（含 `b = a`），其上的 `resolve` / `read` / `readRecord` / `get*` 都算读到值；`keytar` / `keychain` 的 `getPassword` / `findCredentials` 等，包括默认导入、`import * as`、`import { default as … }`、`require` 改名也算。**仍漏判**：解构到函数名（`const { resolve } = ctx.credentials` 后 `resolve(…)`）——它与 Promise executor 同名，按行匹配会把 `new Promise(resolve => …)` 误判成读值（实测会把 `dsh-pocket`、`agent-teams` 误红），需要作用域追踪；密钥路径先存进变量再 `readFileSync(p)` 同样漏判；接收者若既不叫 `ctx` 也不以 `Ctx` 结尾（如 `context` / `Context`）也不认。
 - **`new URL` 的 base 参数不记为去向**，因此 `const u = new URL('/x', 'http://evil'); fetch(u.href)` 这种写法不含明文 http 红线——这是该豁免的已知代价，不要再扩大 base 豁免范围。
-- 客户端 `fetch('/api')` 等同源调用仍记为 network；芯片会标「同源」或「外连」，但没有字面量外连不等于不出网，评分不变。
+- 完整的相对路径字面量（`fetch('/api')`、`fetch('./x')`）以及 `blob:` / `data:` 字面量不算 network——前者是同源调用，后者只走 scheme fetch、不会发起 HTTP。变量参数、拼接和模板插值仍记为 network。芯片会标「同源」或「外连」，但没有字面量外连不等于不出网，评分不变。
 - 注入 token 是字节 / 4 的粗估，不是精确计费。
 - `link:` / `file:` 本地安装的插件无法从 spec 推断来源，若其 `package.json` 未声明 `repository`，会显示"未声明仓库"。
 - `repository` 字段是插件自述，不与 npm 包名交叉验证；非 `http(s)` 协议不会渲染成可点击链接。
