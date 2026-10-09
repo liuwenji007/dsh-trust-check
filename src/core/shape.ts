@@ -131,6 +131,9 @@ const IDENTIFIER_HOST_EXACT = new Set([
   'json-schema.org',
   // XFA spec namespaces (pdf.js); Adobe-held since 1998, no A record.
   'www.xfa.org',
+  // XDP / XFDF / XMP namespaces (pdf.js); adobe.com is Adobe-held, this host
+  // has no A / AAAA / CNAME record. Other adobe.com hosts are not exempt.
+  'ns.adobe.com',
 ])
 
 /**
