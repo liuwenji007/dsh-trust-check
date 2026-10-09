@@ -458,8 +458,8 @@ describe('scanCapabilities', () => {
   })
 
   it('does not treat blob: or data: scheme-fetch literals as network', () => {
-    // Related to #9: scheme fetch never enters HTTP. Variable args (the
-    // dsh-rewind case) still count — only complete literals are skipped.
+    // Scheme fetch never enters HTTP. Variable args still count, even when the
+    // value is a host-minted blob: URL — only complete literals are skipped.
     const result = scanCapabilities(input({
       'lib/client.js': [
         "await fetch('blob:http://localhost/uuid')",
