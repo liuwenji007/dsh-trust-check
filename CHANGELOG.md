@@ -6,6 +6,14 @@ Each release lists **Affects catalog results** first: anything that can change w
 
 ## Unreleased
 
+`schemaVersion`: 2.
+
+### Affects catalog results
+
+- None.
+
+## 0.2.1 — 2026-10-10
+
 `schemaVersion`: 2. On the 120-plugin sample against 0.2.0, no plugin gains or loses a capability or a red line. 23 plugins gain destinations from template URLs (HTTPS hosts, plus loopback `127.0.0.1` in two); none gains a plaintext-HTTP destination. `opencues-dsh` shows four fewer HTTPS hosts (`www.gov.uk`, `api.coingecko.com`, …) because the new ones fill the 20-row display cap first. `ackFingerprint` changes for 24 plugins, so a red line the user already accepted prompts again after upgrading for `deepseek-harness-tui-dsh-tui`, `dsh-free-search`, `dsh-pet`, and `dsh-plugin-deepseek-vision`.
 
 ### Affects catalog results
