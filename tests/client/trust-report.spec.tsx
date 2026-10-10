@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { readFileSync } from 'node:fs'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TrustReport } from '../../src/client/TrustReport.tsx'
@@ -91,7 +91,7 @@ function renderReport(report: AuditResponse | null, dictionary: Record<TrustKey,
 }
 
 describe('settings card reading order', () => {
-  it('shows findings before limits, evidence, and acknowledgment on a first scan', async () => {
+  it('shows findings, detail, evidence, folded limits, then acknowledgment on a first scan', async () => {
     const user = userEvent.setup()
     renderReport(response([plugin({
       coverageNotes: ['dynamic import target in lib/index.js', 'computed module name in lib/index.js'],
@@ -99,27 +99,30 @@ describe('settings card reading order', () => {
 
     expect(screen.queryByText(zh['drift.title'])).toBeNull()
     expect(screen.getByText(zh['postInstall.note']).closest('details')).toBeNull()
-    expect(screen.getByText('2 条提示')).toBeTruthy()
+    const limitsFold = screen.getByText(zh['coverage.title']).closest('details') as HTMLDetailsElement
+    expect(limitsFold.open).toBe(false)
+    expect(screen.getByText('2 项需要留意')).toBeTruthy()
+    await user.click(screen.getByText(zh['coverage.title']))
+    expect(limitsFold.open).toBe(true)
     expect(screen.getByText('dynamic import target in lib/index.js')).toBeTruthy()
-    expect(screen.queryByText('computed module name in lib/index.js')).toBeNull()
-
-    await user.click(screen.getByRole('button', { name: '展开其余 1 条' }))
     expect(screen.getByText('computed module name in lib/index.js')).toBeTruthy()
     expect(screen.getByText(zh['coverage.plain'])).toBeTruthy()
 
+    const decision = screen.getByRole('heading', { name: zh['decision.review'] })
     const findings = screen.getByText(/未见硬红线/)
-    const limits = screen.getByRole('heading', { name: zh['coverage.title'] })
     const caps = screen.getByRole('heading', { name: zh.capabilities })
-    const evidence = screen.getByText(zh.evidence)
+    const evidence = screen.getAllByRole('button', { name: zh['feedback.evidence'] })[0] as HTMLElement
     const aid = screen.getByText(zh['explain.aid'])
+    const limits = screen.getByText(zh['coverage.title'])
     const ack = screen.getByText(zh['ack.scope'])
     const follows = (earlier: Element, later: Element) =>
       (earlier.compareDocumentPosition(later) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
-    expect(follows(findings, limits)).toBe(true)
-    expect(follows(limits, caps)).toBe(true)
+    expect(follows(decision, findings)).toBe(true)
+    expect(follows(findings, caps)).toBe(true)
     expect(follows(caps, evidence)).toBe(true)
     expect(follows(evidence, aid)).toBe(true)
-    expect(follows(aid, ack)).toBe(true)
+    expect(follows(aid, limits)).toBe(true)
+    expect(follows(limits, ack)).toBe(true)
     expect(screen.getByRole('button', { name: zh['ack.accept'] })).toBeTruthy()
     expect(screen.queryByRole('button', { name: zh['ack.acceptRisk'] })).toBeNull()
   })
@@ -158,6 +161,24 @@ describe('settings card reading order', () => {
     expect(addedRow?.textContent).not.toContain(zh['cap.network'])
     expect(removedRow?.textContent).toContain(zh['cap.fs-read'])
     expect(screen.getByText(zh['drift.ruleNote'])).toBeTruthy()
+    expect(screen.getByRole('button', { name: `${zh['cap.shell']} · ${zh['capabilities.new']}` })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: new RegExp(`${zh['cap.network']}.*${zh['capabilities.new']}`) })).toBeNull()
+  })
+
+  it('names the install channel without a local path and opens all evidence from the acknowledgment bar', async () => {
+    const user = userEvent.setup()
+    renderReport(response([plugin({ spec: 'link:/Users/hidden/dev/demo-plugin', pinned: false })]))
+    const toggle = screen.getByRole('button', { expanded: true })
+    expect(toggle.textContent).toContain('来源：link · 未锁版本')
+    expect(toggle.textContent).not.toContain('/Users/hidden')
+
+    const group = (cap: string) => document.getElementById(`trust-evidence-demo-plugin-${cap}`)
+    expect(group('shell')?.textContent).toContain('execFile("ls")')
+    expect(group('network')).toBeNull()
+    await user.click(screen.getByRole('button', { name: zh['ack.viewEvidence'] }))
+    expect(group('network')?.textContent).toContain('fetch("https://example.test")')
+    expect(group('shell')).toBeTruthy()
+    expect(document.activeElement).toBe(document.getElementById('trust-evidence-demo-plugin'))
   })
 
   it('asks for a fact review on a red line and keeps risk confirmation distinct', () => {
@@ -168,6 +189,11 @@ describe('settings card reading order', () => {
     })]))
     expect(screen.getByText(/请先复核具体事实/)).toBeTruthy()
     expect(screen.queryByText(/默认应停用/)).toBeNull()
+    expect(screen.getByRole('heading', { name: zh['decision.red'] })).toBeTruthy()
+    const concernsList = screen.getByRole('list', { name: zh['concerns.title'] })
+    const [first, second] = [...concernsList.querySelectorAll('li')]
+    expect(first?.className).toContain('concernRed')
+    expect(second?.className ?? '').not.toContain('concernRed')
     expect(screen.getByRole('button', { name: zh['ack.acceptRisk'] })).toBeTruthy()
     expect(screen.queryByRole('button', { name: zh['ack.accept'] })).toBeNull()
   })
@@ -179,20 +205,28 @@ describe('settings card reading order', () => {
     })
     delete row.coverageNotes
     renderReport(response([row]))
-    expect(screen.queryByRole('heading', { name: zh['coverage.title'] })).toBeNull()
+    expect(screen.queryByText(zh['coverage.title'])).toBeNull()
     expect(screen.getByText('spawn("x")')).toBeTruthy()
   })
 
-  it('scrolls to the evidence group from a capability, instantly when motion is reduced', async () => {
+  it('shows the chosen capability evidence right under the chips, keeping focus on the chip', async () => {
     const user = userEvent.setup()
     renderReport(response([plugin()]))
     const chip = screen.getByRole('button', { name: '网络 · 同源' })
+    expect(chip.getAttribute('aria-pressed')).toBe('false')
+    expect(document.getElementById('trust-evidence-demo-plugin-network')).toBeNull()
     chip.focus()
     await user.keyboard('{Enter}')
     const group = document.getElementById('trust-evidence-demo-plugin-network')
-    expect(group).toBeTruthy()
-    expect(document.activeElement).toBe(group)
-    expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'nearest' })
+    expect(group?.textContent).toContain('fetch("https://example.test")')
+    expect(chip.getAttribute('aria-pressed')).toBe('true')
+    expect(document.getElementById('trust-evidence-demo-plugin-shell')).toBeNull()
+    const chips = chip.parentElement as HTMLElement
+    expect(chips.compareDocumentPosition(group as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(document.activeElement).toBe(chip)
+    await waitFor(() => {
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'nearest' })
+    })
   })
 
   it('rejects a stale acknowledgment with the existing fingerprint check', async () => {

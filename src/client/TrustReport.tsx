@@ -1,15 +1,14 @@
 /**
  * Settings section: renders the cached audit report and offers a rescan.
- * Reading order: change note, findings, scan limits, detail, evidence, acknowledgment.
+ * Reading order: change note, findings, capabilities with their evidence, detail, scan limits, acknowledgment.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AuditReport, AuditResponse, Capability, DestinationUsage, Evidence, FindingContext, InjectionKind, TrustAckEntry } from '../core/types.ts'
 import {
   ackDrifted,
   capabilityContext,
   capabilityDelta,
-  capabilityTier,
   concerns,
   countVerdicts,
   formatInjectionDetail,
@@ -55,12 +54,12 @@ function evidenceRegionId(pluginName: string): string {
   return `trust-evidence-${safe}`
 }
 
-/** Move focus to the evidence group. Reduced-motion users get an instant scroll. */
-function focusEvidence(el: HTMLElement | null): void {
+/** Bring evidence into view, optionally moving focus. Reduced-motion users get an instant scroll. */
+function revealEvidence(el: HTMLElement | null, focus: boolean): void {
   if (el === null) return
   const reduce = typeof window.matchMedia === 'function'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  el.focus({ preventScroll: true })
+  if (focus) el.focus({ preventScroll: true })
   el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'nearest' })
 }
 
@@ -94,34 +93,37 @@ function freezePlugin(report: AuditReport, schemaVersion: number): FrozenFinding
 }
 
 function CoverageNotes({ notes, t }: { notes: string[]; t: T }) {
-  const [open, setOpen] = useState(false)
   if (notes.length === 0) return null
-  const rest = notes.slice(1)
   return (
     <section className={css.section}>
-      <header className={css.sectionHead}>
-        <h3 className={css.sectionTitle}>{t('coverage.title')}</h3>
-        <p className={css.sectionHint}>{t('coverage.count').replace('{count}', String(notes.length))}</p>
-      </header>
-      <p className={css.coverageNote}>{notes[0]}</p>
-      {rest.length > 0 && (
-        <>
-          {open && (
-            <ul className={css.coverageList}>
-              {rest.map((note, index) => (
-                <li key={index} className={css.coverageNote}>{note}</li>
-              ))}
-            </ul>
-          )}
-          <button type="button" className={css.linkBtn} onClick={() => setOpen(value => !value)}>
-            {open
-              ? t('coverage.less')
-              : t('coverage.more').replace('{count}', String(rest.length))}
-          </button>
-        </>
-      )}
-      <p className={css.sectionHint}>{t('coverage.plain')}</p>
+      <details className={css.limits}>
+        <summary className={css.limitsSummary}>
+          <span>{t('coverage.title')}</span>
+          <span aria-hidden="true">·</span>
+          <span>{t('coverage.count').replace('{count}', String(notes.length))}</span>
+        </summary>
+        <ul className={css.coverageList}>
+          {notes.map((note, index) => (
+            <li key={index} className={css.coverageNote}>{note}</li>
+          ))}
+        </ul>
+        <p className={css.sectionHint}>{t('coverage.plain')}</p>
+      </details>
     </section>
+  )
+}
+
+function ruleMatch(snippet: string, rule?: string): ReactNode {
+  const name = rule?.split('.').pop()
+  if (name === undefined || name.length < 3) return snippet
+  const index = snippet.search(new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`))
+  if (index < 0) return snippet
+  return (
+    <>
+      {snippet.slice(0, index)}
+      <mark className={css.codeMatch}>{snippet.slice(index, index + name.length)}</mark>
+      {snippet.slice(index + name.length)}
+    </>
   )
 }
 
@@ -159,7 +161,10 @@ function EvidenceRow({
           <code className={css.evidenceRule}>{ev.rule}</code>
         )}
       </div>
-      <pre className={css.evidenceSnippet}><code>{ev.snippet}</code></pre>
+      <pre className={css.evidenceSnippet}>
+        <span className={css.lineNo} aria-hidden="true">{ev.line}</span>
+        <code>{ruleMatch(ev.snippet, ev.rule)}</code>
+      </pre>
       <div className={css.evidenceFoot}>
         <button
           type="button"
@@ -173,99 +178,99 @@ function EvidenceRow({
   )
 }
 
-function EvidencePanel({
+function CapabilityEvidence({
   report,
   t,
-  focusCap,
-  onClearFocus,
+  added,
   explainLoading,
   explainText,
   explainError,
   onExplain,
   onFeedback,
+  revealSeq,
 }: {
   report: AuditReport
   t: T
-  focusCap: Capability | null
-  onClearFocus: () => void
+  /** Capabilities new since the last acknowledgment; the first one with evidence is selected first. */
+  added: Capability[]
   explainLoading: boolean
   explainText: string | null
   explainError: boolean
   onExplain: () => void
   onFeedback: (ev: Evidence, opener: HTMLElement) => void
+  /** Bumped by "view all evidence": show every group and move focus here. */
+  revealSeq: number
 }) {
-  const filtered = focusCap === null
-    ? report.evidence
-    : report.evidence.filter(e => e.capability === focusCap)
-
-  const capGroups = useMemo(() => {
-    const map = groupEvidence(filtered)
-    const caps = [...map.keys()].sort(
-      (a, b) => (CAPABILITY_WEIGHT[b] ?? 0) - (CAPABILITY_WEIGHT[a] ?? 0),
-    )
-    return caps.map(cap => ({
-      cap,
-      rows: sortEvidenceRows(map.get(cap) ?? []),
-    }))
-  }, [filtered])
-
+  const groups = useMemo(() => groupEvidence(report.evidence), [report.evidence])
+  const evidenceCaps = useMemo(
+    () => [...groups.keys()].sort((a, b) => (CAPABILITY_WEIGHT[b] ?? 0) - (CAPABILITY_WEIGHT[a] ?? 0)),
+    [groups],
+  )
+  const [selected, setSelected] = useState<Capability | null>(
+    () => added.find(cap => groups.has(cap)) ?? evidenceCaps[0] ?? report.capabilities[0] ?? null,
+  )
+  const [showEvery, setShowEvery] = useState(false)
   const [expandedCaps, setExpandedCaps] = useState<Set<Capability>>(new Set())
-  const [foldOpen, setFoldOpen] = useState(false)
   const regionRef = useRef<HTMLElement>(null)
   const groupRefs = useRef(new Map<Capability, HTMLDivElement>())
-  const detailsOpen = foldOpen || focusCap !== null
 
   useEffect(() => {
-    if (focusCap !== null) setExpandedCaps(new Set([focusCap]))
-  }, [focusCap])
+    if (revealSeq === 0) return
+    setShowEvery(true)
+    setExpandedCaps(new Set(evidenceCaps))
+    revealEvidence(regionRef.current, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealSeq])
 
-  useEffect(() => {
-    if (focusCap === null) return
-    const group = groupRefs.current.get(focusCap) ?? regionRef.current
-    focusEvidence(group)
-  }, [focusCap])
+  const choose = (cap: Capability) => {
+    setSelected(cap)
+    setShowEvery(false)
+    requestAnimationFrame(() => revealEvidence(groupRefs.current.get(cap) ?? null, false))
+  }
+
+  const shown = showEvery ? evidenceCaps : selected !== null && groups.has(selected) ? [selected] : []
 
   return (
-    <section
-      className={css.section}
-      id={evidenceRegionId(report.name)}
-      tabIndex={-1}
-      ref={regionRef}
-    >
-      {report.evidence.length === 0 ? (
-        <>
-          <h3 className={css.sectionTitle}>{t('evidence')}</h3>
-          <p className={css.sectionEmpty}>{t('evidence.none')}</p>
-        </>
-      ) : (
-      <details
-        className={css.fold}
-        open={detailsOpen}
-        onToggle={event => {
-          setFoldOpen(event.currentTarget.open)
-          if (!event.currentTarget.open) onClearFocus()
-        }}
-      >
-        <summary className={css.foldSummary}>
-          <span className={css.sectionTitleInline}>{t('evidence')}</span>
-          <span className={css.countPill}>{filtered.length}</span>
-          <span className={css.foldMeta}>
-            {focusCap !== null ? t(capLabelKey(focusCap)) : t('evidence.grouped')}
-          </span>
-        </summary>
-        <p className={css.sectionHint}>{t('evidence.hint')}</p>
-        {focusCap !== null && (
-          <button type="button" className={css.linkBtn} onClick={onClearFocus}>
-            {t('evidence.clearFilter')}
-          </button>
-        )}
+    <section className={css.section} id={evidenceRegionId(report.name)} tabIndex={-1} ref={regionRef}>
+      <header className={css.sectionHead}>
+        <h3 className={css.sectionTitle}>{t('capabilities')}</h3>
+        {report.evidence.length > 0 && <p className={css.sectionHint}>{t('evidence.hint')}</p>}
+      </header>
+      {report.capabilities.length === 0
+        ? <div className={css.muted}>{t('none')}</div>
+        : (
+            <div className={css.chips}>
+              {report.capabilities.map(cap => {
+                const pressed = !showEvery && selected === cap
+                return (
+                  <button
+                    key={cap}
+                    type="button"
+                    className={`${css.chip} ${css.chipBtn} ${pressed ? css.chipOn : ''}`}
+                    aria-pressed={pressed}
+                    aria-controls={evidenceDomId(report.name, cap)}
+                    onClick={() => choose(cap)}
+                  >
+                    {capChipText(cap, t, report)}
+                    {added.includes(cap) && ` · ${t('capabilities.new')}`}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+      {!showEvery && selected !== null && !groups.has(selected) && (
+        <p className={`${css.sectionEmpty} ${css.evidenceEmpty}`}>{t('evidence.none')}</p>
+      )}
+      {shown.length > 0 && (
         <div className={css.evidenceGroups}>
-          {capGroups.map(({ cap, rows }) => {
-            const showAll = expandedCaps.has(cap) || focusCap === cap
+          {shown.map(cap => {
+            const rows = sortEvidenceRows(groups.get(cap) ?? [])
+            const expanded = expandedCaps.has(cap)
             const primary = rows.filter(r => !isPresenceOnlyFsRead(r.snippet))
             const weak = rows.filter(r => isPresenceOnlyFsRead(r.snippet))
             const main = primary.length > 0 ? primary : rows
-            const visible = showAll ? main : main.slice(0, EVIDENCE_PREVIEW)
+            const visible = expanded ? main : main.slice(0, EVIDENCE_PREVIEW)
             return (
               <div
                 key={cap}
@@ -277,18 +282,18 @@ function EvidencePanel({
                   else groupRefs.current.set(cap, el)
                 }}
               >
-                <div className={css.evidenceGroupHead}>
-                  <span className={`${css.chip} ${css[`tier-${capabilityTier(cap)}`]}`}>
-                    {capChipText(cap, t, report)}
-                  </span>
-                  <span className={css.countPill}>{rows.length}</span>
-                </div>
+                {showEvery && (
+                  <div className={css.evidenceGroupHead}>
+                    <span className={css.groupLabel}>{capChipText(cap, t, report)}</span>
+                    <span className={css.countPill}>{rows.length}</span>
+                  </div>
+                )}
                 <ul className={css.evidenceList}>
                   {visible.map((ev, i) => (
                     <EvidenceRow key={`${ev.file}:${ev.line}:${i}`} ev={ev} t={t} onFeedback={onFeedback} />
                   ))}
                 </ul>
-                {main.length > EVIDENCE_PREVIEW && !showAll && (
+                {main.length > EVIDENCE_PREVIEW && !expanded && (
                   <button
                     type="button"
                     className={css.linkBtn}
@@ -313,8 +318,15 @@ function EvidencePanel({
             )
           })}
         </div>
-      </details>
       )}
+      {evidenceCaps.length > 1 && (
+        <button type="button" className={css.linkBtn} onClick={() => setShowEvery(value => !value)}>
+          {showEvery
+            ? t('evidence.showSelected')
+            : t('evidence.showEvery').replace('{count}', String(report.evidence.length))}
+        </button>
+      )}
+
       <div className={css.aidLabel}>{t('explain.aid')}</div>
       <button type="button" className={css.actionBtnSecondary} disabled={explainLoading} onClick={onExplain}>
         {explainLoading ? t('explain.loading') : t('explain.button')}
@@ -348,6 +360,17 @@ function verdictKey(v: Verdict): TrustKey {
   if (v === 'review') return 'verdict.review'
   if (v === 'expected') return 'verdict.expected'
   return 'verdict.clear'
+}
+
+function decisionKey(v: Verdict): TrustKey {
+  return `decision.${v}` as TrustKey
+}
+
+/** Install channel only (`npm`, `link`, `git`, …) — never the local path in a `link:` spec. */
+function sourceKind(spec: string): string {
+  const scheme = /^([a-z][a-z0-9+.-]+):/i.exec(spec)?.[1]?.toLowerCase()
+  if (scheme === undefined) return 'npm'
+  return scheme.startsWith('git') ? 'git' : scheme
 }
 
 function actionKey(v: Verdict): TrustKey {
@@ -422,36 +445,6 @@ function secretKindKey(kind: AuditReport['secretTouches'][number]['kind']): Trus
   return `secretKind.${kind}` as TrustKey
 }
 
-function CapabilityChips({
-  caps,
-  t,
-  report,
-  onSelect,
-}: {
-  caps: Capability[]
-  t: T
-  report: AuditReport
-  onSelect?: (cap: Capability) => void
-}) {
-  if (caps.length === 0) return <div className={css.muted}>{t('none')}</div>
-  return (
-    <div className={css.chips}>
-      {caps.map(cap => (
-        <button
-          key={cap}
-          type="button"
-          className={`${css.chip} ${css[`tier-${capabilityTier(cap)}`]} ${onSelect !== undefined ? css.chipBtn : ''}`}
-          aria-controls={evidenceDomId(report.name, cap)}
-          onClick={onSelect !== undefined ? () => onSelect(cap) : undefined}
-          disabled={onSelect === undefined}
-        >
-          {capChipText(cap, t, report)}
-        </button>
-      ))}
-    </div>
-  )
-}
-
 function DestinationsPanel({ report, t }: { report: AuditReport; t: T }) {
   const destinations = useMemo(
     () => (report.destinations ?? []).filter(d => d.kind !== 'relative'),
@@ -481,12 +474,13 @@ function DestinationsPanel({ report, t }: { report: AuditReport; t: T }) {
       highlight !== undefined ? css.destRowHigh : '',
       whitelist !== undefined ? css.destRowSafe : '',
     ].filter(Boolean).join(' ')
+    const usages = distinctUsages(d.sites ?? [])
     return (
       <li key={key} className={rowClass}>
-        <span className={css.destKind}>{t(destKindKey(d.kind))}</span>
         <div className={css.destBody}>
           <div className={css.destValueLine}>
             <code className={css.destValue}>{d.value}</code>
+            <span className={css.tag}>{t(destKindKey(d.kind))}</span>
             {highlight === 'plaintext' && (
               <span className={`${css.tag} ${css.tagPlain}`}>{t('destinations.plaintext')}</span>
             )}
@@ -499,9 +493,6 @@ function DestinationsPanel({ report, t }: { report: AuditReport; t: T }) {
             {whitelist !== undefined && (
               <span className={`${css.tag} ${css.tagSafe}`}>{t('destinations.allowlisted')}</span>
             )}
-            {distinctUsages(d.sites ?? []).map(usage => (
-              <span key={usage} className={`${css.tag} ${css.tagContext}`}>{t(`destUsage.${usage}`)}</span>
-            ))}
           </div>
           {whitelist !== undefined && (
             <div className={css.destNote}>{t(`destWhitelist.${whitelist}` as TrustKey)}</div>
@@ -526,6 +517,9 @@ function DestinationsPanel({ report, t }: { report: AuditReport; t: T }) {
             </div>
           )}
         </div>
+        {usages.length > 0 && (
+          <span className={css.destUsage}>{usages.map(usage => t(`destUsage.${usage}`)).join(' · ')}</span>
+        )}
       </li>
     )
   }
@@ -567,10 +561,12 @@ function PathEscapesPanel({ report, t }: { report: AuditReport; t: T }) {
       </header>
       <ul className={css.destList}>
         {pathEscapes.map((p, i) => (
-          <li key={i} className={`${css.destRow} ${css.destRowHigh}`}>
-            <span className={css.destKind}>{t(`pathEscape.${p.kind}` as TrustKey)}</span>
+          <li key={i} className={css.destRow}>
             <div className={css.destBody}>
-              <code className={css.destValue}>{p.value}</code>
+              <div className={css.destValueLine}>
+                <code className={css.destValue}>{p.value}</code>
+                <span className={`${css.tag} ${css.tagWarn}`}>{t(`pathEscape.${p.kind}` as TrustKey)}</span>
+              </div>
             </div>
           </li>
         ))}
@@ -590,10 +586,10 @@ function SecretTouchesPanel({ report, t }: { report: AuditReport; t: T }) {
       <ul className={css.destList}>
         {secretTouches.map((s, i) => (
           <li key={i} className={css.destRow}>
-            <span className={css.destKind}>{t(secretKindKey(s.kind))}</span>
             <div className={css.destBody}>
               <div className={css.destValueLine}>
                 <code className={css.destValue}>{s.value}</code>
+                <span className={css.tag}>{t(secretKindKey(s.kind))}</span>
                 <ContextTags context={s.context} t={t} />
               </div>
             </div>
@@ -692,7 +688,7 @@ function PluginCardBody({
   const drift = ack !== undefined && ackDrifted(report, ack)
   const { added, removed } = capabilityDelta(report, ack)
   const repoHref = repositoryHref(report.repository)
-  const [evidenceFocus, setEvidenceFocus] = useState<Capability | null>(null)
+  const [revealSeq, setRevealSeq] = useState(0)
   const [ackLoading, setAckLoading] = useState(false)
   const [ackError, setAckError] = useState(false)
   const [ackStale, setAckStale] = useState(false)
@@ -770,56 +766,74 @@ function PluginCardBody({
     <div className={css.cardBody}>
       {drift && (
         <section className={css.drift}>
-          <p className={css.driftTitle}>{t('drift.title')}</p>
-          {added.length > 0 && (
-            <p className={css.driftRow}>
-              <span className={css.driftLabel}>{t('drift.added')}</span>
-              {added.map(cap => (
-                <span key={cap} className={`${css.deltaPill} ${css.deltaAdded}`}>
-                  <span aria-hidden="true">+ </span>{t(capLabelKey(cap))}
-                </span>
-              ))}
-            </p>
-          )}
-          {removed.length > 0 && (
-            <p className={css.driftRow}>
-              <span className={css.driftLabel}>{t('drift.removed')}</span>
-              {removed.map(cap => (
-                <span key={cap} className={`${css.deltaPill} ${css.deltaRemoved}`}>
-                  <span aria-hidden="true">− </span>{t(capLabelKey(cap))}
-                </span>
-              ))}
-            </p>
-          )}
+          <p className={css.driftTitle}>
+            <span>{t('drift.title')}</span>
+            {added.length > 0 && (
+              <span className={css.driftGroup}>
+                <span className={css.srOnly}>{t('drift.added')}</span>
+                {added.map(cap => (
+                  <span key={cap} className={`${css.deltaPill} ${css.deltaAdded}`}>
+                    <span aria-hidden="true">+ </span>{t(capLabelKey(cap))}
+                  </span>
+                ))}
+              </span>
+            )}
+            {removed.length > 0 && (
+              <span className={css.driftGroup}>
+                <span className={css.srOnly}>{t('drift.removed')}</span>
+                {removed.map(cap => (
+                  <span key={cap} className={`${css.deltaPill} ${css.deltaRemoved}`}>
+                    <span aria-hidden="true">− </span>{t(capLabelKey(cap))}
+                  </span>
+                ))}
+              </span>
+            )}
+          </p>
           <p className={css.driftNote}>{t('drift.ruleNote')}</p>
         </section>
       )}
 
-      <section className={`${css.decision} ${css[`decision-${v}`]}`}>
+      <section className={css.decision}>
+        <div className={css.decisionHead}>
+          <h3 className={css.decisionTitle}>{t(decisionKey(v))}</h3>
+          <button
+            type="button"
+            className={css.linkBtn}
+            onClick={event => {
+              onOpenFeedback(freezePlugin(report, schemaVersion), event.currentTarget)
+            }}
+          >
+            {t('feedback.general')}
+          </button>
+        </div>
         <p className={css.action}>
           {t(actionKey(v)).replace('{profile}', profile).replace('{name}', report.name)}
         </p>
         {concernList.length > 0 && v !== 'expected' && (
-          <div className={css.concerns}>
-            <h3 className={css.concernTitle}>{t('concerns.title')}</h3>
-            <ul className={css.concernList}>
-              {concernList.map((item, i) => (
-                <li key={i}>{concernLabel(item, t)}</li>
-              ))}
-            </ul>
-          </div>
+          <ul className={css.concernList} aria-label={t('concerns.title')}>
+            {concernList.map((item, i) => (
+              <li key={i} className={i < report.redLines.length ? css.concernRed : undefined}>
+                {concernLabel(item, t)}
+              </li>
+            ))}
+          </ul>
         )}
       </section>
 
-      <CoverageNotes notes={report.coverageNotes ?? []} t={t} />
-
       <div className={css.scanStack}>
-        <section className={css.section}>
-          <header className={css.sectionHead}>
-            <h3 className={css.sectionTitle}>{t('capabilities')}</h3>
-          </header>
-          <CapabilityChips caps={report.capabilities} t={t} report={report} onSelect={cap => setEvidenceFocus(cap)} />
-        </section>
+        <CapabilityEvidence
+          report={report}
+          t={t}
+          added={drift ? added : []}
+          explainLoading={explainLoading}
+          explainText={explainText}
+          explainError={explainError}
+          onExplain={() => void explain()}
+          onFeedback={(ev, opener) => {
+            onOpenFeedback(freezeEvidence(report, schemaVersion, ev), opener)
+          }}
+          revealSeq={revealSeq}
+        />
 
         <DestinationsPanel report={report} t={t} />
         <PathEscapesPanel report={report} t={t} />
@@ -870,19 +884,7 @@ function PluginCardBody({
 
       </div>
 
-      <EvidencePanel
-        report={report}
-        t={t}
-        focusCap={evidenceFocus}
-        onClearFocus={() => setEvidenceFocus(null)}
-        explainLoading={explainLoading}
-        explainText={explainText}
-        explainError={explainError}
-        onExplain={() => void explain()}
-        onFeedback={(ev, opener) => {
-          onOpenFeedback(freezeEvidence(report, schemaVersion, ev), opener)
-        }}
-      />
+      <CoverageNotes notes={report.coverageNotes ?? []} t={t} />
 
       <section className={css.ackBar}>
         <div className={css.ackRow}>
@@ -893,7 +895,7 @@ function PluginCardBody({
               </button>
             )}
             {v === 'red' && (
-              <button type="button" className={css.actionBtnRisk} disabled={ackLoading} onClick={() => void postAck(true)}>
+              <button type="button" className={css.actionBtnSecondary} disabled={ackLoading} onClick={() => void postAck(true)}>
                 {ackLoading ? t('ack.saving') : t('ack.acceptRisk')}
               </button>
             )}
@@ -903,15 +905,11 @@ function PluginCardBody({
               </button>
             )}
           </div>
-          <button
-            type="button"
-            className={css.linkBtn}
-            onClick={event => {
-              onOpenFeedback(freezePlugin(report, schemaVersion), event.currentTarget)
-            }}
-          >
-            {t('feedback.general')}
-          </button>
+          {report.evidence.length > 0 && (
+            <button type="button" className={css.linkBtn} onClick={() => setRevealSeq(n => n + 1)}>
+              {t('ack.viewEvidence')}
+            </button>
+          )}
         </div>
         {ackStale && <div className={css.errorInline} role="status">{t('ack.stale')}</div>}
         {ackError && <div className={css.errorInline} role="status">{t('ack.error')}</div>}
@@ -946,9 +944,14 @@ function PluginRow({
 }) {
   const v = verdict(report, ack)
   const previewCaps = topCapabilities(report, 3)
+  const sourceLine = [
+    t('card.source').replace('{kind}', sourceKind(report.spec)),
+    t(report.pinned ? 'pinned' : 'unpinned'),
+    ...(ack !== undefined ? [t('card.lastAck').replace('{date}', new Date(ack.at).toLocaleDateString())] : []),
+  ].join(' · ')
 
   return (
-    <article className={`${css.plugin} ${css[`verdict-${v}`]}`}>
+    <article className={css.plugin}>
       <button type="button" className={css.pluginToggle} aria-expanded={expanded} onClick={onToggle}>
         <span className={css.toggleMain}>
           <span className={css.nameLine}>
@@ -957,12 +960,11 @@ function PluginRow({
           </span>
           <span className={`${css.statusBadge} ${css[`badge-${v}`]}`}>{t(verdictKey(v))}</span>
         </span>
-        {previewCaps.length > 0 && (
+        <span className={css.sourceLine}>{sourceLine}</span>
+        {!expanded && previewCaps.length > 0 && (
           <span className={css.previewChips}>
             {previewCaps.map(cap => (
-              <span key={cap} className={`${css.chip} ${css[`tier-${capabilityTier(cap)}`]}`}>
-                {capChipText(cap, t, report)}
-              </span>
+              <span key={cap} className={css.chip}>{capChipText(cap, t, report)}</span>
             ))}
           </span>
         )}

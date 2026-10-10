@@ -472,7 +472,7 @@ export function FeedbackDialog({
             <>
               <button type="button" className={css.btn} onClick={requestClose}>{t('feedback.cancel')}</button>
               <button type="button" className={`${css.btn} ${css.primary}`} onClick={goPreview}>
-                {t('feedback.next')}
+                {t('feedback.next')}<span className={css.arrow} aria-hidden="true">→</span>
               </button>
             </>
           ) : issue !== null && (

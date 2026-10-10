@@ -1,9 +1,12 @@
 .backdrop {
-  --fb-accent: #0f766e;
-  --fb-line: color-mix(in srgb, currentColor 14%, transparent);
+  --fb-accent: #346859;
+  --fb-accent-ink: color-mix(in srgb, #346859 55%, currentColor);
+  --fb-accent-soft: color-mix(in srgb, #346859 12%, transparent);
+  --fb-accent-line: color-mix(in srgb, #346859 45%, transparent);
+  --fb-line: var(--dsw-alias-border-l2, color-mix(in srgb, currentColor 14%, transparent));
   --fb-line-strong: color-mix(in srgb, currentColor 22%, transparent);
-  --fb-fill: color-mix(in srgb, currentColor 5%, transparent);
-  --fb-muted: color-mix(in srgb, currentColor 66%, transparent);
+  --fb-fill: color-mix(in srgb, currentColor 4%, transparent);
+  --fb-muted: var(--dsw-alias-label-secondary, color-mix(in srgb, currentColor 62%, transparent));
   --fb-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   position: fixed;
@@ -13,12 +16,12 @@
   align-items: flex-start;
   justify-content: center;
   padding: 6vh 16px 16px;
-  background: color-mix(in srgb, black 48%, transparent);
+  background: color-mix(in srgb, #18201d 38%, transparent);
   overflow: auto;
 }
 
 .dialog {
-  --fb-focus: color-mix(in srgb, #3b82f6 78%, currentColor);
+  --fb-focus: var(--fb-accent-ink);
 
   position: relative;
   isolation: isolate;
@@ -48,7 +51,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: 18px 20px 14px;
+  padding: 16px 20px 12px;
   border-bottom: 1px solid var(--fb-line);
 }
 
@@ -58,9 +61,9 @@
 
 .title {
   margin: 0;
-  font-size: 17px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
   overflow-wrap: anywhere;
 }
 
@@ -104,7 +107,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 4px 12px;
-  margin: 0 0 14px;
+  margin: 0 0 12px;
   padding: 0;
   list-style: none;
   font-size: 11px;
@@ -187,7 +190,7 @@
   align-items: center;
   justify-content: center;
   min-height: 40px;
-  padding: 7px 8px;
+  padding: 8px;
   border: 1px solid var(--fb-line-strong);
   border-radius: 8px;
   font-size: 12px;
@@ -201,9 +204,11 @@
   background: var(--fb-fill);
 }
 
-.typeActive {
-  border-color: color-mix(in srgb, var(--fb-accent) 70%, transparent);
-  background: color-mix(in srgb, var(--fb-accent) 11%, transparent);
+.typeActive,
+.typeActive:hover {
+  border-color: var(--fb-accent-line);
+  background: var(--fb-accent-soft);
+  color: var(--fb-accent-ink);
   font-weight: 600;
 }
 
@@ -261,7 +266,7 @@
   background: color-mix(in srgb, currentColor 3%, transparent);
   border: 1px solid var(--fb-line-strong);
   border-radius: 8px;
-  padding: 9px 10px;
+  padding: 8px 10px;
   font: inherit;
 }
 
@@ -273,7 +278,7 @@
 
 .field textarea:focus,
 .field input:focus {
-  border-color: color-mix(in srgb, var(--fb-accent) 70%, transparent);
+  border-color: var(--fb-accent-line);
 }
 
 .field .draftBody {
@@ -332,8 +337,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 34px;
-  padding: 6px 14px;
+  min-height: 32px;
+  padding: 6px 12px;
   border: 1px solid var(--fb-line-strong);
   border-radius: 8px;
   background: transparent;
@@ -356,6 +361,10 @@
   background: var(--fb-accent);
   color: #ffffff;
   font-weight: 600;
+}
+
+.arrow {
+  margin-left: 6px;
 }
 
 .primary:hover {

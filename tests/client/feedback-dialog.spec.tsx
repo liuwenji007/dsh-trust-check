@@ -72,7 +72,6 @@ function renderReport(row: AuditReport = plugin()) {
 }
 
 async function openEvidence(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByText(zh.evidence))
   await user.click(screen.getByRole('button', { name: zh['feedback.evidence'] }))
 }
 
