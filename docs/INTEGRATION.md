@@ -41,8 +41,8 @@ A catalog pins a scanner version on purpose, so that a release cannot change sto
 
 - Always check `schemaVersion` (currently `2`).
 - Always check `errors`: non-empty means that tree (or installed entry) could not be read — treat as scan failure, not `clear`. This includes profiles that do not exist, a missing or corrupt profile `package.json`, a declared plugin directory that is absent, and a package whose scan hits a size limit or cannot read a primary entry.
-- `coverageNotes` on a report, when present, describe static imports the scanner could not expand, and files whose comments could not be stripped (those files are scanned raw). They do not change `verdict()`. A hand-written gate keeps using `errors`, `redLines`, `capabilities`, and patch override/disable.
-- **`--dir`**: `profile` is `""`, `dir` is the absolute path. Use **`plugins[0]`**. Empty `plugins` with `errors` ⇒ fail closed.
+- `coverageNotes` on a report, when present, describe static imports the scanner could not expand, files whose comments could not be stripped (those files are scanned raw), and dev-only files dropped by a parseable `package.json` `files` field (`filtered by package.json files: …`). They do not change `verdict()`. A hand-written gate keeps using `errors`, `redLines`, `capabilities`, and patch override/disable.
+- **`--dir`**: `profile` is `""`, `dir` is the absolute path. Use **`plugins[0]`**. Empty `plugins` with `errors` ⇒ fail closed. A source tree whose `files` field parses exactly omits files npm would not publish, so capabilities can differ from a scan of the whole checkout. An extracted registry tarball already contains only published files.
 - **Empty / corrupt extract**: if the directory has no readable `package.json` **and** no scannable source/skill/patch files, collection throws and lands in `errors` (not a silent `clear` report). A `package.json`-only minimal package is still valid and may be `clear`.
 - **`--profile`**: iterate `plugins[]`. Optional `acks` is for Settings fingerprints only.
 
