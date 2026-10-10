@@ -1,8 +1,8 @@
 /**
  * Settings section: renders the cached audit report and offers a rescan.
- * Decision-first layout: verdict, shape, scan dimensions, evidence, ack, explain.
+ * Reading order: change note, findings, scan limits, detail, evidence, acknowledgment.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AuditReport, AuditResponse, Capability, DestinationUsage, Evidence, FindingContext, InjectionKind, TrustAckEntry } from '../core/types.ts'
 import {
@@ -32,6 +32,8 @@ import {
 } from '../core/destination-priority.ts'
 import type { TrustKey } from './locales.ts'
 import type { createTrustStore } from './stores.ts'
+import { FeedbackDialog } from './FeedbackDialog.tsx'
+import type { FrozenFinding } from './feedback-draft.ts'
 import css from './TrustReport.module.css'
 
 export type TrustReportProps =
@@ -41,6 +43,86 @@ export type TrustReportProps =
 type T = (key: TrustKey) => string
 
 const EVIDENCE_PREVIEW = 2
+
+function evidenceDomId(pluginName: string, cap: Capability): string {
+  const safe = pluginName.replace(/[^A-Za-z0-9_-]/g, '-')
+  return `trust-evidence-${safe}-${cap}`
+}
+
+function evidenceRegionId(pluginName: string): string {
+  const safe = pluginName.replace(/[^A-Za-z0-9_-]/g, '-')
+  return `trust-evidence-${safe}`
+}
+
+/** Move focus to the evidence group. Reduced-motion users get an instant scroll. */
+function focusEvidence(el: HTMLElement | null): void {
+  if (el === null) return
+  const reduce = typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  el.focus({ preventScroll: true })
+  el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'nearest' })
+}
+
+function freezeEvidence(report: AuditReport, schemaVersion: number, ev: Evidence): FrozenFinding {
+  return {
+    entry: 'evidence',
+    pluginName: report.name,
+    pluginVersion: report.version,
+    spec: report.spec,
+    repository: report.repository,
+    schemaVersion,
+    capability: ev.capability,
+    ruleId: ev.rule !== undefined && ev.rule !== '' ? ev.rule : undefined,
+    file: ev.file,
+    line: ev.line,
+    snippet: ev.snippet,
+    destinations: (report.destinations ?? []).map(item => item.value),
+  }
+}
+
+function freezePlugin(report: AuditReport, schemaVersion: number): FrozenFinding {
+  return {
+    entry: 'plugin',
+    pluginName: report.name,
+    pluginVersion: report.version,
+    spec: report.spec,
+    repository: report.repository,
+    schemaVersion,
+    destinations: (report.destinations ?? []).map(item => item.value),
+  }
+}
+
+function CoverageNotes({ notes, t }: { notes: string[]; t: T }) {
+  const [open, setOpen] = useState(false)
+  if (notes.length === 0) return null
+  const rest = notes.slice(1)
+  return (
+    <section className={css.section}>
+      <header className={css.sectionHead}>
+        <h3 className={css.sectionTitle}>{t('coverage.title')}</h3>
+        <p className={css.sectionHint}>{t('coverage.count').replace('{count}', String(notes.length))}</p>
+      </header>
+      <p className={css.coverageNote}>{notes[0]}</p>
+      {rest.length > 0 && (
+        <>
+          {open && (
+            <ul className={css.coverageList}>
+              {rest.map((note, index) => (
+                <li key={index} className={css.coverageNote}>{note}</li>
+              ))}
+            </ul>
+          )}
+          <button type="button" className={css.linkBtn} onClick={() => setOpen(value => !value)}>
+            {open
+              ? t('coverage.less')
+              : t('coverage.more').replace('{count}', String(rest.length))}
+          </button>
+        </>
+      )}
+      <p className={css.sectionHint}>{t('coverage.plain')}</p>
+    </section>
+  )
+}
 
 /** Existence/stat checks prove fs-read capability but are low-signal for review. */
 function isPresenceOnlyFsRead(snippet: string): boolean {
@@ -61,11 +143,21 @@ function EvidencePanel({
   t,
   focusCap,
   onClearFocus,
+  explainLoading,
+  explainText,
+  explainError,
+  onExplain,
+  onFeedback,
 }: {
   report: AuditReport
   t: T
   focusCap: Capability | null
   onClearFocus: () => void
+  explainLoading: boolean
+  explainText: string | null
+  explainError: boolean
+  onExplain: () => void
+  onFeedback: (ev: Evidence, opener: HTMLElement) => void
 }) {
   const filtered = focusCap === null
     ? report.evidence
@@ -83,16 +175,42 @@ function EvidencePanel({
   }, [filtered])
 
   const [expandedCaps, setExpandedCaps] = useState<Set<Capability>>(new Set())
+  const [foldOpen, setFoldOpen] = useState(false)
+  const regionRef = useRef<HTMLElement>(null)
+  const groupRefs = useRef(new Map<Capability, HTMLDivElement>())
+  const detailsOpen = foldOpen || focusCap !== null
 
   useEffect(() => {
     if (focusCap !== null) setExpandedCaps(new Set([focusCap]))
   }, [focusCap])
 
-  if (report.evidence.length === 0) return null
+  useEffect(() => {
+    if (focusCap === null) return
+    const group = groupRefs.current.get(focusCap) ?? regionRef.current
+    focusEvidence(group)
+  }, [focusCap])
 
   return (
-    <section className={css.section}>
-      <details className={css.fold} open={focusCap !== null}>
+    <section
+      className={css.section}
+      id={evidenceRegionId(report.name)}
+      tabIndex={-1}
+      ref={regionRef}
+    >
+      {report.evidence.length === 0 ? (
+        <>
+          <h3 className={css.sectionTitle}>{t('evidence')}</h3>
+          <p className={css.sectionEmpty}>{t('evidence.none')}</p>
+        </>
+      ) : (
+      <details
+        className={css.fold}
+        open={detailsOpen}
+        onToggle={event => {
+          setFoldOpen(event.currentTarget.open)
+          if (!event.currentTarget.open) onClearFocus()
+        }}
+      >
         <summary className={css.foldSummary}>
           <span className={css.sectionTitleInline}>{t('evidence')}</span>
           <span className={css.countPill}>{filtered.length}</span>
@@ -114,7 +232,16 @@ function EvidencePanel({
             const main = primary.length > 0 ? primary : rows
             const visible = showAll ? main : main.slice(0, EVIDENCE_PREVIEW)
             return (
-              <div key={cap} className={css.evidenceGroup}>
+              <div
+                key={cap}
+                id={evidenceDomId(report.name, cap)}
+                tabIndex={-1}
+                className={css.evidenceGroup}
+                ref={el => {
+                  if (el === null) groupRefs.current.delete(cap)
+                  else groupRefs.current.set(cap, el)
+                }}
+              >
                 <div className={css.evidenceGroupHead}>
                   <span className={`${css.chip} ${css[`tier-${capabilityTier(cap)}`]}`}>
                     {capChipText(cap, t, report)}
@@ -129,6 +256,13 @@ function EvidencePanel({
                         <ContextTags context={ev.context} t={t} />
                       </span>
                       <span className={css.evidenceSnippet}>{ev.snippet}</span>
+                      <button
+                        type="button"
+                        className={css.linkBtn}
+                        onClick={event => onFeedback(ev, event.currentTarget)}
+                      >
+                        {t('feedback.evidence')}
+                      </button>
                     </li>
                   ))}
                 </ul>
@@ -154,6 +288,13 @@ function EvidencePanel({
                             <ContextTags context={ev.context} t={t} />
                           </span>
                           <span className={css.evidenceSnippet}>{ev.snippet}</span>
+                          <button
+                            type="button"
+                            className={css.linkBtn}
+                            onClick={event => onFeedback(ev, event.currentTarget)}
+                          >
+                            {t('feedback.evidence')}
+                          </button>
                         </li>
                       ))}
                     </ul>
@@ -164,6 +305,18 @@ function EvidencePanel({
           })}
         </div>
       </details>
+      )}
+      <div className={css.aidLabel}>{t('explain.aid')}</div>
+      <button type="button" className={css.actionBtnSecondary} disabled={explainLoading} onClick={onExplain}>
+        {explainLoading ? t('explain.loading') : t('explain.button')}
+      </button>
+      {explainError && <div className={css.muted}>{t('explain.error')}</div>}
+      {explainText !== null && (
+        <div className={css.explainBox}>
+          <div className={css.muted}>{t('explain.disclaimer')}</div>
+          <p className={css.explainText}>{explainText}</p>
+        </div>
+      )}
     </section>
   )
 }
@@ -279,6 +432,7 @@ function CapabilityChips({
           key={cap}
           type="button"
           className={`${css.chip} ${css[`tier-${capabilityTier(cap)}`]} ${onSelect !== undefined ? css.chipBtn : ''}`}
+          aria-controls={evidenceDomId(report.name, cap)}
           onClick={onSelect !== undefined ? () => onSelect(cap) : undefined}
           disabled={onSelect === undefined}
         >
@@ -509,21 +663,25 @@ function PluginCardBody({
   report,
   ack,
   profile,
+  schemaVersion,
   t,
   onAckChange,
   onReplaceReport,
+  onOpenFeedback,
 }: {
   report: AuditReport
   ack?: TrustAckEntry
   profile: string
+  schemaVersion: number
   t: T
   onAckChange: () => void
   onReplaceReport: (report: AuditReport) => void
+  onOpenFeedback: (finding: FrozenFinding, opener: HTMLElement) => void
 }) {
   const v = verdict(report, ack)
   const concernList = concerns(report)
-  const drift = ackDrifted(report, ack)
-  const added = capabilityDelta(report, ack).added
+  const drift = ack !== undefined && ackDrifted(report, ack)
+  const { added, removed } = capabilityDelta(report, ack)
   const repoHref = repositoryHref(report.repository)
   const [evidenceFocus, setEvidenceFocus] = useState<Capability | null>(null)
   const [ackLoading, setAckLoading] = useState(false)
@@ -599,18 +757,23 @@ function PluginCardBody({
     }
   }
 
+  const capList = (caps: Capability[]) => caps.map(capability => t(`cap.${capability}`)).join(', ')
+
   return (
     <div className={css.cardBody}>
+      {drift && (
+        <section className={css.drift}>
+          <p>{t('drift.title')}</p>
+          {added.length > 0 && <p>{t('drift.added').replace('{list}', capList(added))}</p>}
+          {removed.length > 0 && <p>{t('drift.removed').replace('{list}', capList(removed))}</p>}
+          <p>{t('drift.ruleNote')}</p>
+        </section>
+      )}
+
       <section className={`${css.decision} ${css[`decision-${v}`]}`}>
         <p className={css.action}>
           {t(actionKey(v)).replace('{profile}', profile).replace('{name}', report.name)}
         </p>
-        {drift && <div className={css.drift}>{t('drift.title')}</div>}
-        {drift && added.length > 0 && (
-          <div className={css.drift}>
-            {t('drift.added').replace('{list}', added.map(capability => t(`cap.${capability}`)).join(', '))}
-          </div>
-        )}
         {concernList.length > 0 && v !== 'expected' && (
           <div className={css.concerns}>
             <h3 className={css.concernTitle}>{t('concerns.title')}</h3>
@@ -621,36 +784,9 @@ function PluginCardBody({
             </ul>
           </div>
         )}
-        <div className={css.actions}>
-          {v === 'review' && (
-            <button type="button" className={css.actionBtn} disabled={ackLoading} onClick={() => void postAck()}>
-              {ackLoading ? t('ack.saving') : t('ack.accept')}
-            </button>
-          )}
-          {v === 'red' && (
-            <button type="button" className={css.actionBtnRisk} disabled={ackLoading} onClick={() => void postAck(true)}>
-              {ackLoading ? t('ack.saving') : t('ack.acceptRisk')}
-            </button>
-          )}
-          {(v === 'expected' || v === 'accepted') && (
-            <button type="button" className={css.actionBtnSecondary} disabled={ackLoading} onClick={() => void revokeAck()}>
-              {t('ack.revoke')}
-            </button>
-          )}
-          <button type="button" className={css.actionBtnSecondary} disabled={explainLoading} onClick={() => void explain()}>
-            {explainLoading ? t('explain.loading') : t('explain.button')}
-          </button>
-        </div>
-        {ackStale && <div className={css.errorInline}>{t('ack.stale')}</div>}
-        {ackError && <div className={css.errorInline}>{t('ack.error')}</div>}
-        {explainError && <div className={css.muted}>{t('explain.error')}</div>}
-        {explainText !== null && (
-          <div className={css.explainBox}>
-            <div className={css.muted}>{t('explain.disclaimer')}</div>
-            <p className={css.explainText}>{explainText}</p>
-          </div>
-        )}
       </section>
+
+      <CoverageNotes notes={report.coverageNotes ?? []} t={t} />
 
       <div className={css.scanStack}>
         <section className={css.section}>
@@ -707,8 +843,53 @@ function PluginCardBody({
           )}
         </section>
 
-        <EvidencePanel report={report} t={t} focusCap={evidenceFocus} onClearFocus={() => setEvidenceFocus(null)} />
       </div>
+
+      <EvidencePanel
+        report={report}
+        t={t}
+        focusCap={evidenceFocus}
+        onClearFocus={() => setEvidenceFocus(null)}
+        explainLoading={explainLoading}
+        explainText={explainText}
+        explainError={explainError}
+        onExplain={() => void explain()}
+        onFeedback={(ev, opener) => {
+          onOpenFeedback(freezeEvidence(report, schemaVersion, ev), opener)
+        }}
+      />
+
+      <section className={css.section}>
+        <p className={css.ackNote}>{t('ack.scope')}</p>
+        <div className={css.actions}>
+          {v === 'review' && (
+            <button type="button" className={css.actionBtn} disabled={ackLoading} onClick={() => void postAck()}>
+              {ackLoading ? t('ack.saving') : t('ack.accept')}
+            </button>
+          )}
+          {v === 'red' && (
+            <button type="button" className={css.actionBtnRisk} disabled={ackLoading} onClick={() => void postAck(true)}>
+              {ackLoading ? t('ack.saving') : t('ack.acceptRisk')}
+            </button>
+          )}
+          {(v === 'expected' || v === 'accepted') && (
+            <button type="button" className={css.actionBtnSecondary} disabled={ackLoading} onClick={() => void revokeAck()}>
+              {t('ack.revoke')}
+            </button>
+          )}
+        </div>
+        {ackStale && <div className={css.errorInline} role="status">{t('ack.stale')}</div>}
+        {ackError && <div className={css.errorInline} role="status">{t('ack.error')}</div>}
+        <button
+          type="button"
+          className={css.linkBtn}
+          onClick={event => {
+            onOpenFeedback(freezePlugin(report, schemaVersion), event.currentTarget)
+          }}
+        >
+          {t('feedback.general')}
+        </button>
+      </section>
     </div>
   )
 }
@@ -717,20 +898,24 @@ function PluginRow({
   report,
   ack,
   profile,
+  schemaVersion,
   t,
   expanded,
   onToggle,
   onAckChange,
   onReplaceReport,
+  onOpenFeedback,
 }: {
   report: AuditReport
   ack?: TrustAckEntry
   profile: string
+  schemaVersion: number
   t: T
   expanded: boolean
   onToggle: () => void
   onAckChange: () => void
   onReplaceReport: (report: AuditReport) => void
+  onOpenFeedback: (finding: FrozenFinding, opener: HTMLElement) => void
 }) {
   const v = verdict(report, ack)
   const previewCaps = topCapabilities(report, 3)
@@ -761,9 +946,11 @@ function PluginRow({
           report={report}
           ack={ack}
           profile={profile}
+          schemaVersion={schemaVersion}
           t={t}
           onAckChange={onAckChange}
           onReplaceReport={onReplaceReport}
+          onOpenFeedback={onOpenFeedback}
         />
       )}
     </article>
@@ -780,6 +967,14 @@ export function TrustReport({ useStore, actions, t }: TrustReportProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [feedback, setFeedback] = useState<{ id: number, finding: FrozenFinding, opener: HTMLElement } | null>(null)
+  const feedbackSeq = useRef(0)
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  const openFeedback = (finding: FrozenFinding, opener: HTMLElement) => {
+    feedbackSeq.current += 1
+    setFeedback({ id: feedbackSeq.current, finding, opener })
+  }
 
   const refresh = async () => {
     setLoading(true)
@@ -821,15 +1016,15 @@ export function TrustReport({ useStore, actions, t }: TrustReportProps) {
   }
 
   return (
-    <div className={css.root}>
+    <div className={css.root} ref={rootRef}>
       <div className={css.head}>
         <div className={css.headText}>
           <h2 className={css.title}>{t('settings.title')}</h2>
           <p className={css.intro}>{t('intro')}</p>
+          <p className={css.postInstall}>{t('postInstall.note')}</p>
           <details className={css.help}>
             <summary>{t('howToRead.title')}</summary>
             <p>{t('howToRead.body')}</p>
-            <p className={css.muted}>{t('postInstall.note')}</p>
           </details>
         </div>
         <div className={css.headActions}>
@@ -844,9 +1039,9 @@ export function TrustReport({ useStore, actions, t }: TrustReportProps) {
 
       {overview !== null && <div className={css.overview}>{overview}</div>}
 
-      {error && <div className={css.error}>{t('loadError')}</div>}
+      {error && <div className={css.error} role="alert">{t('loadError')}</div>}
 
-      {!error && normalizedReport !== null && normalizedReport.plugins.length === 0 && (
+      {!error && normalizedReport !== null && normalizedReport.plugins.length === 0 && normalizedReport.errors.length === 0 && (
         <div className={css.empty}>{t('empty')}</div>
       )}
 
@@ -856,10 +1051,12 @@ export function TrustReport({ useStore, actions, t }: TrustReportProps) {
           report={normalizeAuditReport(plugin)}
           ack={normalizedReport.acks?.[plugin.name]}
           profile={normalizedReport.profile === '' ? 'web' : normalizedReport.profile}
+          schemaVersion={normalizedReport.schemaVersion}
           t={t}
           expanded={expanded.has(plugin.name)}
           onToggle={() => togglePlugin(plugin.name)}
           onAckChange={() => void refresh()}
+          onOpenFeedback={openFeedback}
           onReplaceReport={next => {
             if (report === null) return
             actions.setReport({
@@ -880,6 +1077,17 @@ export function TrustReport({ useStore, actions, t }: TrustReportProps) {
             ))}
           </ul>
         </section>
+      )}
+
+      {feedback !== null && (
+        <FeedbackDialog
+          key={feedback.id}
+          finding={feedback.finding}
+          themeRoot={rootRef.current}
+          returnFocus={feedback.opener}
+          t={t}
+          onClose={() => setFeedback(null)}
+        />
       )}
     </div>
   )

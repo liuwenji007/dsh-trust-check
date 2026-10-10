@@ -82,6 +82,13 @@
   line-height: 1.55;
 }
 
+.postInstall {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--trust-muted);
+  line-height: 1.55;
+}
+
 .refresh {
   flex: none;
   padding: 7px 12px;
@@ -336,13 +343,21 @@
 }
 
 .drift {
-  margin-top: 10px;
+  margin-top: 12px;
   padding: 8px 10px;
   border-radius: var(--trust-radius-sm);
   font-size: 12px;
   color: var(--trust-amber);
   background: color-mix(in srgb, var(--trust-amber) 6%, transparent);
   border: 1px solid color-mix(in srgb, var(--trust-amber-soft) 45%, transparent);
+}
+
+.drift p {
+  margin: 0;
+}
+
+.drift p + p {
+  margin-top: 6px;
 }
 
 .concerns {
@@ -948,6 +963,52 @@ details[open] > .foldSummary::before {
   border: 1px solid var(--trust-line);
 }
 
+.evidenceGroup:focus {
+  outline: 2px solid color-mix(in srgb, currentColor 45%, transparent);
+  outline-offset: 2px;
+}
+
+.evidenceMeta code,
+.destValue,
+.repoLink,
+.repoPlain {
+  overflow-wrap: anywhere;
+}
+
+.coverageList {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.coverageNote {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--trust-ink);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.ackNote {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--trust-muted);
+}
+
+.aidLabel {
+  margin: 12px 0 0;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--trust-muted);
+}
+
 .evidenceGroupHead {
   display: flex;
   align-items: center;
@@ -1060,6 +1121,7 @@ details[open] > .foldSummary::before {
   .pluginToggle,
   .actionBtn,
   .actionBtnSecondary,
+  .actionBtnRisk,
   .chip,
   .help summary,
   .foldSummary,

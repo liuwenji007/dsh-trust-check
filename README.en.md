@@ -59,15 +59,20 @@ The exit code is always 0 by default. With `--exit-code`: `0` nothing detected (
 
 ## How to read the report
 
-The settings UI and CLI use a **decision-first** layout. Reading order:
+Read a settings card in this order (still one column, not a split view):
 
-1. **Decision**: badge + action line + "why be careful" (up to 3 bullets)
-2. **Scan**: capability chips → injection summary (collapsed) → source
-3. **Evidence**: grouped by capability, collapsed by default
+1. **Change**: only when an acknowledgment exists and no longer matches. The wording is "compared with your last acknowledgment", and a change can also come from updated scan rules
+2. **Findings**: badge + action line + "why be careful" (up to 3 bullets)
+3. **Scan limits**: shown only when `coverageNotes` exist, as plain text, not as a claim of malicious behavior
+4. **Detail**: capabilities, destinations, path escapes, secret touches, injections, source
+5. **Evidence**: grouped by capability. Choosing a capability expands that evidence and scrolls to it. AI explanation sits here as a reading aid
+6. **Acknowledgment**: after the evidence. It only saves your confirmation. It does not change permissions or prove safety
+
+The CLI prints the same facts and does not use this card order.
 
 | Verdict | Meaning | When |
 |---|---|---|
-| **Red line(s)** | Hard red line hit; stop by default — or confirm risk to keep using | `redLines` non-empty, current fingerprint not acknowledged |
+| **Red line(s)** | A hard red line was detected. Review the specific facts; you can still confirm the risk to keep using it | `redLines` non-empty, current fingerprint not acknowledged |
 | **Risk accepted** | You confirmed the current red-line risk | Has red lines, `trust-ack.json` matches this scan |
 | **Review** | No hard red lines, but privileged capabilities or patch changes | Has capabilities or override/disable, no red lines |
 | **As expected** | You acknowledged the current capability/shape fingerprint | `trust-ack.json` matches this scan (no red lines) |
@@ -102,7 +107,9 @@ These mean "we saw this string in source", not "this address/path is safe"; runt
 
 After you confirm capabilities match why you installed the plugin, the fingerprint is stored in `~/.dsh/profiles/<profile>/trust-ack.json`. An upgrade that changes capabilities, destinations, path escapes, secrets, red lines, or skill text (by content hash, not byte length) must be confirmed again. The confirmation request sends the report's `ackFingerprint`; a mismatch returns 409 and asks you to review the refreshed report. Older acknowledgements without a `digest` no longer match. Accepting a red line still requires its own "confirm risk" action, and only after the fingerprint matches.
 
-**AI explain**: optional button; uses your DSH-configured model to explain the report summary only, **does not change the verdict**; unavailable when no model is configured.
+**AI explain**: in the evidence area, labeled as a reading aid. Uses your DSH-configured model to explain the report summary only. It does not change the findings or your acknowledgment, and it is unavailable when no model is configured.
+
+**Report a detection issue**: each evidence row can build a draft, and the plugin detail has a separate entry for a miss or an unclear explanation. The draft stays in page memory. Inaccurate detections and unclear explanations open the detection-feedback Markdown issue editor with the title and body you edited; you submit it there. A miss opens the private report page from SECURITY.md, and the draft is not put on that URL. A public issue appears only after you say it is an ordinary rule gap with no exploitable bypass. Feedback does not change findings, acknowledgments, or permissions.
 
 ### Red lines (default block)
 

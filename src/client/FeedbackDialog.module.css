@@ -1,0 +1,142 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 24px 12px;
+  background: color-mix(in srgb, black 35%, transparent);
+  overflow: auto;
+}
+
+.dialog {
+  width: min(560px, 100%);
+  margin-top: 4vh;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  color: inherit;
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  box-shadow: 0 12px 40px color-mix(in srgb, currentColor 24%, transparent);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+}
+
+.close {
+  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  background: transparent;
+  color: inherit;
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.fieldset {
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  border-radius: 8px;
+}
+
+.fieldset legend {
+  padding: 0 4px;
+  font-size: 12px;
+}
+
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.field textarea,
+.field input {
+  width: 100%;
+  box-sizing: border-box;
+  color: inherit;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 8px;
+  padding: 8px;
+  font: inherit;
+}
+
+.field textarea {
+  min-height: 120px;
+  resize: vertical;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.actions button,
+.actions a {
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.live {
+  min-height: 1.2em;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.live p,
+.note {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.confirm {
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+}
+
+.confirm p {
+  margin: 0;
+  font-size: 13px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop {
+    scroll-behavior: auto;
+  }
+}
