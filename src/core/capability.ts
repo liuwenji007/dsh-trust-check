@@ -28,14 +28,15 @@ function manifestUsesHostRuntime(manifest: Record<string, unknown>): boolean {
  * can (`/${name}` → `//host`). `blob:` / `data:` literals are scheme fetch
  * (Fetch Standard §4.3) and never enter HTTP fetch. Absolute URLs, variables,
  * concatenation, and method calls are egress. Escapes are folded the way the
- * URL parser folds them, so `\` / `\n` / `\u002f` that become `//host` still
- * count. A comma or closing parenthesis after the literal starts the next
- * argument.
+ * URL parser folds them, so `\` / `\n` / `\u002f` / octal `\057` that become
+ * `//host` still count. A comma or closing parenthesis after the literal
+ * starts the next argument.
  */
 
 /**
  * Decode the escapes that can change a fetch URL, then fold like the URL
- * parser: drop tab / CR / LF, and treat `\` as `/`.
+ * parser: drop tab / CR / LF, and treat `\` as `/`. Legacy octal (`\057` is `/`,
+ * `\012` is a newline) is decoded the way a non-strict script runs it.
  * `undefined` means an escape was left undecoded (`\u{…}`), so the caller
  * must not treat the argument as same-origin.
  */
@@ -48,6 +49,17 @@ function decodeFetchArg(raw: string): string | undefined {
     }
     const next = raw[++i]
     if (next === undefined) return undefined
+    // Annex B legacy octal. A leading 0–3 takes up to three digits (`\057`),
+    // a leading 4–7 takes two (`\40`). `\0` not followed by 0–7 is NUL.
+    if (next >= '0' && next <= '7') {
+      let digits = next
+      const max = next >= '4' ? 2 : 3
+      while (digits.length < max && i + 1 < raw.length && raw[i + 1] >= '0' && raw[i + 1] <= '7') {
+        digits += raw[++i]
+      }
+      out += String.fromCharCode(Number.parseInt(digits, 8))
+      continue
+    }
     if (next === 'n') out += '\n'
     else if (next === 'r') out += '\r'
     else if (next === 't') out += '\t'

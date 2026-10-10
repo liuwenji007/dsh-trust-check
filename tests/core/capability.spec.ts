@@ -444,6 +444,8 @@ describe('scanCapabilities', () => {
       'await fetch(`/api/${id}`)',
       'await fetch(`./${file}`)',
       'await fetch(`../${file}`)',
+      "await fetch('/\\101pi')",
+      "await fetch('/\\40x')",
     ]) {
       const result = scanCapabilities(input({ 'lib/client.js': probe }))
       expect(result.capabilities, probe).not.toContain('network')
@@ -460,6 +462,8 @@ describe('scanCapabilities', () => {
       "await fetch('/\\n/evil.com')",
       "await fetch('/\\\\evil.com')",
       "await fetch('/\\u002f/evil.com')",
+      "await fetch('/\\057/evil.com')",
+      "await fetch('/\\012/evil.com')",
     ]) {
       const result = scanCapabilities(input({ 'lib/client.js': probe }))
       expect(result.capabilities, probe).toContain('network')
