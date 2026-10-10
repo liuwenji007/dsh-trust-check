@@ -6,9 +6,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        Detection rules live in `src/core/seams.ts` as a data table. DSH is still v0.1; seam names change. Updating a pattern updates CLI, the settings view, and any future CI gate at once.
+        Detection rules live in `src/core/seams.ts` as a data table. DSH is still v0.1; seam names change. Updating a pattern updates CLI, the settings view, and any future CI gate at once. An ordinary miss does not require reading that file: paste a settings draft, or use the false-negative template and write "none" for the rule.
 
-        检测规则是 `src/core/seams.ts` 里的数据表。DSH 仍是 v0.1，接口名会变。改表即改 CLI、设置页和未来的 CI 闸门。
+        检测规则是 `src/core/seams.ts` 里的数据表。DSH 仍是 v0.1，接口名会变。改表即改 CLI、设置页和未来的 CI 闸门。普通漏报不必先读规则源码：用设置页草稿，或漏报模板并在规则栏写 none。
   - type: dropdown
     id: capability
     attributes:

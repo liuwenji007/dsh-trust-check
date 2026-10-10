@@ -18,12 +18,24 @@
   --trust-sky: #0284c7;
   --trust-radius: 12px;
   --trust-radius-sm: 8px;
+  /* Solid fill for the one primary action; white text stays above 4.5:1. */
+  --trust-accent: #0f766e;
+  /* Blue mixed toward the ink: darker on light hosts, lighter on dark hosts. */
+  --trust-focus: color-mix(in srgb, #3b82f6 78%, currentColor);
+  --trust-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
+  /* Narrow layout follows the Settings column, not the window. */
+  container: trust-report / inline-size;
   display: flex;
   flex-direction: column;
   gap: 14px;
   color: inherit;
   line-height: 1.5;
+}
+
+.root :where(button, a, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--trust-focus);
+  outline-offset: 2px;
 }
 
 .head {
@@ -48,7 +60,7 @@
 
 .title {
   margin: 0;
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 650;
   letter-spacing: -0.01em;
   color: var(--trust-ink);
@@ -82,6 +94,25 @@
   line-height: 1.55;
 }
 
+.postInstall {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--trust-muted);
+  line-height: 1.55;
+}
+
+.scopeDot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--trust-amber);
+  transform: translateY(-1px);
+}
+
 .refresh {
   flex: none;
   padding: 7px 12px;
@@ -100,7 +131,7 @@
 }
 
 .refresh:focus-visible {
-  outline: 2px solid color-mix(in srgb, currentColor 45%, transparent);
+  outline: 2px solid var(--trust-focus);
   outline-offset: 2px;
 }
 
@@ -203,7 +234,7 @@
 }
 
 .pluginToggle:focus-visible {
-  outline: 2px solid color-mix(in srgb, currentColor 45%, transparent);
+  outline: 2px solid var(--trust-focus);
   outline-offset: -2px;
 }
 
@@ -291,15 +322,14 @@
 /* —— Card body hierarchy —— */
 
 .cardBody {
-  padding: 0 12px 14px;
+  padding: 0 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
   border-top: 1px solid var(--trust-line);
 }
 
 .decision {
-  margin-top: 12px;
+  margin: 14px 0;
   padding: 14px 14px 12px;
   border-radius: var(--trust-radius-sm);
   border: 1px solid var(--trust-line);
@@ -336,13 +366,57 @@
 }
 
 .drift {
-  margin-top: 10px;
-  padding: 8px 10px;
-  border-radius: var(--trust-radius-sm);
+  margin-top: 14px;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--trust-amber);
   font-size: 12px;
+  color: var(--trust-ink);
+}
+
+.drift p {
+  margin: 0;
+}
+
+.driftTitle {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.drift .driftRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.driftLabel {
+  color: var(--trust-muted);
+}
+
+.deltaPill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.deltaAdded {
   color: var(--trust-amber);
-  background: color-mix(in srgb, var(--trust-amber) 6%, transparent);
-  border: 1px solid color-mix(in srgb, var(--trust-amber-soft) 45%, transparent);
+  background: color-mix(in srgb, var(--trust-amber) 11%, transparent);
+}
+
+.deltaRemoved {
+  color: var(--trust-muted);
+  background: var(--trust-fill-strong);
+}
+
+.drift .driftNote {
+  margin-top: 6px;
+  color: var(--trust-muted);
 }
 
 .concerns {
@@ -417,13 +491,13 @@
 }
 
 .actionBtn {
-  border: 1px solid color-mix(in srgb, var(--trust-teal-soft) 70%, transparent);
-  background: color-mix(in srgb, var(--trust-teal) 6%, transparent);
-  color: var(--trust-teal);
+  border: 1px solid var(--trust-accent);
+  background: var(--trust-accent);
+  color: #ffffff;
 }
 
 .actionBtn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--trust-teal) 11%, transparent);
+  background: color-mix(in srgb, var(--trust-accent) 86%, black);
 }
 
 .actionBtnRisk {
@@ -448,7 +522,7 @@
 }
 
 .actionBtnRisk:focus-visible {
-  outline: 2px solid color-mix(in srgb, currentColor 45%, transparent);
+  outline: 2px solid var(--trust-focus);
   outline-offset: 2px;
 }
 
@@ -469,7 +543,7 @@
 
 .actionBtn:focus-visible,
 .actionBtnSecondary:focus-visible {
-  outline: 2px solid color-mix(in srgb, currentColor 45%, transparent);
+  outline: 2px solid var(--trust-focus);
   outline-offset: 2px;
 }
 
@@ -485,8 +559,54 @@
 
 .explainText {
   margin: 8px 0 0;
-  white-space: pre-wrap;
   color: var(--trust-ink);
+}
+
+.explainTitle {
+  margin: 10px 0 4px;
+  font-weight: 650;
+  color: var(--trust-ink);
+  overflow-wrap: anywhere;
+}
+
+.explainTitle:first-child {
+  margin-top: 0;
+}
+
+.explainParagraph {
+  margin: 0 0 8px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.explainParagraph:last-child,
+.explainList:last-child,
+.explainTitle:last-child {
+  margin-bottom: 0;
+}
+
+.explainList {
+  margin: 0 0 8px;
+  padding-left: 1.2em;
+}
+
+.explainList li {
+  margin: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+.explainStrong {
+  font-weight: 650;
+  color: var(--trust-ink);
+}
+
+.explainCode {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+  padding: 0.05em 0.28em;
+  border-radius: 4px;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  overflow-wrap: anywhere;
 }
 
 /* —— Scan stack —— */
@@ -494,13 +614,11 @@
 .scanStack {
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
 
 .section {
-  padding: 12px 12px 11px;
-  border-radius: var(--trust-radius-sm);
-  border: 1px solid var(--trust-line);
+  padding: 14px 0;
+  border-top: 1px solid var(--trust-line);
   background: transparent;
 }
 
@@ -510,19 +628,15 @@
 
 .sectionTitle {
   margin: 0;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--trust-muted);
+  color: var(--trust-ink);
 }
 
 .sectionTitleInline {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--trust-muted);
+  color: var(--trust-ink);
 }
 
 .sectionHint {
@@ -590,7 +704,7 @@
 }
 
 .chipBtn:focus-visible {
-  outline: 2px solid color-mix(in srgb, currentColor 45%, transparent);
+  outline: 2px solid var(--trust-focus);
   outline-offset: 1px;
 }
 
@@ -932,20 +1046,81 @@ details[open] > .foldSummary::before {
 }
 
 .evidenceGroups {
-  margin-top: 10px;
+  margin-top: 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  max-height: 260px;
-  overflow: auto;
-  padding-right: 2px;
+  gap: 16px;
 }
 
 .evidenceGroup {
-  padding: 8px 10px;
-  border-radius: 6px;
+  border-radius: var(--trust-radius-sm);
   background: transparent;
-  border: 1px solid var(--trust-line);
+}
+
+.evidenceGroup:focus {
+  outline: 2px solid var(--trust-focus);
+  outline-offset: 4px;
+}
+
+.evidenceMeta code,
+.destValue,
+.repoLink,
+.repoPlain {
+  overflow-wrap: anywhere;
+}
+
+.coverageList {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.coverageNote {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--trust-ink);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.ackBar {
+  margin: 0 -16px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--trust-line);
+  background: var(--trust-fill);
+}
+
+.ackRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+}
+
+.ackRow .actions,
+.ackRow .linkBtn {
+  margin-top: 0;
+}
+
+.ackNote {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--trust-muted);
+}
+
+.aidLabel {
+  margin: 12px 0 0;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--trust-muted);
 }
 
 .evidenceGroupHead {
@@ -986,33 +1161,76 @@ details[open] > .foldSummary::before {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .evidenceItem {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  font-size: 11px;
-  padding-left: 8px;
-  border-left: 2px solid var(--trust-line-strong);
+  border: 1px solid var(--trust-line-strong);
+  border-radius: var(--trust-radius-sm);
+  background: var(--trust-fill);
+  overflow: hidden;
+}
+
+.evidenceTop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 10px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--trust-line);
 }
 
 .evidenceMeta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  gap: 4px 6px;
+  min-width: 0;
   font-size: 11px;
   color: var(--trust-muted);
   font-variant-numeric: tabular-nums;
 }
 
+.evidenceFile {
+  font-family: var(--trust-mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.evidenceRule {
+  font-family: var(--trust-mono);
+  font-size: 11px;
+  color: var(--trust-muted);
+  overflow-wrap: anywhere;
+}
+
 .evidenceSnippet {
+  margin: 0;
+  padding: 9px 10px;
+  font-family: var(--trust-mono);
+  font-size: 12px;
+  line-height: 1.6;
   color: var(--trust-ink);
-  word-break: break-all;
-  line-height: 1.4;
-  opacity: 0.88;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.evidenceSnippet code {
+  font: inherit;
+}
+
+.evidenceFoot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 5px 10px 6px;
+  border-top: 1px solid var(--trust-line);
+}
+
+.evidenceFoot .linkBtn {
+  margin-top: 0;
 }
 
 .linkBtn {
@@ -1033,7 +1251,7 @@ details[open] > .foldSummary::before {
 }
 
 .linkBtn:focus-visible {
-  outline: 2px solid color-mix(in srgb, currentColor 45%, transparent);
+  outline: 2px solid var(--trust-focus);
   outline-offset: 1px;
 }
 
@@ -1060,6 +1278,7 @@ details[open] > .foldSummary::before {
   .pluginToggle,
   .actionBtn,
   .actionBtnSecondary,
+  .actionBtnRisk,
   .chip,
   .help summary,
   .foldSummary,
@@ -1070,7 +1289,7 @@ details[open] > .foldSummary::before {
   }
 }
 
-@media (max-width: 520px) {
+@container trust-report (max-width: 520px) {
   .destRow {
     grid-template-columns: 1fr;
     gap: 4px;
@@ -1081,6 +1300,35 @@ details[open] > .foldSummary::before {
   }
 
   .headActions {
-    align-items: flex-start;
+    flex-direction: row-reverse;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+
+  .pluginToggle {
+    padding: 12px;
+  }
+
+  .cardBody {
+    padding: 0 12px;
+  }
+
+  .ackBar {
+    margin: 0 -12px;
+    padding: 12px;
+  }
+
+  .ackRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ackRow .actions > button {
+    flex: 1 1 auto;
+  }
+
+  .ackRow > .linkBtn {
+    align-self: flex-start;
   }
 }

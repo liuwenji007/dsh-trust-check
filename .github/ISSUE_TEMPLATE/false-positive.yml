@@ -6,9 +6,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        A false-positive report is a test case. Paste the smallest snippet that still flags. Do not ask to "tune sensitivity" without a snippet.
+        A false-positive report is a test case. Paste the smallest snippet that still flags, or paste the draft from Plugin Trust. You do not need to read the scanner source or name a rule file.
 
-        误报报告本质是一个测试用例。贴上仍会命中的最小片段。没有片段就不要提「调灵敏度」。
+        误报报告本质是一个测试用例。贴上仍会命中的最小片段，或直接粘贴设置页里的反馈草稿。不必先读扫描器源码，也不必指出规则文件。
   - type: dropdown
     id: surface
     attributes:
