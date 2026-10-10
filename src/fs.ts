@@ -4,10 +4,12 @@
  * node half and the standalone CLI. Pure reads, no network.
  */
 
-import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { isSkillFile } from './core/injection.ts'
+import { lifecycleScriptPaths, shippedPredicate } from './core/packlist.ts'
+import { extractRelativeSpecifiers } from './core/specifiers.ts'
 import { blankComments } from './core/strip-comments.ts'
 import type { PluginInput } from './core/types.ts'
 
@@ -46,6 +48,10 @@ export const SCAN_LIMITS = {
 
 /** A patch is a small YAML roster parsed as a whole, not a code bundle. */
 const MAX_PATCH_BYTES = 512 * 1024
+
+/** Sourcemaps are display-only. A hostile package must not blow the scan with them. */
+const SOURCE_MAP_MAX_BYTES = 8 * 1024 * 1024
+const SOURCE_MAP_MAX_TOTAL_BYTES = 16 * 1024 * 1024
 
 export interface ScanLimits {
   maxFileBytes: number
@@ -117,12 +123,16 @@ function collectExportTarget(value: unknown, out: Set<string>): void {
   }
 }
 
-/** Relative paths declared by package.json entry points (main / exports / bin). */
+/** Relative paths declared by package.json entry points (main / exports / bin / browser). */
 export function manifestEntryPaths(manifest: Record<string, unknown>): string[] {
   const paths = new Set<string>()
 
   const main = manifest.main
   if (typeof main === 'string') paths.add(main)
+
+  // String form only. An object map is not packed as extra files by npm 10.
+  const browser = manifest.browser
+  if (typeof browser === 'string') paths.add(browser)
 
   const bin = manifest.bin
   if (typeof bin === 'string') {
@@ -441,9 +451,10 @@ function readPatch(manifest: Record<string, unknown>, dir: string): { text: stri
 /**
  * Directories to scan inside a plugin. Compiled output is the runtime truth,
  * so `lib/`/`dist/` win over `src/` when present; `bin/`, `scripts/`, and
- * shipped skill dirs are always scanned. When nothing compiled exists, fall
+ * shipped skill dirs are always walked. When nothing compiled exists, fall
  * back to the package root (a `link:`/source install still gets a useful read).
- * Manifest entry files (`main` / `exports` / `bin`) are always read too.
+ * After the walk, `package.json` `files` drops paths npm would not publish.
+ * Manifest entry files (`main` / `exports` / `bin`, and a string `browser`) are always read too.
  */
 function scanRoots(dir: string): string[] {
   const roots: string[] = []
@@ -481,8 +492,45 @@ export function collectPlugin(dir: string, spec: string, options?: CollectOption
   for (const root of scanRoots(dir)) {
     walk(join(dir, root), dir, sources, skillFiles, budget, limits)
   }
+  const shipped = shippedPredicate(manifest)
+  const walked = shipped === undefined
+    ? undefined
+    : new Set([...Object.keys(sources), ...Object.keys(skillFiles)])
+  if (shipped !== undefined) {
+    for (const bucket of [sources, skillFiles]) {
+      for (const rel of Object.keys(bucket)) {
+        if (!shipped(rel)) delete bucket[rel]
+      }
+    }
+    for (const raw of lifecycleScriptPaths(manifest)) {
+      const located = locatePackagePath(dir, resolve(dir, raw))
+      if (located.kind === 'escape') {
+        pushNote(coverageNotes, omitted, `lifecycle script target escapes package: ${raw}`)
+        continue
+      }
+      if (located.kind !== 'file') continue
+      readRuntimeTarget(
+        located.abs, dir, sources, skillFiles, budget, limits, coverageNotes, omitted, located.size,
+      )
+    }
+  }
   scanDeclaredEntries(dir, manifest, sources, skillFiles, budget, limits, coverageNotes, omitted)
   followStaticImports(dir, sources, skillFiles, budget, limits, coverageNotes, omitted)
+  if (walked !== undefined) {
+    const dropped = [...walked]
+      .filter(rel => sources[rel] === undefined && skillFiles[rel] === undefined)
+      .sort()
+    if (dropped.length > 0) {
+      const shown = dropped.slice(0, 5).join(', ')
+      const suffix = dropped.length > 5 ? ', …' : ''
+      pushNote(
+        coverageNotes,
+        omitted,
+        `filtered by package.json files: ${dropped.length} dev-only file(s) not counted (${shown}${suffix})`,
+      )
+    }
+  }
+  const sourceMaps = readSourceMaps(dir, sources, coverageNotes, omitted)
   sealNotes(coverageNotes, omitted.count)
 
   const patch = readPatch(manifest, dir)
@@ -505,17 +553,64 @@ export function collectPlugin(dir: string, spec: string, options?: CollectOption
     patchPath: patch?.path,
     spec,
     coverageNotes,
+    sourceMaps,
   }
 }
 
-const RELATIVE_SPECIFIERS = [
-  /\bfrom\s+['"](\.[^'"]+)['"]/g,
-  /\bimport\s+['"](\.[^'"]+)['"]/g,
-  /\bimport\s*\(\s*['"](\.[^'"]+)['"]/g,
-  /\brequire\s*\(\s*['"](\.[^'"]+)['"]/g,
-]
-const DYNAMIC_IMPORT = /(?:^|[^\w$])import\s*\(\s*(?!['"])/g
-const DYNAMIC_REQUIRE = /(?:^|[^\w$])require\s*\(\s*(?!['"])/g
+const SOURCE_MAP_URL = /(?:\/\/[#@]\s*sourceMappingURL=|\/\*[#@]\s*sourceMappingURL=)(?!data:)([^\s*]+)/
+
+function sourceMapUrl(content: string): string | undefined {
+  const match = SOURCE_MAP_URL.exec(content.slice(-1024))
+  const url = match?.[1]
+  if (url === undefined || url.startsWith('data:') || url.includes('://')) return undefined
+  return url
+}
+
+/** External sourcemaps whose URL stays inside the package. Inline maps are skipped. */
+function readSourceMaps(
+  packageDir: string,
+  sources: Record<string, string>,
+  coverageNotes: string[],
+  omitted: { count: number },
+): Record<string, string> | undefined {
+  const out: Record<string, string> = {}
+  let total = 0
+  for (const rel of Object.keys(sources)) {
+    const content = sources[rel]
+    if (content === undefined) continue
+    const url = sourceMapUrl(content)
+    if (url === undefined) continue
+    let decoded = url
+    try {
+      decoded = decodeURIComponent(url)
+    } catch {
+      pushNote(coverageNotes, omitted, `sourcemap url not decoded: ${rel}`)
+      continue
+    }
+    const located = locatePackagePath(packageDir, resolve(packageDir, dirname(rel), decoded))
+    if (located.kind === 'escape') {
+      pushNote(coverageNotes, omitted, `sourcemap escapes package from ${rel}`)
+      continue
+    }
+    if (located.kind !== 'file') continue
+    if (located.size > SOURCE_MAP_MAX_BYTES || total + located.size > SOURCE_MAP_MAX_TOTAL_BYTES) {
+      pushNote(coverageNotes, omitted, `sourcemap skipped (too large): ${posixRel(packageDir, located.abs)}`)
+      continue
+    }
+    try {
+      out[rel] = readFileSync(located.abs, 'utf8')
+      total += located.size
+    } catch {
+      pushNote(coverageNotes, omitted, `sourcemap unreadable: ${posixRel(packageDir, located.abs)}`)
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+/** A static template literal (`…` with no `${`) is a real specifier, not a dynamic one. */
+const STATIC_TEMPLATE = '`[^`$]*`'
+const DYNAMIC_IMPORT = new RegExp(`(?:^|[^\\w$])import\\s*\\(\\s*(?!['"]|${STATIC_TEMPLATE})`, 'g')
+const DYNAMIC_REQUIRE = new RegExp(`(?:^|[^\\w$])require\\s*\\(\\s*(?!['"]|${STATIC_TEMPLATE})`, 'g')
 /**
  * `require("literal" + …)` — the module name is built, not written out.
  * The escape and plain-character branches must stay disjoint: overlapping
@@ -526,32 +621,82 @@ const NATIVE_BINDING = /\bprocess\.(?:binding|dlopen)\s*\(/g
 /** `eval` / `Function` whose argument starts with a decode call. */
 const DECODED_EVAL = /\b(?:eval|Function)\s*\(\s*(?:atob|Buffer\.from)\s*\(/g
 
-function extractRelativeSpecifiers(stripped: string): string[] {
-  const out: string[] = []
-  for (const pattern of RELATIVE_SPECIFIERS) {
-    for (const match of stripped.matchAll(pattern)) {
-      if (match[1] !== undefined) out.push(match[1])
+const RESOLVE_EXTS = ['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts', '.jsx', '.tsx']
+
+function locateFile(packageDir: string, candidate: string): string | 'escape' | undefined {
+  const located = locatePackagePath(packageDir, candidate)
+  if (located.kind === 'escape') return 'escape'
+  if (located.kind === 'file') return located.abs
+  return undefined
+}
+
+/** Metadata only. Node loads this file and skips the directory `index.js`. */
+function outsideFileExists(target: string): boolean {
+  try {
+    return statSync(target).isFile()
+  } catch {
+    return false
+  }
+}
+
+/**
+ * `main` of a directory specifier. Node loads this before `index.js`.
+ * One hop: `main` itself is not resolved through another package.json.
+ * A missing or unreadable manifest falls through to `index.js`.
+ * A `main` outside the package does too, unless that file exists: Node
+ * loads an existing outside file, and a missing one falls through after
+ * DEP0128. The outside file is never read.
+ */
+function packageMainTarget(packageDir: string, dirAbs: string): string | 'escape' | undefined {
+  const located = locatePackagePath(packageDir, join(dirAbs, 'package.json'))
+  if (located.kind === 'escape') return 'escape'
+  if (located.kind !== 'file' || located.size > SCAN_LIMITS.maxFileBytes) return undefined
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(readFileSync(located.abs, 'utf8')) as unknown
+  } catch {
+    return undefined
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined
+  const main = (parsed as Record<string, unknown>).main
+  if (typeof main !== 'string' || main.trim() === '') return undefined
+  const target = resolve(dirAbs, main.trim())
+  if (!isInsidePackage(packageDir, target)) {
+    return outsideFileExists(target) ? 'escape' : undefined
+  }
+  return target
+}
+
+function resolveModulePath(
+  packageDir: string,
+  base: string,
+  packageMainHops: number,
+): string | 'escape' | undefined {
+  const exact = locateFile(packageDir, base)
+  if (exact !== undefined) return exact
+  for (const ext of RESOLVE_EXTS) {
+    const hit = locateFile(packageDir, `${base}${ext}`)
+    if (hit !== undefined) return hit
+  }
+  const located = locatePackagePath(packageDir, base)
+  if (located.kind === 'escape') return 'escape'
+  if (located.kind === 'dir' && packageMainHops > 0) {
+    const main = packageMainTarget(packageDir, located.abs)
+    if (main === 'escape') return 'escape'
+    if (typeof main === 'string') {
+      const resolved = resolveModulePath(packageDir, main, packageMainHops - 1)
+      if (resolved !== undefined) return resolved
     }
   }
-  return out
+  for (const indexName of ['index.js', 'index.ts']) {
+    const hit = locateFile(packageDir, join(base, indexName))
+    if (hit !== undefined) return hit
+  }
+  return undefined
 }
 
 function resolveInPackage(packageDir: string, fromFile: string, spec: string): string | 'escape' | undefined {
-  const base = resolve(dirname(fromFile), spec)
-  const candidates = [
-    base,
-    `${base}.js`, `${base}.mjs`, `${base}.cjs`,
-    `${base}.ts`, `${base}.mts`, `${base}.cts`,
-    `${base}.jsx`, `${base}.tsx`,
-    join(base, 'index.js'),
-    join(base, 'index.ts'),
-  ]
-  for (const candidate of candidates) {
-    const located = locatePackagePath(packageDir, candidate)
-    if (located.kind === 'escape') return 'escape'
-    if (located.kind === 'file') return located.abs
-  }
-  return undefined
+  return resolveModulePath(packageDir, resolve(dirname(fromFile), spec), 1)
 }
 
 function followStaticImports(

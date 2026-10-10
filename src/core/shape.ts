@@ -11,6 +11,8 @@ import {
 import { isCodeFile, stripComments } from './strip-comments.ts'
 import type {
   DestinationFinding,
+  DestinationSite,
+  DestinationUsage,
   PathEscapeFinding,
   PluginInput,
   SecretTouchFinding,
@@ -407,6 +409,69 @@ function destinationKey(kind: DestinationFinding['kind'], value: string): string
   return `${kind}:${value}`
 }
 
+const MAX_SITES = 5
+
+/** Drop the quote the literal matcher consumed, so the call sits at the end. */
+function beforeLiteral(line: string, start: number): string {
+  return line.slice(0, start).replace(/['"`]\s*$/, '')
+}
+
+/**
+ * How this literal is used on the line. First match wins. This never decides
+ * whether the literal is a destination — only how to label one that already is.
+ */
+export function classifyDestinationUsage(line: string, start: number, end: number): DestinationUsage {
+  const before = beforeLiteral(line, start)
+  const after = line.slice(end)
+  if (/(?:^|[^\w$])(?:fetch|axios|got|ky|ofetch|needle|phin|superagent)\s*\(\s*$/.test(before)) return 'request'
+  if (/(?:^|[^\w$])(?:axios|http|https|http2)\s*\.\s*(?:request|get|post|put|patch|delete|head|connect)\s*\(\s*$/.test(before)) return 'request'
+  if (/(?:^|[^\w$])new\s+(?:URL|WebSocket|EventSource)\s*\(\s*$/.test(before)) return 'request'
+  if (/[=!]==?\s*$/.test(before) || /^\s*[=!]==?/.test(after)) return 'compare'
+  if (/(?:^|[^\w$])(?:startsWith|endsWith|includes|indexOf)\s*\(\s*$/.test(before)) return 'compare'
+  if (/xmlns(?::[\w:.-]+)?\s*=\s*$/.test(before)) return 'namespace'
+  if (/(?:^|[^\w$])(?:createElementNS|setAttributeNS)\s*\(\s*$/.test(before)) return 'namespace'
+  if (/@context\s*['"]?\s*:\s*$/.test(before)) return 'namespace'
+  if (/(?:^|[^\w$])href\s*=\s*$/.test(before)) return 'link'
+  if (/(?:^|[^\w$])window\s*\.\s*open\s*\(\s*$/.test(before)) return 'link'
+  if (/\]\(\s*$/.test(before)) return 'link'
+  if (/(?:^|[^!=<>])=\s*$|:\s*$/.test(before)) return 'assigned'
+  return 'unknown'
+}
+
+interface PendingDestination extends DestinationFinding {
+  usage: DestinationUsage
+}
+
+/** One row per kind+value. Sites keep the first five usages; the count keeps the rest. */
+function mergeDestinations(rows: PendingDestination[]): DestinationFinding[] {
+  const order: string[] = []
+  const byKey = new Map<string, DestinationFinding>()
+  for (const row of rows) {
+    const key = destinationKey(row.kind, row.value)
+    const site: DestinationSite = { file: row.file, line: row.line, usage: row.usage }
+    const existing = byKey.get(key)
+    if (existing === undefined) {
+      byKey.set(key, {
+        kind: row.kind,
+        value: row.value,
+        file: row.file,
+        line: row.line,
+        sites: [site],
+        siteCount: 1,
+      })
+      order.push(key)
+      continue
+    }
+    existing.siteCount = (existing.siteCount ?? 0) + 1
+    if ((existing.sites?.length ?? 0) < MAX_SITES) existing.sites?.push(site)
+  }
+  return order.map(key => {
+    const row = byKey.get(key)
+    if (row === undefined) throw new Error(`missing destination ${key}`)
+    return row
+  })
+}
+
 /**
  * Display caps keep one row of each kind per round. Risk is scored from the
  * uncapped lists, so a finding past the cap still creates a red line.
@@ -613,7 +678,7 @@ export interface ShapeScan {
 }
 
 export function scanShape(input: PluginInput): ShapeScan {
-  const destinations: DestinationFinding[] = []
+  const destinations: PendingDestination[] = []
   const pathEscapes: PathEscapeFinding[] = []
   const secretTouches: SecretTouchFinding[] = []
 
@@ -663,7 +728,14 @@ export function scanShape(input: PluginInput): ShapeScan {
         }
         if (isPlaceholderHost(value)) continue
         if (isIdentifierHost(value) && hasClosedAuthority(url)) continue
-        destinations.push({ kind, value, file, line: lineNo })
+        const literalEnd = literalStart + match[0].length
+        destinations.push({
+          kind,
+          value,
+          file,
+          line: lineNo,
+          usage: classifyDestinationUsage(line, literalStart, literalEnd),
+        })
       }
 
       for (const match of line.matchAll(SLASH_PATH)) {
@@ -709,11 +781,13 @@ export function scanShape(input: PluginInput): ShapeScan {
           // is a single host and stays a destination.
           const cidr = /['"`]\d{1,3}(?:\.\d{1,3}){3}\/(\d{1,2})['"`]$/.exec(match[0])
           if (cidr !== null && isNetworkCidrTuple(ip, Number(cidr[1]))) continue
+          const ipStart = match.index ?? 0
           destinations.push({
             kind: isLoopbackIp(ip) ? 'loopback' : 'ip',
             value: ip,
             file,
             line: lineNo,
+            usage: classifyDestinationUsage(line, ipStart, ipStart + match[0].length),
           })
         }
       }
@@ -762,7 +836,7 @@ export function scanShape(input: PluginInput): ShapeScan {
   }
 
   return {
-    destinations: dedupeAll(destinations, d => destinationKey(d.kind, d.value)),
+    destinations: mergeDestinations(destinations),
     pathEscapes: dedupeAll(pathEscapes, p => `${p.kind}:${p.value}`),
     secretTouches: dedupeAll(secretTouches, s => `${s.kind}:${s.value}`),
   }

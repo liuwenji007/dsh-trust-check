@@ -79,6 +79,16 @@ Do not silence a false positive by stuffing `DEST_WHITELIST` unless the host bel
 
 不要靠塞 `DEST_WHITELIST` 消误报，除非该主机本身符合白名单治理。
 
+## Exemption versus context / 改判定还是加上下文
+
+Change what counts (drop a file, exempt a host, skip a shape) only when the reason is both verifiable and not something a published plugin can copy. "This file is not in the npm package" qualifies: after a registry install the file is absent, and published code cannot statically import it. A code shape or a name does not qualify — a hostile plugin can write the same shape.
+
+Everything else is context for the reader: which entry reaches the file (`server` / `client` / `cli`), whether a generated line maps into a bundled dependency, and how a destination literal is used (`request`, `compare`, `namespace`, `link`, `assigned`, `unknown`). Context must not change capabilities, red lines, the score, or `ackFingerprint`.
+
+改判定（排除文件、豁免主机、跳过某种形状）只在理由可核实、而且发布出来的插件借不走时才做。「这个文件不在 npm 包里」符合：registry 安装后文件不存在，发布的代码也无法静态引用它。代码形状或名字不符合——敌对插件可以写成同样的形状。
+
+其余一律是给读者的上下文：哪个入口能到达这个文件（`server` / `client` / `cli`）、生成行是否映射进打包进来的依赖、去向字面量怎么被使用（`request` / `compare` / `namespace` / `link` / `assigned` / `unknown`）。上下文不得改变能力、红线、分数或 `ackFingerprint`。
+
 ## Allowlist governance / 白名单治理
 
 These host tables hide destinations. They are not equivalent, and none of them is a safety claim. Documentation **IPv4** ranges live next to placeholders in `shape.ts` (`isDocumentationIp`), not in `DEST_WHITELIST`.

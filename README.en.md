@@ -79,7 +79,7 @@ The settings UI and CLI use a **decision-first** layout. Reading order:
 
 Besides capability chips, the report extracts three kinds of literal facts from source:
 
-- **Literal destinations**: URL / host / IP. Same-origin HTTP routes (e.g. `/dsh-market/check`) do not count as destinations.
+- **Literal destinations**: URL / host / IP. Same-origin HTTP routes (e.g. `/dsh-market/check`) do not count as destinations. Each row is labelled with how that line uses it (request argument, comparison only, XML namespace, link, assigned, usage unknown) and a `file:line`. The label is for reading; it does not change capabilities, red lines, or the score.
 - **Workspace path escapes**: absolute paths, home directory, traversal, …
 - **Secret touches**: paths, sensitive env names.
 
@@ -118,7 +118,7 @@ Red lines cap the numeric score at 49 (avoiding "100 + high risk"). **The verdic
 
 | Dimension | Reads | Judgement |
 |---|---|---|
-| **Capabilities** | `package.json` dependency scopes + static scan of `lib/`, `dist/`, `bin/`, `scripts/`, skill dirs, and `main` / `exports` / `bin` entry files | shell / file read / file write / network / credentials / sub-agents / LLM calls / env reads |
+| **Capabilities** | `package.json` dependency scopes + static scan of `lib/`, `dist/`, `bin/`, `scripts/`, skill dirs, and `main` / `exports` / `bin` / string `browser` entry files. When `files` parses exactly, dev-only files npm would not publish are not counted | shell / file read / file write / network / credentials / sub-agents / LLM calls / env reads |
 | **Injections** | `cordis.patch.yml` + `systemPrompt` / `ctx.skills.register` / `system-prompt/assemble` + skill text | who it overrides/disables (`id` or `name`), what it injects |
 | **Cost** | skill text + system-prompt inline literal bytes | estimated injected tokens per request (bytes / 4, estimate only) |
 | **Source** | `package.json` `repository` (falls back to the git install source) + install spec | pinned version / pinned commit |
@@ -169,6 +169,7 @@ Parse `--json` uniformly: `plugins[0]` for single `--dir`, or the full `plugins`
 - **Credential-value reads cover**: seam service (`ctx.get('credentials')`, including `await` / optional `get?.`; receivers `ctx` / `this.ctx` / `*Ctx`), property access (`ctx.credentials`), destructuring off context (including `credentials: creds`), rebinds of those aliases (including `b = a`), and keytar/keychain password reads including default / `import * as` / `import { default as … }` / `require` renames. **Still missed on purpose**: destructuring down to a bare function name (`const { resolve } = ctx.credentials` then `resolve(…)`) — same shape as Promise executors and would red-line plugins like `dsh-pocket` / `agent-teams` without scope tracking; a secret path held in a variable then `readFileSync(p)`; receivers named neither `ctx` nor `*Ctx` (e.g. `context` / `Context`).
 - **`new URL` base args are not destinations**, so `const u = new URL('/x', 'http://evil'); fetch(u.href)` has no plaintext-http red line — the known cost of that exemption; do not widen it.
 - A complete relative-path literal (`fetch('/api')`, `fetch('./x')`) and a `blob:` / `data:` literal are not `network` — the former is same-origin, the latter is scheme fetch and never enters HTTP. Variable arguments, concatenation, and template interpolation still count. The chip is labelled same-origin or outbound, but a missing outbound literal is not a proof of no outbound access, and the score is unchanged.
+- A **`link:` or source-directory** scan drops files npm would not publish when `package.json` `files` parses exactly (files imported by shipped code, named by an install script, or declared as an entry are still scanned). `*` means every path, and `dir/*` means that whole directory; `src*` does not include files under `src/`. Braces, character classes, extglob, and backslashes are not filtered. "Browser / server / command line / suspected dependency" on a row comes from which entry reaches the file and from the sourcemap; it is for reading and does not change the score. An extracted registry tarball already contains only published files.
 - Injected tokens are a byte / 4 estimate, not exact billing.
 - `link:` / `file:` installs can't infer source from the spec; if the package.json lacks `repository`, it shows "no repository declared".
 - The `repository` field is self-declared; it is not cross-checked against the npm package name, and a non-`http(s)` scheme is never rendered as a clickable link.

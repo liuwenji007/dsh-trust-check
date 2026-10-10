@@ -718,6 +718,21 @@
   background: color-mix(in srgb, var(--trust-teal) 8%, transparent);
 }
 
+.tagContext {
+  color: var(--trust-muted);
+  background: color-mix(in srgb, var(--trust-muted) 12%, transparent);
+  font-weight: 600;
+}
+
+.destSites {
+  margin-top: 4px;
+}
+
+.destSiteList {
+  margin: 4px 0 0;
+  padding-left: 16px;
+}
+
 .ok { color: var(--trust-teal); }
 .warn { color: var(--trust-amber); }
 
@@ -984,6 +999,10 @@ details[open] > .foldSummary::before {
 }
 
 .evidenceMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
   font-size: 11px;
   color: var(--trust-muted);
   font-variant-numeric: tabular-nums;

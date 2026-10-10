@@ -4,9 +4,10 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
-import type { AuditReport, AuditResponse, Capability, Evidence, InjectionKind, TrustAckEntry } from '../core/types.ts'
+import type { AuditReport, AuditResponse, Capability, DestinationUsage, Evidence, FindingContext, InjectionKind, TrustAckEntry } from '../core/types.ts'
 import {
   ackDrifted,
+  capabilityContext,
   capabilityDelta,
   capabilityTier,
   concerns,
@@ -116,7 +117,7 @@ function EvidencePanel({
               <div key={cap} className={css.evidenceGroup}>
                 <div className={css.evidenceGroupHead}>
                   <span className={`${css.chip} ${css[`tier-${capabilityTier(cap)}`]}`}>
-                    {capChipText(cap, t, networkReach(report))}
+                    {capChipText(cap, t, report)}
                   </span>
                   <span className={css.countPill}>{rows.length}</span>
                 </div>
@@ -125,6 +126,7 @@ function EvidencePanel({
                     <li key={`${ev.file}:${ev.line}:${i}`} className={css.evidenceItem}>
                       <span className={css.evidenceMeta}>
                         <code>{ev.file}</code>:{ev.line}
+                        <ContextTags context={ev.context} t={t} />
                       </span>
                       <span className={css.evidenceSnippet}>{ev.snippet}</span>
                     </li>
@@ -149,6 +151,7 @@ function EvidencePanel({
                         <li key={`w-${ev.file}:${ev.line}:${i}`} className={css.evidenceItem}>
                           <span className={css.evidenceMeta}>
                             <code>{ev.file}</code>:{ev.line}
+                            <ContextTags context={ev.context} t={t} />
                           </span>
                           <span className={css.evidenceSnippet}>{ev.snippet}</span>
                         </li>
@@ -197,12 +200,46 @@ function capLabelKey(cap: Capability): TrustKey {
   return `cap.${cap}` as TrustKey
 }
 
-function capChipText(cap: Capability, t: T, reach: ReturnType<typeof networkReach>): string {
-  const label = t(capLabelKey(cap))
-  if (cap !== 'network') return label
-  if (reach === 'outbound') return `${label} · ${t('cap.network.outbound')}`
-  if (reach === 'same-origin') return `${label} · ${t('cap.network.sameOrigin')}`
-  return label
+function capChipText(cap: Capability, t: T, report: AuditReport): string {
+  const parts = [t(capLabelKey(cap))]
+  if (cap === 'network') {
+    const reach = networkReach(report)
+    if (reach === 'outbound') parts.push(t('cap.network.outbound'))
+    else if (reach === 'same-origin') parts.push(t('cap.network.sameOrigin'))
+  }
+  const ctx = capabilityContext(report, cap)
+  if (ctx.runtime !== undefined) parts.push(t(`context.runtimeOnly.${ctx.runtime}`))
+  if (ctx.packageName !== undefined) {
+    parts.push(t('context.originAll').replace('{package}', ctx.packageName))
+  }
+  return parts.join(' · ')
+}
+
+function ContextTags({ context, t }: { context?: FindingContext; t: T }) {
+  if (context === undefined) return null
+  return (
+    <>
+      {context.runtime?.map(runtime => (
+        <span key={runtime} className={`${css.tag} ${css.tagContext}`}>{t(`context.runtime.${runtime}`)}</span>
+      ))}
+      {context.origin !== undefined && (
+        <span className={`${css.tag} ${css.tagContext}`}>
+          {t('context.origin').replace('{package}', context.origin.package)}
+        </span>
+      )}
+    </>
+  )
+}
+
+function distinctUsages(sites: NonNullable<AuditReport['destinations'][number]['sites']>): DestinationUsage[] {
+  const seen = new Set<DestinationUsage>()
+  const out: DestinationUsage[] = []
+  for (const site of sites) {
+    if (seen.has(site.usage)) continue
+    seen.add(site.usage)
+    out.push(site.usage)
+  }
+  return out
 }
 
 function concernLabel(concern: Concern, t: T): string {
@@ -226,12 +263,12 @@ function secretKindKey(kind: AuditReport['secretTouches'][number]['kind']): Trus
 function CapabilityChips({
   caps,
   t,
-  reach,
+  report,
   onSelect,
 }: {
   caps: Capability[]
   t: T
-  reach: ReturnType<typeof networkReach>
+  report: AuditReport
   onSelect?: (cap: Capability) => void
 }) {
   if (caps.length === 0) return <div className={css.muted}>{t('none')}</div>
@@ -245,7 +282,7 @@ function CapabilityChips({
           onClick={onSelect !== undefined ? () => onSelect(cap) : undefined}
           disabled={onSelect === undefined}
         >
-          {capChipText(cap, t, reach)}
+          {capChipText(cap, t, report)}
         </button>
       ))}
     </div>
@@ -299,9 +336,31 @@ function DestinationsPanel({ report, t }: { report: AuditReport; t: T }) {
             {whitelist !== undefined && (
               <span className={`${css.tag} ${css.tagSafe}`}>{t('destinations.allowlisted')}</span>
             )}
+            {distinctUsages(d.sites ?? []).map(usage => (
+              <span key={usage} className={`${css.tag} ${css.tagContext}`}>{t(`destUsage.${usage}`)}</span>
+            ))}
           </div>
           {whitelist !== undefined && (
             <div className={css.destNote}>{t(`destWhitelist.${whitelist}` as TrustKey)}</div>
+          )}
+          {(d.sites?.length ?? 0) > 0 && (
+            <div className={css.destNote}>
+              <code>{d.sites?.[0]?.file}:{d.sites?.[0]?.line}</code>
+              {(d.siteCount ?? 0) > 1 && (
+                <details className={css.destSites}>
+                  <summary>{t('destinations.sites').replace('{count}', String(d.siteCount))}</summary>
+                  <ul className={css.destSiteList}>
+                    {d.sites?.map((site, index) => (
+                      <li key={`${site.file}:${site.line}:${index}`}>
+                        <code>{site.file}:{site.line}</code>
+                        {' '}
+                        {t(`destUsage.${site.usage}`)}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </div>
           )}
         </div>
       </li>
@@ -370,7 +429,10 @@ function SecretTouchesPanel({ report, t }: { report: AuditReport; t: T }) {
           <li key={i} className={css.destRow}>
             <span className={css.destKind}>{t(secretKindKey(s.kind))}</span>
             <div className={css.destBody}>
-              <code className={css.destValue}>{s.value}</code>
+              <div className={css.destValueLine}>
+                <code className={css.destValue}>{s.value}</code>
+                <ContextTags context={s.context} t={t} />
+              </div>
             </div>
           </li>
         ))}
@@ -595,7 +657,7 @@ function PluginCardBody({
           <header className={css.sectionHead}>
             <h3 className={css.sectionTitle}>{t('capabilities')}</h3>
           </header>
-          <CapabilityChips caps={report.capabilities} t={t} reach={networkReach(report)} onSelect={cap => setEvidenceFocus(cap)} />
+          <CapabilityChips caps={report.capabilities} t={t} report={report} onSelect={cap => setEvidenceFocus(cap)} />
         </section>
 
         <DestinationsPanel report={report} t={t} />
@@ -672,7 +734,6 @@ function PluginRow({
 }) {
   const v = verdict(report, ack)
   const previewCaps = topCapabilities(report, 3)
-  const reach = networkReach(report)
 
   return (
     <article className={`${css.plugin} ${css[`verdict-${v}`]}`}>
@@ -688,7 +749,7 @@ function PluginRow({
           <span className={css.previewChips}>
             {previewCaps.map(cap => (
               <span key={cap} className={`${css.chip} ${css[`tier-${capabilityTier(cap)}`]}`}>
-                {capChipText(cap, t, reach)}
+                {capChipText(cap, t, report)}
               </span>
             ))}
           </span>

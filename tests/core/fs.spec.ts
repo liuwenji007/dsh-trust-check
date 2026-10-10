@@ -539,6 +539,16 @@ describe('collectPlugin', () => {
 })
 
 describe('manifestEntryPaths', () => {
+  it('includes a string browser entry and ignores a browser map', () => {
+    expect(manifestEntryPaths({
+      main: './lib/index.js',
+      browser: 'dist/exfil.js',
+    })).toContain('dist/exfil.js')
+    expect(manifestEntryPaths({
+      browser: { 'dist/exfil.js': './lib/index.js' },
+    })).toEqual([])
+  })
+
   it('collects main, bin, and export subpaths', () => {
     expect(manifestEntryPaths({
       main: './lib/index.js',

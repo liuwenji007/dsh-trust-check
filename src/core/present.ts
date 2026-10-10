@@ -6,7 +6,7 @@
 import { ackMatchesReport } from './ack-fingerprint.ts'
 import { destinationTier } from './destination-priority.ts'
 import { CAPABILITY_WEIGHT } from './score.ts'
-import type { AuditReport, Capability, Evidence, InjectionKind, TrustAckEntry } from './types.ts'
+import type { AuditReport, Capability, Evidence, InjectionKind, Runtime, TrustAckEntry } from './types.ts'
 
 export type Verdict = 'red' | 'accepted' | 'review' | 'expected' | 'clear'
 
@@ -268,6 +268,34 @@ export function networkReach(report: AuditReport): NetworkReach {
   const destinations = (report.destinations ?? []).filter(d => d.kind !== 'relative')
   if (destinations.some(d => d.kind !== 'loopback')) return 'outbound'
   return 'same-origin'
+}
+
+export interface CapabilityContextLabel {
+  /** Set when every evidence row for the capability runs in this one place. */
+  runtime?: Runtime
+  /** Set when every evidence row maps to this one bundled dependency. */
+  packageName?: string
+}
+
+/**
+ * Chip suffix. Present only when every evidence row for the capability agrees.
+ * A missing context on any row means the claim would over-reach, so it is omitted.
+ */
+export function capabilityContext(report: AuditReport, cap: Capability): CapabilityContextLabel {
+  const rows = report.evidence.filter(row => row.capability === cap)
+  if (rows.length === 0) return {}
+  const agreed = (runtime: Runtime) => rows.every(row => {
+    const reached = row.context?.runtime
+    return reached?.length === 1 && reached[0] === runtime
+  })
+  const runtime = (['client', 'server', 'cli'] as const).find(agreed)
+  const packages = rows.map(row => row.context?.origin?.package)
+  const first = packages[0]
+  const packageName = first !== undefined && packages.every(pkg => pkg === first) ? first : undefined
+  const label: CapabilityContextLabel = {}
+  if (runtime !== undefined) label.runtime = runtime
+  if (packageName !== undefined) label.packageName = packageName
+  return label
 }
 
 /**

@@ -6,6 +6,7 @@
 
 import { sha256Hex } from '../host/content-hash.ts'
 import { scanCapabilities } from './capability.ts'
+import { attachContext } from './file-context.ts'
 import { injectionFingerprint, scanInjections } from './injection.ts'
 import { readProvenance } from './provenance.ts'
 import { scoreTrust } from './score.ts'
@@ -182,5 +183,7 @@ export function auditPlugin(input: PluginInput): AuditReport {
     ackFingerprint,
   }
 
-  return { ...report, summary: buildSummary(report) } as AuditReport
+  const published = { ...report, summary: buildSummary(report) } as AuditReport
+  attachContext(published, input)
+  return published
 }

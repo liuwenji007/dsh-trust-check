@@ -19,6 +19,7 @@ export { AUDIT_SCHEMA_VERSION, buildAuditResponse } from './core/response.ts'
 export { auditPlugin, MAX_EVIDENCE } from './core/audit.ts'
 export {
   ackDrifted,
+  capabilityContext,
   capabilityDelta,
   capabilityTier,
   classifyRedLine,

@@ -16,6 +16,20 @@ export type Capability =
   | 'llm'
   | 'dynamic-code'
 
+/** Where a scanned file can run, from the package entry that reaches it. */
+export type Runtime = 'server' | 'client' | 'cli'
+
+/**
+ * Display-only context for one finding. Never read by the score, the red
+ * lines, or the ack fingerprint.
+ */
+export interface FindingContext {
+  /** Every entry kind that can reach this file. Absent when none can. */
+  runtime?: Runtime[]
+  /** Set when the generated line maps into a bundled dependency. */
+  origin?: { kind: 'dependency'; package: string }
+}
+
 /** One located piece of evidence for a capability. */
 export interface Evidence {
   capability: Capability
@@ -27,6 +41,8 @@ export interface Evidence {
   snippet: string
   /** Which rule produced this row. Optional so older cached JSON still loads. */
   rule?: string
+  /** Display-only. Absent on reports cached before context existed. */
+  context?: FindingContext
 }
 
 /** One structured fact. `id` is the stable filter key; `value` is what was seen. */
@@ -39,12 +55,37 @@ export interface Fact {
 /** A literal network destination found in source (not runtime-built). */
 export type DestinationKind = 'relative' | 'loopback' | 'https-host' | 'http-host' | 'ip'
 
+/**
+ * How a destination literal is used on its line. Display-only: a comparison
+ * is still reported, so the reader can decide.
+ */
+export type DestinationUsage =
+  | 'request'
+  | 'compare'
+  | 'namespace'
+  | 'link'
+  | 'assigned'
+  | 'unknown'
+
+/** One occurrence of a destination literal. Capped for display. */
+export interface DestinationSite {
+  file: string
+  line: number
+  usage: DestinationUsage
+  context?: FindingContext
+}
+
 export interface DestinationFinding {
   kind: DestinationKind
   /** Host, IP, or (legacy) relative path string. */
   value: string
   file: string
   line: number
+  /** Up to five occurrences. Absent on older cached JSON. */
+  sites?: DestinationSite[]
+  /** Total occurrences before the site cap. */
+  siteCount?: number
+  context?: FindingContext
 }
 
 /**
@@ -67,6 +108,7 @@ export interface SecretTouchFinding {
   value: string
   file: string
   line: number
+  context?: FindingContext
 }
 
 /** What a plugin injects into the host or the user's context. */
@@ -157,6 +199,8 @@ export interface PluginInput {
   spec: string
   /** Limits the static collector could not expand. Display only. */
   coverageNotes?: string[]
+  /** Generated file → raw sourcemap JSON. Display only; absent when none. */
+  sourceMaps?: Record<string, string>
 }
 
 /** User-acknowledged capability/shape fingerprint for one plugin. */

@@ -79,7 +79,7 @@ npx dsh-trust-check --dir ./pkg --exit-code
 
 除能力芯片外，报告还会从源码中提取三类字面量事实：
 
-- **字面量去向**：URL / host / IP。同源 HTTP 相对路由（如 `/dsh-market/check`）不算去向。
+- **字面量去向**：URL / host / IP。同源 HTTP 相对路由（如 `/dsh-market/check`）不算去向。每条去向带用法标签（请求参数、仅比较、XML 命名空间、链接、赋值/配置、用途未知）和 `文件:行号`。标签只帮助判断，不改变能力、红线或分数。
 - **工作区外路径**：绝对路径、家目录、路径穿越等。
 - **密钥触摸**：路径、敏感 env 名。
 
@@ -118,7 +118,7 @@ npx dsh-trust-check --dir ./pkg --exit-code
 
 | 维度 | 读什么 | 判定 |
 |---|---|---|
-| **能力面** | `package.json` 依赖 scope + 静态扫 `lib/`、`dist/`、`bin/`、`scripts/`、技能目录，以及 `main` / `exports` / `bin` 入口文件 | shell / 文件读写 / 网络 / 凭据 / 子代理 / LLM 调用 / 环境变量 |
+| **能力面** | `package.json` 依赖 scope + 静态扫 `lib/`、`dist/`、`bin/`、`scripts/`、技能目录，以及 `main` / `exports` / `bin` / 字符串 `browser` 入口文件。`files` 能精确解析时，npm 不会发布的开发文件不计入 | shell / 文件读写 / 网络 / 凭据 / 子代理 / LLM 调用 / 环境变量 |
 | **注入面** | `cordis.patch.yml` + `systemPrompt` / `ctx.skills.register` / `system-prompt/assemble` + 技能文本 | override / disable 了谁（`id` 或 `name`）、注入了什么 |
 | **成本** | 技能文本 + system-prompt 行内字面量字节数 | 估算每请求注入 token（字节 / 4，仅估算） |
 | **来源** | `package.json` 的 `repository`（缺失回退到 git 安装源）+ 安装 spec | 是否锁版本/锁 commit |
@@ -169,6 +169,7 @@ npx dsh-trust-check --dir "$EXTRACTED_DIR" --spec "$INSTALL_SPEC" --json
 - **凭据读值判定覆盖到哪些写法**：接缝服务（`ctx.get('credentials')`，含 `await` / 可选链 `get?.`；接收者认 `ctx` / `this.ctx` / `*Ctx`）、属性直取（`ctx.credentials`）、从上下文解构（含改名 `credentials: creds`）、以及经这些来源再赋值的别名（含 `b = a`），其上的 `resolve` / `read` / `readRecord` / `get*` 都算读到值；`keytar` / `keychain` 的 `getPassword` / `findCredentials` 等，包括默认导入、`import * as`、`import { default as … }`、`require` 改名也算。**仍漏判**：解构到函数名（`const { resolve } = ctx.credentials` 后 `resolve(…)`）——它与 Promise executor 同名，按行匹配会把 `new Promise(resolve => …)` 误判成读值（实测会把 `dsh-pocket`、`agent-teams` 误红），需要作用域追踪；密钥路径先存进变量再 `readFileSync(p)` 同样漏判；接收者若既不叫 `ctx` 也不以 `Ctx` 结尾（如 `context` / `Context`）也不认。
 - **`new URL` 的 base 参数不记为去向**，因此 `const u = new URL('/x', 'http://evil'); fetch(u.href)` 这种写法不含明文 http 红线——这是该豁免的已知代价，不要再扩大 base 豁免范围。
 - 完整的相对路径字面量（`fetch('/api')`、`fetch('./x')`）以及 `blob:` / `data:` 字面量不算 network——前者是同源调用，后者只走 scheme fetch、不会发起 HTTP。变量参数、拼接和模板插值仍记为 network。芯片会标「同源」或「外连」，但没有字面量外连不等于不出网，评分不变。
+- **`link:` / 源码目录**在 `package.json` 的 `files` 能精确解析时，不把 npm 不会发布的开发文件算进能力和红线（被发布代码 import 的、安装脚本点名的、入口文件仍然算）。`*` 表示全部路径，`dir/*` 表示该目录整棵树；`src*` 不含 `src/` 里的文件。花括号、字符类、extglob、反斜杠写不准则不过滤。证据上的「浏览器端 / 服务端 / 命令行 / 疑似第三方」来自入口可达性和 sourcemap，只供阅读，不改分数。registry 解压出来的包本来就只有发布文件。
 - 注入 token 是字节 / 4 的粗估，不是精确计费。
 - `link:` / `file:` 本地安装的插件无法从 spec 推断来源，若其 `package.json` 未声明 `repository`，会显示"未声明仓库"。
 - `repository` 字段是插件自述，不与 npm 包名交叉验证；非 `http(s)` 协议不会渲染成可点击链接。

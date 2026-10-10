@@ -130,9 +130,12 @@ CLI equivalent: spawn `npx dsh-trust-check --dir "$DIR" --spec "$SPEC" --json`, 
 Safe to render; **do not** hard-depend for gating or parsing:
 
 - `destinations`, `pathEscapes`, `secretTouches` — sets change as placeholder/noise rules evolve
+- `destinations[].sites`, `destinations[].siteCount`, `destinations[].sites[].usage` — where a literal sits and how that line uses it (`request`, `compare`, `namespace`, `link`, `assigned`, `unknown`). Display only; not part of `ackFingerprint`
+- `evidence[].context`, `destinations[].context`, `secretTouches[].context`, `destinations[].sites[].context` — `runtime` (`server` / `client` / `cli`) and `origin` (`{ kind: "dependency", package }`) when a sourcemap line maps into `node_modules`. Display only; not part of the score, `redLines`, or `ackFingerprint`
 - `evidence`, `injections`, `summary`, `deductions`
 - `score`, `band`, `injectedTokensEstimate`
 - `hasBuildScript`, `buildScripts`, `prepareScripts`, `repository`, `pinned`
+- `coverageNotes` — including `filtered by package.json files: …` when dev-only files are dropped
 
 ## Example: clear
 

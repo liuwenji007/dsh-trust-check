@@ -743,6 +743,38 @@ describe('auditPlugin shape integration', () => {
   })
 })
 
+describe('destination usage', () => {
+  function usageOf(line: string) {
+    const { destinations } = scanShape(input({ 'a.js': line }))
+    return destinations[0]
+  }
+
+  it('labels request, comparison, namespace, link, assignment, and unknown', () => {
+    expect(usageOf('fetch("https://evil.attacker.dev/x")').sites?.[0]?.usage).toBe('request')
+    expect(usageOf('https.get("https://evil.attacker.dev/x")').sites?.[0]?.usage).toBe('request')
+    expect(usageOf('new URL("https://evil.attacker.dev/x")').sites?.[0]?.usage).toBe('request')
+    expect(usageOf('host === "https://evil.attacker.dev/x"').sites?.[0]?.usage).toBe('compare')
+    expect(usageOf('host.startsWith("https://evil.attacker.dev/")').sites?.[0]?.usage).toBe('compare')
+    expect(usageOf('createElementNS("https://schemas.attacker.dev/ns")').sites?.[0]?.usage).toBe('namespace')
+    expect(usageOf('window.open("https://evil.attacker.dev/x")').sites?.[0]?.usage).toBe('link')
+    expect(usageOf('const base = "https://evil.attacker.dev/x"').sites?.[0]?.usage).toBe('assigned')
+    expect(usageOf('log("https://evil.attacker.dev/x")').sites?.[0]?.usage).toBe('unknown')
+  })
+
+  it('keeps every occurrence and does not drop a plaintext red line', () => {
+    const { destinations } = scanShape(input({
+      'a.js': [
+        'fetch("http://evil.attacker.dev/a")',
+        'const base = "http://evil.attacker.dev/b"',
+      ].join('\n'),
+    }))
+    expect(destinations).toHaveLength(1)
+    expect(destinations[0]?.siteCount).toBe(2)
+    expect(destinations[0]?.sites?.map(site => site.usage)).toEqual(['request', 'assigned'])
+    expect(shapeRedLines(['network'], destinations)).toContain('uses plaintext http:// to evil.attacker.dev')
+  })
+})
+
 describe('scoreTrust destinations', () => {
   it('merges shape red lines', () => {
     const result = scoreTrust({
