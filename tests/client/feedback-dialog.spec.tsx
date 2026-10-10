@@ -236,6 +236,28 @@ describe('detection feedback dialog', () => {
     expect(screen.getByRole('link', { name: zh['feedback.github'] })).toBeTruthy()
   })
 
+  it('shows the step and context, and moves focus between steps', async () => {
+    const user = userEvent.setup()
+    renderReport()
+    await openEvidence(user)
+    const steps = screen.getByRole('list', { name: zh['feedback.steps'] })
+    const current = () => steps.querySelector('[aria-current="step"]')?.textContent ?? ''
+    expect(current()).toContain(zh['feedback.step.fill'])
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.textContent).toContain('network.fetch')
+    expect(dialog.textContent).toContain('schemaVersion 2')
+    expect(screen.getByRole('button', { name: zh['feedback.close'] })).toBeTruthy()
+
+    await user.type(screen.getByLabelText(zh['feedback.note']), '说明')
+    await user.click(screen.getByRole('button', { name: zh['feedback.next'] }))
+    expect(current()).toContain(zh['feedback.step.preview'])
+    expect(document.activeElement).toBe(screen.getByLabelText(zh['feedback.titleField']))
+
+    await user.click(screen.getByRole('button', { name: zh['feedback.back'] }))
+    expect(current()).toContain(zh['feedback.step.fill'])
+    expect(document.activeElement).toBe(screen.getByLabelText(zh['feedback.note']))
+  })
+
   it('requires a type on the general entry', async () => {
     const user = userEvent.setup()
     renderReport()

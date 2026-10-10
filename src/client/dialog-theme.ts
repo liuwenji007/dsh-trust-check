@@ -51,14 +51,38 @@ export function plateFromInk(color: string): string {
   return luminance > 0.55 ? '#1a1a1a' : '#ffffff'
 }
 
-export function resolveDialogTheme(root: HTMLElement | null): { color?: string, background: string } {
-  if (root === null) return { background: '#ffffff' }
+function isDarkCssColor(value: string): boolean {
+  const rgb = parseCssRgb(value)
+    ?? (/^#[0-9a-f]{6}$/i.test(value)
+      ? {
+          r: Number.parseInt(value.slice(1, 3), 16),
+          g: Number.parseInt(value.slice(3, 5), 16),
+          b: Number.parseInt(value.slice(5, 7), 16),
+          a: 1,
+        }
+      : null)
+  if (rgb === null) return false
+  return (0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b) / 255 < 0.45
+}
+
+export interface DialogTheme {
+  color?: string
+  background: string
+  /** Native checkboxes, radios, and scrollbars follow this. */
+  scheme: 'light' | 'dark'
+}
+
+export function resolveDialogTheme(root: HTMLElement | null): DialogTheme {
+  if (root === null) return { background: '#ffffff', scheme: 'light' }
   const color = getComputedStyle(root).color
   let node: HTMLElement | null = root
   while (node !== null) {
     const background = getComputedStyle(node).backgroundColor
-    if (isOpaqueCssColor(background)) return { color, background }
+    if (isOpaqueCssColor(background)) {
+      return { color, background, scheme: isDarkCssColor(background) ? 'dark' : 'light' }
+    }
     node = node.parentElement
   }
-  return { color, background: plateFromInk(color) }
+  const background = plateFromInk(color)
+  return { color, background, scheme: isDarkCssColor(background) ? 'dark' : 'light' }
 }

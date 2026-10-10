@@ -151,8 +151,12 @@ describe('settings card reading order', () => {
     } as TrustAckEntry
     renderReport(response([row], { acks: { [row.name]: ack } }))
     expect(screen.getByText(zh['drift.title'])).toBeTruthy()
-    expect(screen.getByText(/与上次确认相比，多出的能力：/)).toBeTruthy()
-    expect(screen.getByText(/与上次确认相比，不再出现的能力：/)).toBeTruthy()
+    const addedRow = screen.getByText(zh['drift.added']).parentElement
+    const removedRow = screen.getByText(zh['drift.removed']).parentElement
+    expect(addedRow?.textContent).toContain(zh['cap.shell'])
+    expect(addedRow?.textContent).toContain(zh['cap.env'])
+    expect(addedRow?.textContent).not.toContain(zh['cap.network'])
+    expect(removedRow?.textContent).toContain(zh['cap.fs-read'])
     expect(screen.getByText(zh['drift.ruleNote'])).toBeTruthy()
   })
 
@@ -253,7 +257,7 @@ describe('settings card reading order', () => {
     })]), en)
     expect(screen.getByText(/Review the specific facts/)).toBeTruthy()
     expect(screen.queryByText(/Stop by default/)).toBeNull()
-    expect(screen.getByText(longFile)).toBeTruthy()
+    expect(screen.getByText(`${longFile}:2`)).toBeTruthy()
     const css = readFileSync('src/client/TrustReport.module.css', 'utf8')
     expect(css).toContain('overflow-wrap: anywhere')
   })

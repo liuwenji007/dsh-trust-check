@@ -1,78 +1,256 @@
 .backdrop {
+  --fb-accent: #0f766e;
+  --fb-line: color-mix(in srgb, currentColor 14%, transparent);
+  --fb-line-strong: color-mix(in srgb, currentColor 22%, transparent);
+  --fb-fill: color-mix(in srgb, currentColor 5%, transparent);
+  --fb-muted: color-mix(in srgb, currentColor 66%, transparent);
+  --fb-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
   position: fixed;
   inset: 0;
   z-index: 1000;
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding: 24px 12px;
+  padding: 6vh 16px 16px;
   background: color-mix(in srgb, black 48%, transparent);
   overflow: auto;
 }
 
 .dialog {
+  --fb-focus: color-mix(in srgb, #3b82f6 78%, currentColor);
+
   position: relative;
   isolation: isolate;
-  width: min(560px, 100%);
-  margin-top: 4vh;
-  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  width: min(570px, 100%);
+  max-height: calc(100vh - 6vh - 16px);
   border-radius: 12px;
-  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  border: 1px solid var(--fb-line);
   /* Inline style sets an opaque host plate; this is the light-host fallback. */
   background: #ffffff;
   color: inherit;
-  box-shadow: 0 12px 40px color-mix(in srgb, black 28%, transparent);
+  font-size: 13px;
+  line-height: 1.55;
+  box-shadow: 0 16px 48px color-mix(in srgb, black 30%, transparent);
+  overflow: hidden;
+}
+
+.dialog :where(button, a, input, textarea):focus-visible {
+  outline: 2px solid var(--fb-focus);
+  outline-offset: 2px;
 }
 
 .header {
+  flex: none;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--fb-line);
+}
+
+.headText {
+  min-width: 0;
 }
 
 .title {
   margin: 0;
-  font-size: 16px;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.subtitle {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--fb-muted);
 }
 
 .close {
-  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
-  background: transparent;
-  color: inherit;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: -4px -6px 0 0;
+  border: 0;
   border-radius: 8px;
-  padding: 6px 10px;
+  background: transparent;
+  color: var(--fb-muted);
+  font-size: 22px;
+  line-height: 1;
   cursor: pointer;
 }
 
-.fieldset {
-  margin: 12px 0 0;
-  padding: 8px 10px;
-  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, currentColor 3%, transparent);
+.close:hover {
+  background: var(--fb-fill);
+  color: inherit;
 }
 
-.fieldset legend {
-  padding: 0 4px;
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 16px 20px 4px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+  font-size: 11px;
+  color: var(--fb-muted);
+}
+
+.steps li + li::before {
+  content: '/';
+  margin-right: 12px;
+  opacity: 0.6;
+}
+
+.stepActive {
+  color: inherit;
+  font-weight: 600;
+}
+
+.stepNo {
+  margin-right: 6px;
+  font-family: var(--fb-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.context {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--fb-fill);
   font-size: 12px;
+}
+
+.context div {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px 16px;
+  flex-wrap: wrap;
+}
+
+.context div + div {
+  margin-top: 4px;
+}
+
+.context dt {
+  color: var(--fb-muted);
+}
+
+.context dd {
+  margin: 0;
+  min-width: 0;
+  font-family: var(--fb-mono);
+  font-size: 11.5px;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.label {
+  display: block;
+  margin-bottom: 7px;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fieldset {
+  margin: 0 0 16px;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.types {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.type {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 7px 8px;
+  border: 1px solid var(--fb-line-strong);
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: center;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.type:hover {
+  background: var(--fb-fill);
+}
+
+.typeActive {
+  border-color: color-mix(in srgb, var(--fb-accent) 70%, transparent);
+  background: color-mix(in srgb, var(--fb-accent) 11%, transparent);
+  font-weight: 600;
+}
+
+.type:focus-within {
+  outline: 2px solid var(--fb-focus);
+  outline-offset: 2px;
+}
+
+/* Visually hidden, still a real radio for arrow keys and screen readers. */
+.typeInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .choice {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  margin-top: 6px;
-  font-size: 13px;
-  line-height: 1.4;
+  margin-top: 7px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.choice input {
+  flex: none;
+  margin: 2px 0 0;
+  accent-color: var(--fb-accent);
+}
+
+.choice:has(input:disabled) {
+  color: var(--fb-muted);
+  cursor: default;
+}
+
+.gap {
+  margin: -6px 0 16px;
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-top: 12px;
-  font-size: 13px;
+  margin-bottom: 16px;
 }
 
 .field textarea,
@@ -80,65 +258,173 @@
   width: 100%;
   box-sizing: border-box;
   color: inherit;
-  background: color-mix(in srgb, currentColor 4%, transparent);
-  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  background: color-mix(in srgb, currentColor 3%, transparent);
+  border: 1px solid var(--fb-line-strong);
   border-radius: 8px;
-  padding: 8px;
+  padding: 9px 10px;
   font: inherit;
 }
 
 .field textarea {
-  min-height: 120px;
+  min-height: 96px;
   resize: vertical;
   overflow-wrap: anywhere;
 }
 
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
+.field textarea:focus,
+.field input:focus {
+  border-color: color-mix(in srgb, var(--fb-accent) 70%, transparent);
 }
 
-.actions button,
-.actions a {
-  padding: 7px 12px;
-  border-radius: 8px;
-  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
-  background: transparent;
-  color: inherit;
+.field .draftBody {
+  min-height: 240px;
+  font-family: var(--fb-mono);
   font-size: 12px;
-  text-decoration: none;
-  cursor: pointer;
+  line-height: 1.7;
+}
+
+.privacy {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--fb-muted);
 }
 
 .live {
-  min-height: 1.2em;
-  margin-top: 8px;
+  min-height: 1.4em;
+  margin: 6px 0 8px;
   font-size: 12px;
 }
 
-.live p,
+.live p {
+  margin: 0;
+}
+
 .note {
-  margin: 4px 0 0;
+  margin: 0 0 6px;
+  padding-left: 10px;
+  border-left: 2px solid var(--fb-line-strong);
   font-size: 12px;
-  line-height: 1.45;
+  line-height: 1.5;
+}
+
+.footer {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--fb-line);
+}
+
+.footerGroup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 6px 14px;
+  border: 1px solid var(--fb-line-strong);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.btn:hover {
+  background: var(--fb-fill);
+}
+
+.primary {
+  border-color: var(--fb-accent);
+  background: var(--fb-accent);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.primary:hover {
+  background: color-mix(in srgb, var(--fb-accent) 86%, black);
 }
 
 .confirm {
-  margin-top: 12px;
-  padding: 10px;
-  border-radius: 8px;
-  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  width: 100%;
 }
 
 .confirm p {
   margin: 0;
-  font-size: 13px;
+  font-weight: 600;
+}
+
+@media (max-width: 520px) {
+  .backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .dialog {
+    width: 100%;
+    max-height: 92vh;
+    border-radius: 14px 14px 0 0;
+    border-bottom: 0;
+  }
+
+  .header,
+  .body,
+  .footer {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .types {
+    grid-template-columns: 1fr;
+  }
+
+  .type {
+    justify-content: flex-start;
+    text-align: left;
+    min-height: 38px;
+    padding: 7px 12px;
+  }
+
+  .footer > .btn,
+  .footerGroup,
+  .footerGroup > .btn {
+    flex: 1 1 auto;
+  }
+
+  .btn {
+    white-space: normal;
+  }
+
+  .context dd {
+    text-align: left;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .backdrop {
-    scroll-behavior: auto;
+  .type,
+  .btn {
+    transition: none;
   }
 }

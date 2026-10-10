@@ -112,15 +112,43 @@ export function FeedbackDialog({
     || step === 'preview'
 
   const theme = resolveDialogTheme(themeRoot)
+  const discardReturn = useRef<HTMLElement | null>(null)
+  const stepMounted = useRef(false)
 
   useEffect(() => {
     const node = dialogRef.current?.querySelector<HTMLElement>('[data-autofocus]')
     node?.focus()
   }, [])
 
+  useEffect(() => {
+    if (!stepMounted.current) {
+      stepMounted.current = true
+      return
+    }
+    dialogRef.current?.querySelector<HTMLElement>('[data-step-focus]')?.focus()
+  }, [step])
+
+  useEffect(() => {
+    const root = dialogRef.current
+    if (root === null) return
+    if (discarding) {
+      root.querySelector<HTMLElement>('[data-discard-focus]')?.focus()
+      return
+    }
+    const back = discardReturn.current
+    discardReturn.current = null
+    if (back === null) return
+    if (back.isConnected && root.contains(back)) back.focus()
+    else root.querySelector<HTMLElement>('[data-step-focus]')?.focus()
+  }, [discarding])
+
   const requestClose = () => {
-    if (dirty) setDiscarding(true)
-    else onClose()
+    if (!dirty) {
+      onClose()
+      return
+    }
+    discardReturn.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setDiscarding(true)
   }
 
   onKeyRef.current = (event: KeyboardEvent) => {
@@ -254,6 +282,15 @@ export function FeedbackDialog({
     setAttachments(current => ({ ...current, [key]: !current[key] }))
   }
 
+  const capabilityLabel = finding.capability === undefined || finding.capability === ''
+    ? undefined
+    : (t(`cap.${finding.capability}` as TrustKey) ?? finding.capability)
+  const findingLabel = finding.entry === 'plugin'
+    ? t('feedback.context.plugin')
+    : [capabilityLabel, finding.ruleId].filter(Boolean).join(' · ')
+  const versionLabel = `schemaVersion ${finding.schemaVersion ?? '—'} · ${pageVersion()}`
+  const privatePrimary = kind === 'missed'
+
   return createPortal(
     <div ref={backdropRef} className={css.backdrop}>
       <div
@@ -266,45 +303,73 @@ export function FeedbackDialog({
         style={{
           color: theme.color,
           background: theme.background,
+          colorScheme: theme.scheme,
         }}
       >
         <header className={css.header}>
-          <h2 id={titleId} className={css.title}>{t('feedback.title')}</h2>
-          <button type="button" className={css.close} onClick={requestClose}>{t('feedback.close')}</button>
+          <div className={css.headText}>
+            <h2 id={titleId} className={css.title}>{t('feedback.title')}</h2>
+            <p className={css.subtitle}>
+              {t(finding.entry === 'evidence' ? 'feedback.subtitle.evidence' : 'feedback.subtitle.plugin')}
+            </p>
+          </div>
+          <button type="button" className={css.close} aria-label={t('feedback.close')} onClick={requestClose}>
+            <span aria-hidden="true">×</span>
+          </button>
         </header>
 
+        <div className={css.body}>
+          <ol className={css.steps} aria-label={t('feedback.steps')}>
+            <li className={step === 'form' ? css.stepActive : undefined} aria-current={step === 'form' ? 'step' : undefined}>
+              <span className={css.stepNo}>01</span>{t('feedback.step.fill')}
+            </li>
+            <li className={step === 'preview' ? css.stepActive : undefined} aria-current={step === 'preview' ? 'step' : undefined}>
+              <span className={css.stepNo}>02</span>{t('feedback.step.preview')}
+            </li>
+          </ol>
+
         {step === 'form' ? (
-          <form
-            onSubmit={event => {
-              event.preventDefault()
-              goPreview()
-            }}
-          >
+          <div>
+            <dl className={css.context}>
+              <div>
+                <dt>{t('feedback.context.finding')}</dt>
+                <dd>{findingLabel === '' ? '—' : findingLabel}</dd>
+              </div>
+              <div>
+                <dt>{t('feedback.context.version')}</dt>
+                <dd>{versionLabel}</dd>
+              </div>
+            </dl>
+
             <fieldset className={css.fieldset}>
-              <legend>{t('feedback.kind.legend')}</legend>
-              {KINDS.map((value, index) => (
-                <label key={value} className={css.choice}>
-                  <input
-                    type="radio"
-                    name={kindName}
-                    value={value}
-                    checked={kind === value}
-                    data-autofocus={index === 0 ? '' : undefined}
-                    onChange={() => {
-                      setKind(value)
-                      setKindError(false)
-                      if (value !== 'missed') setOrdinaryGap(false)
-                    }}
-                  />
-                  {t(`feedback.kind.${value}`)}
-                </label>
-              ))}
+              <legend className={css.label}>{t('feedback.kind.legend')}</legend>
+              <div className={css.types}>
+                {KINDS.map((value, index) => (
+                  <label key={value} className={`${css.type} ${kind === value ? css.typeActive : ''}`}>
+                    <input
+                      type="radio"
+                      className={css.typeInput}
+                      name={kindName}
+                      value={value}
+                      checked={kind === value}
+                      data-autofocus={index === 0 ? '' : undefined}
+                      onChange={() => {
+                        setKind(value)
+                        setKindError(false)
+                        if (value !== 'missed') setOrdinaryGap(false)
+                      }}
+                    />
+                    <span>{t(`feedback.kind.${value}`)}</span>
+                  </label>
+                ))}
+              </div>
             </fieldset>
 
             <label className={css.field}>
-              <span>{t('feedback.note')}</span>
+              <span className={css.label}>{t('feedback.note')}</span>
               <textarea
                 value={note}
+                data-step-focus=""
                 aria-invalid={noteError}
                 onChange={event => {
                   setNote(event.target.value)
@@ -314,7 +379,7 @@ export function FeedbackDialog({
             </label>
 
             <fieldset className={css.fieldset}>
-              <legend>{t('feedback.attach.legend')}</legend>
+              <legend className={css.label}>{t('feedback.attach.legend')}</legend>
               <label className={css.choice}>
                 <input type="checkbox" checked={attachments.pluginIdentity} onChange={() => toggle('pluginIdentity')} />
                 {t('feedback.attach.plugin')}
@@ -344,30 +409,33 @@ export function FeedbackDialog({
             </fieldset>
 
             {kind === 'missed' && (
-              <label className={css.choice}>
+              <label className={`${css.choice} ${css.gap}`}>
                 <input type="checkbox" checked={ordinaryGap} onChange={event => setOrdinaryGap(event.target.checked)} />
                 {t('feedback.gap')}
               </label>
             )}
 
+            <p className={css.privacy}>{t('feedback.privacy')}</p>
+
             <div id={errorId} className={css.live} role="status">
               {kindError && <p>{t('feedback.kind.required')}</p>}
               {noteError && <p>{t('feedback.note.required')}</p>}
             </div>
-
-            <div className={css.actions}>
-              <button type="submit">{t('feedback.next')}</button>
-            </div>
-          </form>
+          </div>
         ) : draft !== null && issue !== null && (
           <div>
             <label className={css.field}>
-              <span>{t('feedback.titleField')}</span>
-              <input value={draft.title} onChange={event => updateDraft({ title: event.target.value })} />
+              <span className={css.label}>{t('feedback.titleField')}</span>
+              <input
+                data-step-focus=""
+                value={draft.title}
+                onChange={event => updateDraft({ title: event.target.value })}
+              />
             </label>
             <label className={css.field}>
-              <span>{t('feedback.bodyField')}</span>
+              <span className={css.label}>{t('feedback.bodyField')}</span>
               <textarea
+                className={css.draftBody}
                 data-draft-body=""
                 value={draft.body}
                 onChange={event => updateDraft({ body: event.target.value })}
@@ -380,35 +448,63 @@ export function FeedbackDialog({
               {copyState === 'copied' && <p>{t('feedback.copied')}</p>}
               {copyState === 'failed' && <p>{t('feedback.copyFailed')}</p>}
             </div>
-            <div className={css.actions}>
-              <button type="button" onClick={() => setStep('form')}>{t('feedback.back')}</button>
-              <button type="button" onClick={() => void copyDraft()}>{t('feedback.copy')}</button>
-              {kind === 'missed' && (
-                <a href={privateReportUrl()} target="_blank" rel="noreferrer">{t('feedback.private')}</a>
-              )}
-              {allowPublic && (
-                <a
-                  href={issue.href}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={copyOverflowDraft}
-                >
-                  {t('feedback.github')}
-                </a>
-              )}
-            </div>
           </div>
         )}
+        </div>
 
-        {discarding && (
-          <div className={css.confirm} role="group" aria-label={t('feedback.discard.title')}>
-            <p>{t('feedback.discard.title')}</p>
-            <div className={css.actions}>
-              <button type="button" onClick={() => setDiscarding(false)} data-autofocus="">{t('feedback.discard.stay')}</button>
-              <button type="button" onClick={onClose}>{t('feedback.discard.leave')}</button>
+        <footer className={css.footer}>
+          {discarding ? (
+            <div className={css.confirm} role="group" aria-label={t('feedback.discard.title')}>
+              <p>{t('feedback.discard.title')}</p>
+              <div className={css.footerGroup}>
+                <button type="button" className={css.btn} onClick={onClose}>{t('feedback.discard.leave')}</button>
+                <button
+                  type="button"
+                  className={`${css.btn} ${css.primary}`}
+                  data-discard-focus=""
+                  onClick={() => setDiscarding(false)}
+                >
+                  {t('feedback.discard.stay')}
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          ) : step === 'form' ? (
+            <>
+              <button type="button" className={css.btn} onClick={requestClose}>{t('feedback.cancel')}</button>
+              <button type="button" className={`${css.btn} ${css.primary}`} onClick={goPreview}>
+                {t('feedback.next')}
+              </button>
+            </>
+          ) : issue !== null && (
+            <>
+              <button type="button" className={css.btn} onClick={() => setStep('form')}>{t('feedback.back')}</button>
+              <div className={css.footerGroup}>
+                <button type="button" className={css.btn} onClick={() => void copyDraft()}>{t('feedback.copy')}</button>
+                {kind === 'missed' && (
+                  <a
+                    className={`${css.btn} ${privatePrimary ? css.primary : ''}`}
+                    href={privateReportUrl()}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {t('feedback.private')}
+                  </a>
+                )}
+                {allowPublic && (
+                  <a
+                    className={`${css.btn} ${privatePrimary ? '' : css.primary}`}
+                    href={issue.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={copyOverflowDraft}
+                  >
+                    {t('feedback.github')}
+                  </a>
+                )}
+              </div>
+            </>
+          )}
+        </footer>
       </div>
     </div>,
     document.body,

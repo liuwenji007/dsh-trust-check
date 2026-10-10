@@ -30,7 +30,19 @@ describe('dialog theme plate', () => {
     expect(resolveDialogTheme(root)).toEqual({
       color: 'rgb(24, 24, 24)',
       background: 'rgb(248, 248, 246)',
+      scheme: 'light',
     })
+    host.remove()
+  })
+
+  it('reports a dark scheme for a dark host surface so native controls follow it', () => {
+    const host = document.createElement('div')
+    host.style.backgroundColor = 'rgb(30, 30, 30)'
+    const root = document.createElement('div')
+    root.style.color = 'rgb(230, 230, 230)'
+    host.append(root)
+    document.body.append(host)
+    expect(resolveDialogTheme(root).scheme).toBe('dark')
     host.remove()
   })
 
@@ -41,6 +53,7 @@ describe('dialog theme plate', () => {
     document.body.append(root)
     expect(resolveDialogTheme(root).color).toBe('rgb(240, 240, 240)')
     expect(resolveDialogTheme(root).background).toBe('#1a1a1a')
+    expect(resolveDialogTheme(root).scheme).toBe('dark')
     root.remove()
   })
 })

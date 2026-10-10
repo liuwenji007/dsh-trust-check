@@ -139,6 +139,40 @@ function sortEvidenceRows(rows: Evidence[]): Evidence[] {
   })
 }
 
+function EvidenceRow({
+  ev,
+  t,
+  onFeedback,
+}: {
+  ev: Evidence
+  t: T
+  onFeedback: (ev: Evidence, opener: HTMLElement) => void
+}) {
+  return (
+    <li className={css.evidenceItem}>
+      <div className={css.evidenceTop}>
+        <span className={css.evidenceMeta}>
+          <code className={css.evidenceFile}>{ev.file}:{ev.line}</code>
+          <ContextTags context={ev.context} t={t} />
+        </span>
+        {ev.rule !== undefined && ev.rule !== '' && (
+          <code className={css.evidenceRule}>{ev.rule}</code>
+        )}
+      </div>
+      <pre className={css.evidenceSnippet}><code>{ev.snippet}</code></pre>
+      <div className={css.evidenceFoot}>
+        <button
+          type="button"
+          className={css.linkBtn}
+          onClick={event => onFeedback(ev, event.currentTarget)}
+        >
+          {t('feedback.evidence')}
+        </button>
+      </div>
+    </li>
+  )
+}
+
 function EvidencePanel({
   report,
   t,
@@ -251,20 +285,7 @@ function EvidencePanel({
                 </div>
                 <ul className={css.evidenceList}>
                   {visible.map((ev, i) => (
-                    <li key={`${ev.file}:${ev.line}:${i}`} className={css.evidenceItem}>
-                      <span className={css.evidenceMeta}>
-                        <code>{ev.file}</code>:{ev.line}
-                        <ContextTags context={ev.context} t={t} />
-                      </span>
-                      <span className={css.evidenceSnippet}>{ev.snippet}</span>
-                      <button
-                        type="button"
-                        className={css.linkBtn}
-                        onClick={event => onFeedback(ev, event.currentTarget)}
-                      >
-                        {t('feedback.evidence')}
-                      </button>
-                    </li>
+                    <EvidenceRow key={`${ev.file}:${ev.line}:${i}`} ev={ev} t={t} onFeedback={onFeedback} />
                   ))}
                 </ul>
                 {main.length > EVIDENCE_PREVIEW && !showAll && (
@@ -283,20 +304,7 @@ function EvidencePanel({
                     </summary>
                     <ul className={css.evidenceList}>
                       {weak.map((ev, i) => (
-                        <li key={`w-${ev.file}:${ev.line}:${i}`} className={css.evidenceItem}>
-                          <span className={css.evidenceMeta}>
-                            <code>{ev.file}</code>:{ev.line}
-                            <ContextTags context={ev.context} t={t} />
-                          </span>
-                          <span className={css.evidenceSnippet}>{ev.snippet}</span>
-                          <button
-                            type="button"
-                            className={css.linkBtn}
-                            onClick={event => onFeedback(ev, event.currentTarget)}
-                          >
-                            {t('feedback.evidence')}
-                          </button>
-                        </li>
+                        <EvidenceRow key={`w-${ev.file}:${ev.line}:${i}`} ev={ev} t={t} onFeedback={onFeedback} />
                       ))}
                     </ul>
                   </details>
@@ -758,16 +766,32 @@ function PluginCardBody({
     }
   }
 
-  const capList = (caps: Capability[]) => caps.map(capability => t(`cap.${capability}`)).join(', ')
-
   return (
     <div className={css.cardBody}>
       {drift && (
         <section className={css.drift}>
-          <p>{t('drift.title')}</p>
-          {added.length > 0 && <p>{t('drift.added').replace('{list}', capList(added))}</p>}
-          {removed.length > 0 && <p>{t('drift.removed').replace('{list}', capList(removed))}</p>}
-          <p>{t('drift.ruleNote')}</p>
+          <p className={css.driftTitle}>{t('drift.title')}</p>
+          {added.length > 0 && (
+            <p className={css.driftRow}>
+              <span className={css.driftLabel}>{t('drift.added')}</span>
+              {added.map(cap => (
+                <span key={cap} className={`${css.deltaPill} ${css.deltaAdded}`}>
+                  <span aria-hidden="true">+ </span>{t(capLabelKey(cap))}
+                </span>
+              ))}
+            </p>
+          )}
+          {removed.length > 0 && (
+            <p className={css.driftRow}>
+              <span className={css.driftLabel}>{t('drift.removed')}</span>
+              {removed.map(cap => (
+                <span key={cap} className={`${css.deltaPill} ${css.deltaRemoved}`}>
+                  <span aria-hidden="true">− </span>{t(capLabelKey(cap))}
+                </span>
+              ))}
+            </p>
+          )}
+          <p className={css.driftNote}>{t('drift.ruleNote')}</p>
         </section>
       )}
 
@@ -860,36 +884,38 @@ function PluginCardBody({
         }}
       />
 
-      <section className={css.section}>
-        <p className={css.ackNote}>{t('ack.scope')}</p>
-        <div className={css.actions}>
-          {v === 'review' && (
-            <button type="button" className={css.actionBtn} disabled={ackLoading} onClick={() => void postAck()}>
-              {ackLoading ? t('ack.saving') : t('ack.accept')}
-            </button>
-          )}
-          {v === 'red' && (
-            <button type="button" className={css.actionBtnRisk} disabled={ackLoading} onClick={() => void postAck(true)}>
-              {ackLoading ? t('ack.saving') : t('ack.acceptRisk')}
-            </button>
-          )}
-          {(v === 'expected' || v === 'accepted') && (
-            <button type="button" className={css.actionBtnSecondary} disabled={ackLoading} onClick={() => void revokeAck()}>
-              {t('ack.revoke')}
-            </button>
-          )}
+      <section className={css.ackBar}>
+        <div className={css.ackRow}>
+          <div className={css.actions}>
+            {v === 'review' && (
+              <button type="button" className={css.actionBtn} disabled={ackLoading} onClick={() => void postAck()}>
+                {ackLoading ? t('ack.saving') : t('ack.accept')}
+              </button>
+            )}
+            {v === 'red' && (
+              <button type="button" className={css.actionBtnRisk} disabled={ackLoading} onClick={() => void postAck(true)}>
+                {ackLoading ? t('ack.saving') : t('ack.acceptRisk')}
+              </button>
+            )}
+            {(v === 'expected' || v === 'accepted') && (
+              <button type="button" className={css.actionBtnSecondary} disabled={ackLoading} onClick={() => void revokeAck()}>
+                {t('ack.revoke')}
+              </button>
+            )}
+          </div>
+          <button
+            type="button"
+            className={css.linkBtn}
+            onClick={event => {
+              onOpenFeedback(freezePlugin(report, schemaVersion), event.currentTarget)
+            }}
+          >
+            {t('feedback.general')}
+          </button>
         </div>
         {ackStale && <div className={css.errorInline} role="status">{t('ack.stale')}</div>}
         {ackError && <div className={css.errorInline} role="status">{t('ack.error')}</div>}
-        <button
-          type="button"
-          className={css.linkBtn}
-          onClick={event => {
-            onOpenFeedback(freezePlugin(report, schemaVersion), event.currentTarget)
-          }}
-        >
-          {t('feedback.general')}
-        </button>
+        <p className={css.ackNote}>{t('ack.scope')}</p>
       </section>
     </div>
   )
@@ -1022,7 +1048,10 @@ export function TrustReport({ useStore, actions, t }: TrustReportProps) {
         <div className={css.headText}>
           <h2 className={css.title}>{t('settings.title')}</h2>
           <p className={css.intro}>{t('intro')}</p>
-          <p className={css.postInstall}>{t('postInstall.note')}</p>
+          <p className={css.postInstall}>
+            <span className={css.scopeDot} aria-hidden="true" />
+            {t('postInstall.note')}
+          </p>
           <details className={css.help}>
             <summary>{t('howToRead.title')}</summary>
             <p>{t('howToRead.body')}</p>
