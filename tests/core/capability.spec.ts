@@ -428,13 +428,42 @@ describe('scanCapabilities', () => {
     expect(verdict(auditPlugin(input({ 'lib/index.js': source })))).toBe('review')
   })
 
-  it('reviews variable, concatenation, and interpolated templates', () => {
+  it('reviews variable, concatenation, and a template that can still name a host', () => {
     const source = [
       'await fetch(url)',
       'await fetch("/api/" + id)',
-      'await fetch(`/api/${id}`)',
+      'await fetch(`/${id}`)',
     ].join('\n')
     expect(verdict(auditPlugin(input({ 'lib/index.js': source })))).toBe('review')
+  })
+
+  it('does not flag a same-origin fetch whose interpolation cannot change the host', () => {
+    for (const probe of [
+      "await fetch('/dsh-xu/${this.name}')",
+      'await fetch(`/dsh-xu/${this.name}`)',
+      'await fetch(`/api/${id}`)',
+      'await fetch(`./${file}`)',
+      'await fetch(`../${file}`)',
+    ]) {
+      const result = scanCapabilities(input({ 'lib/client.js': probe }))
+      expect(result.capabilities, probe).not.toContain('network')
+    }
+  })
+
+  it('still flags a fetch that can name another host', () => {
+    for (const probe of [
+      'await fetch(`/${name}`)',
+      'await fetch(`${url}`)',
+      'await fetch(`http://${host}/x`)',
+      'await fetch(`https://${host}/x`)',
+      'await fetch(`//${host}/x`)',
+      "await fetch('/\\n/evil.com')",
+      "await fetch('/\\\\evil.com')",
+      "await fetch('/\\u002f/evil.com')",
+    ]) {
+      const result = scanCapabilities(input({ 'lib/client.js': probe }))
+      expect(result.capabilities, probe).toContain('network')
+    }
   })
 
   it('reviews a relative literal continued by concat, replace, or a template piece', () => {

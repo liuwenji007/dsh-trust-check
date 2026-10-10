@@ -10,7 +10,7 @@ Each release lists **Affects catalog results** first: anything that can change w
 
 ### Affects catalog results
 
-- None.
+- **A relative `fetch` whose path is fixed before `${…}` is not `network`.** `fetch('/dsh-xu/${this.name}')` and `` fetch(`/api/${id}`) `` stay on the page origin: a quoted `${` is literal text, and a template interpolation after `/` plus a non-slash character, or after `./` / `../`, cannot pick another host. `` fetch(`/${name}`) ``, `` fetch(`${url}`) ``, variables, and concatenation still count. A literal that becomes `//host` after `\` / `\n` / `\u` folding still counts (`fetch('/\n/evil.com')`, `fetch('/\\evil.com')`). This can remove `network` when those calls were the only evidence.
 
 ## 0.2.1 — 2026-10-10
 

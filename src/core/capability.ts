@@ -22,15 +22,88 @@ function manifestUsesHostRuntime(manifest: Record<string, unknown>): boolean {
 /**
  * Decide whether any `fetch(` call on one source line is network egress.
  *
- * A complete relative path literal cannot egress. `blob:` / `data:` literals
- * are scheme fetch (Fetch Standard §4.3) and never enter HTTP fetch. Absolute
- * URLs, variables, concatenation, method calls, and interpolated templates are
- * egress. A comma or closing parenthesis after the literal starts the next
+ * A relative path whose origin is already fixed cannot egress. Quoted `${` is
+ * literal text. In a template, `${…}` after `/` plus a non-slash character, or
+ * after `./` / `../`, cannot pick another host; `${…}` right after a lone `/`
+ * can (`/${name}` → `//host`). `blob:` / `data:` literals are scheme fetch
+ * (Fetch Standard §4.3) and never enter HTTP fetch. Absolute URLs, variables,
+ * concatenation, and method calls are egress. Escapes are folded the way the
+ * URL parser folds them, so `\` / `\n` / `\u002f` that become `//host` still
+ * count. A comma or closing parenthesis after the literal starts the next
  * argument.
  */
-function isCompleteRelativeLiteral(arg: string): boolean {
-  if (arg.includes('${')) return false
-  return arg.startsWith('/') || arg.startsWith('./') || arg.startsWith('../')
+
+/**
+ * Decode the escapes that can change a fetch URL, then fold like the URL
+ * parser: drop tab / CR / LF, and treat `\` as `/`.
+ * `undefined` means an escape was left undecoded (`\u{…}`), so the caller
+ * must not treat the argument as same-origin.
+ */
+function decodeFetchArg(raw: string): string | undefined {
+  let out = ''
+  for (let i = 0; i < raw.length; i++) {
+    if (raw[i] !== '\\') {
+      out += raw[i]
+      continue
+    }
+    const next = raw[++i]
+    if (next === undefined) return undefined
+    if (next === 'n') out += '\n'
+    else if (next === 'r') out += '\r'
+    else if (next === 't') out += '\t'
+    else if (next === 'u' && raw[i + 1] === '{') return undefined
+    else if (next === 'u') {
+      const hex = raw.slice(i + 1, i + 5)
+      if (!/^[0-9a-fA-F]{4}$/.test(hex)) return undefined
+      out += String.fromCharCode(Number.parseInt(hex, 16))
+      i += 4
+    } else if (next === 'x') {
+      const hex = raw.slice(i + 1, i + 3)
+      if (!/^[0-9a-fA-F]{2}$/.test(hex)) return undefined
+      out += String.fromCharCode(Number.parseInt(hex, 16))
+      i += 2
+    } else if (next === '\n' || next === '\r') {
+      return undefined
+    } else {
+      out += next
+    }
+  }
+  return out.replace(/[\t\n\r]/g, '').replace(/\\/g, '/')
+}
+
+/** Index of the first real `${`. `\${` is an escaped dollar, not an interpolation. */
+function interpolationAt(raw: string): number {
+  for (let i = 0; i < raw.length - 1; i++) {
+    if (raw[i] === '\\') {
+      i += 1
+      continue
+    }
+    if (raw[i] === '$' && raw[i + 1] === '{') return i
+  }
+  return -1
+}
+
+/** A finished relative URL: path-absolute (`/x`, not `//host`), `./`, or `../`. */
+function isSameOriginUrl(decoded: string): boolean {
+  if (decoded.startsWith('/') && !decoded.startsWith('//')) return true
+  return decoded.startsWith('./') || decoded.startsWith('../')
+}
+
+/**
+ * True when appending arbitrary text cannot change the origin.
+ * A lone `/` is not locked: `/${name}` can become `//host`.
+ */
+function prefixLocksOrigin(decoded: string): boolean {
+  if (decoded.startsWith('/') && !decoded.startsWith('//')) return decoded.length >= 2
+  return decoded.startsWith('./') || decoded.startsWith('../')
+}
+
+function isSameOriginFetchArg(arg: string, quote: string): boolean {
+  const cut = quote === '`' ? interpolationAt(arg) : -1
+  const decoded = decodeFetchArg(cut === -1 ? arg : arg.slice(0, cut))
+  if (decoded === undefined) return false
+  if (cut === -1) return isSameOriginUrl(decoded)
+  return prefixLocksOrigin(decoded)
 }
 
 /** Scheme-fetch only — no DNS, no connection, no CORS (Fetch Standard §4.3). */
@@ -109,7 +182,7 @@ function lineHasOutboundFetch(line: string): boolean {
     const trailing = rest.slice(end + 1).replace(/^\s*/, '')
     if (trailing.startsWith('+') || trailing.startsWith('.') || trailing.startsWith('`')) return true
     if (/^https?:\/\//i.test(arg) || arg.startsWith('//')) return true
-    if (isCompleteRelativeLiteral(arg) || isNonHttpSchemeLiteral(arg)) continue
+    if (isNonHttpSchemeLiteral(arg) || isSameOriginFetchArg(arg, quote)) continue
     return true
   }
   return false

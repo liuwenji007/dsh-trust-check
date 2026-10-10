@@ -58,7 +58,8 @@ export const CAPABILITY_RULES: readonly CapabilityRule[] = [
   // and `fetch('blob:…')` / `fetch('data:…')` are scheme fetch, not egress.
   // Whether a fetch is outbound depends on its argument, so capability.ts
   // special-cases it per call site (relative and blob/data literals are not
-  // network; absolute URLs, template strings, and variable arguments are).
+  // network; absolute URLs, variables, and a template whose prefix can still
+  // name another host are).
   // Keeping it here would flag every relative-path fetch as network and drown
   // the signal.
   {
