@@ -173,7 +173,11 @@ describe('detection feedback dialog', () => {
     const opener = screen.getByRole('button', { name: zh['feedback.general'] })
     await user.click(opener)
     expect(screen.getAllByRole('dialog')).toHaveLength(1)
-    expect(screen.getByRole('dialog').getAttribute('aria-modal')).toBe('true')
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
+    expect(dialog.parentElement?.parentElement).toBe(document.body)
+    expect(dialog.style.background).not.toBe('')
+    expect(dialog.style.background).not.toMatch(/transparent|rgba\(0,\s*0,\s*0,\s*0\)/)
     expect(document.querySelector('[inert]')).not.toBeNull()
     const kindRadio = screen.getByRole('radio', { name: zh['feedback.kind.inaccurate'] }) as HTMLInputElement
     expect(kindRadio.name).not.toBe('feedback-kind')

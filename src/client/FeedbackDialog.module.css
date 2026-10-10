@@ -6,21 +6,22 @@
   align-items: flex-start;
   justify-content: center;
   padding: 24px 12px;
-  background: color-mix(in srgb, black 35%, transparent);
+  background: color-mix(in srgb, black 48%, transparent);
   overflow: auto;
 }
 
 .dialog {
+  position: relative;
+  isolation: isolate;
   width: min(560px, 100%);
   margin-top: 4vh;
   padding: 16px;
   border-radius: 12px;
   border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
-  background: color-mix(in srgb, currentColor 12%, transparent);
+  /* Inline style sets an opaque host plate; this is the light-host fallback. */
+  background: #ffffff;
   color: inherit;
-  backdrop-filter: blur(22px);
-  -webkit-backdrop-filter: blur(22px);
-  box-shadow: 0 12px 40px color-mix(in srgb, currentColor 24%, transparent);
+  box-shadow: 0 12px 40px color-mix(in srgb, black 28%, transparent);
 }
 
 .header {
@@ -49,6 +50,7 @@
   padding: 8px 10px;
   border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
   border-radius: 8px;
+  background: color-mix(in srgb, currentColor 3%, transparent);
 }
 
 .fieldset legend {
@@ -78,7 +80,7 @@
   width: 100%;
   box-sizing: border-box;
   color: inherit;
-  background: transparent;
+  background: color-mix(in srgb, currentColor 4%, transparent);
   border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
   border-radius: 8px;
   padding: 8px;

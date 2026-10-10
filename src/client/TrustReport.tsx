@@ -32,6 +32,7 @@ import {
 } from '../core/destination-priority.ts'
 import type { TrustKey } from './locales.ts'
 import type { createTrustStore } from './stores.ts'
+import { ExplainMarkdown } from './explain-markdown.tsx'
 import { FeedbackDialog } from './FeedbackDialog.tsx'
 import type { FrozenFinding } from './feedback-draft.ts'
 import css from './TrustReport.module.css'
@@ -314,7 +315,7 @@ function EvidencePanel({
       {explainText !== null && (
         <div className={css.explainBox}>
           <div className={css.muted}>{t('explain.disclaimer')}</div>
-          <p className={css.explainText}>{explainText}</p>
+          <ExplainMarkdown text={explainText} />
         </div>
       )}
     </section>

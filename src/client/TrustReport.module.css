@@ -500,8 +500,54 @@
 
 .explainText {
   margin: 8px 0 0;
-  white-space: pre-wrap;
   color: var(--trust-ink);
+}
+
+.explainTitle {
+  margin: 10px 0 4px;
+  font-weight: 650;
+  color: var(--trust-ink);
+  overflow-wrap: anywhere;
+}
+
+.explainTitle:first-child {
+  margin-top: 0;
+}
+
+.explainParagraph {
+  margin: 0 0 8px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.explainParagraph:last-child,
+.explainList:last-child,
+.explainTitle:last-child {
+  margin-bottom: 0;
+}
+
+.explainList {
+  margin: 0 0 8px;
+  padding-left: 1.2em;
+}
+
+.explainList li {
+  margin: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+.explainStrong {
+  font-weight: 650;
+  color: var(--trust-ink);
+}
+
+.explainCode {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+  padding: 0.05em 0.28em;
+  border-radius: 4px;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  overflow-wrap: anywhere;
 }
 
 /* —— Scan stack —— */

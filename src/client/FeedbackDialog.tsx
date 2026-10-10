@@ -4,7 +4,9 @@
  * open the advisory page with no draft on the URL.
  */
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { TrustKey } from './locales.ts'
+import { resolveDialogTheme } from './dialog-theme.ts'
 import { pageVersion } from './page-version.ts'
 import {
   buildFeedbackDraft,
@@ -109,7 +111,7 @@ export function FeedbackDialog({
     || attachments.detectedValues
     || step === 'preview'
 
-  const plateColor = themeRoot === null ? undefined : getComputedStyle(themeRoot).color
+  const theme = resolveDialogTheme(themeRoot)
 
   useEffect(() => {
     const node = dialogRef.current?.querySelector<HTMLElement>('[data-autofocus]')
@@ -252,12 +254,8 @@ export function FeedbackDialog({
     setAttachments(current => ({ ...current, [key]: !current[key] }))
   }
 
-  return (
-    <div
-      ref={backdropRef}
-      className={css.backdrop}
-      style={plateColor === undefined || plateColor.length === 0 ? undefined : { color: plateColor }}
-    >
+  return createPortal(
+    <div ref={backdropRef} className={css.backdrop}>
       <div
         ref={dialogRef}
         className={css.dialog}
@@ -265,6 +263,10 @@ export function FeedbackDialog({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={noteError || kindError ? errorId : undefined}
+        style={{
+          color: theme.color,
+          background: theme.background,
+        }}
       >
         <header className={css.header}>
           <h2 id={titleId} className={css.title}>{t('feedback.title')}</h2>
@@ -408,6 +410,7 @@ export function FeedbackDialog({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
