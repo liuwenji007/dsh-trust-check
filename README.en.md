@@ -1,5 +1,9 @@
 # dsh-trust-check
 
+[![Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
+[![npm version](https://img.shields.io/npm/v/dsh-trust-check)](https://www.npmjs.com/package/dsh-trust-check)
+[![npm downloads](https://img.shields.io/npm/dm/dsh-trust-check)](https://www.npmjs.com/package/dsh-trust-check)
+
 [中文](README.md)
 
 Static **capability disclosure** for DeepSeek Harness plugins: permissions, injections, source, and install scripts — code-judged, reproducible, zero tokens.
@@ -46,7 +50,13 @@ The exit code is always 0 by default. With `--exit-code`: `0` nothing detected i
 
 | Settings → Plugin Trust | CLI `--dir --json` |
 | --- | --- |
-| ![Settings plugin trust](docs/dsh.png) | ![CLI JSON output](docs/cli.png) |
+| ![Settings overview](docs/overview.png) | ![CLI JSON output](docs/cli.png) |
+
+| Expanded review | AI reading |
+| --- | --- |
+| ![Expanded review and evidence](docs/review.png) | ![AI reading](docs/AI_read.png) |
+
+![Detection feedback](docs/feedback.png)
 
 ### Troubleshooting
 
@@ -76,7 +86,7 @@ The CLI prints the same facts in its own layout.
 | **As expected** | You acknowledged the current capability/shape fingerprint | `trust-ack.json` matches this scan (no red lines) |
 | **Nothing detected** | No red lines or privileged capabilities | Everything else |
 
-`score` / `summary` stay in JSON for sorting and integrators; the settings UI omits them. Injected token estimates are cost hints.
+`score` / `summary` stay in JSON for sorting and integrators; the settings UI omits them. Injected token estimates appear only as a cost hint on the Injections fold summary (when non-zero).
 
 ### Shape layer (code-judged)
 
@@ -121,13 +131,10 @@ Red lines cap the numeric score at 49 (avoiding "100 + high risk"). **The verdic
 
 ## What it audits
 
-| Dimension | Reads | Judgement |
-|---|---|---|
-| **Capabilities** | `package.json` dependency scopes + static scan of `lib/`, `dist/`, `bin/`, `scripts/`, skill dirs, and `main` / `exports` / `bin` / string `browser` entry files. When `files` parses exactly, dev-only files npm would not publish are not counted | shell / file read / file write / network / credentials / sub-agents / LLM calls / env reads |
-| **Injections** | `cordis.patch.yml` + `systemPrompt` / `ctx.skills.register` / `system-prompt/assemble` + skill text | who it overrides/disables (`id` or `name`), what it injects |
-| **Cost** | skill text + system-prompt inline literal bytes | estimated injected tokens per request (bytes / 4, estimate only) |
-| **Source** | `package.json` `repository` (falls back to the git install source) + install spec | pinned version / pinned commit |
-| **Update risk** | install scripts (install/postinstall/preinstall; `prepare` is deduction-only) | whether scripts are declared to run at install time |
+- **Capabilities** — Reads: `package.json` dependency scopes + static scan of `lib/` / `dist/` (falls back to the package root when neither exists), `bin/`, `scripts/`, `skills/` / `prompts/`, and `main` / `exports` / `bin` / string `browser` entry files; when `files` parses exactly, dev-only files npm would not publish are not counted. Judges: shell / file read / file write / network / credentials / env / sub-agents / host-runtime / LLM / dynamic-code
+- **Injections** — Reads: `cordis.patch.yml` + `systemPrompt` / `ctx.skills.register` / `system-prompt/assemble` + skill text. Judges: who it overrides/disables (`id` or `name`), what it injects; skill and system-prompt literals also yield an injected-token estimate (bytes / 4), shown only as a cost hint on the Injections fold summary when non-zero
+- **Source** — Reads: `package.json` `repository` (falls back to the git install source) + install spec. Judges: pinned version / pinned commit
+- **Update risk** — Reads: install scripts (install/postinstall/preinstall; `prepare` is deduction-only). Judges: whether scripts are declared to run at install time
 
 ## For integrators (plugin catalogs, markets, CI)
 

@@ -1,5 +1,9 @@
 # dsh-trust-check
 
+[![Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
+[![npm version](https://img.shields.io/npm/v/dsh-trust-check)](https://www.npmjs.com/package/dsh-trust-check)
+[![npm downloads](https://img.shields.io/npm/dm/dsh-trust-check)](https://www.npmjs.com/package/dsh-trust-check)
+
 [English](README.en.md)
 
 DeepSeek Harness 插件静态**能力披露**：权限、注入、来源、安装脚本——代码判定、可复现、零 token。
@@ -46,7 +50,13 @@ npx dsh-trust-check --dir ./pkg --exit-code
 
 | 设置 → 插件体检 | CLI `--dir --json` |
 | --- | --- |
-| ![设置页插件体检](docs/dsh.png) | ![CLI JSON 输出](docs/cli.png) |
+| ![设置页总览](docs/overview.png) | ![展开复核与证据](docs/review.png) |
+
+| 展开复核 | AI 解读 |
+| --- | --- |
+| ![反馈检测问题](docs/feedback.png) | ![AI 解读](docs/AI_read.png) |
+
+![CLI JSON 输出](docs/cli.png)
 
 ### 排障
 
@@ -76,7 +86,7 @@ CLI 打印同一套事实，版式独立于设置页卡片。
 | **能力如预期** | 已确认当前能力与去向指纹 | `trust-ack.json` 与本次扫描一致（无红线） |
 | **未检出项目** | 未见红线或特权能力 | 其余 |
 
-`score` / `summary` 留在 JSON 供排序与集成；设置页不展示。注入 token 估算为成本参考。
+`score` / `summary` 留在 JSON 供排序与集成；设置页不展示。注入 token 估算只在「注入」折叠标题旁作成本参考（有值才显示）。
 
 ### 形状层（代码判定）
 
@@ -121,13 +131,10 @@ CLI 打印同一套事实，版式独立于设置页卡片。
 
 ## 审计什么
 
-| 维度 | 读什么 | 判定 |
-|---|---|---|
-| **能力面** | `package.json` 依赖 scope + 静态扫 `lib/`、`dist/`、`bin/`、`scripts/`、技能目录，以及 `main` / `exports` / `bin` / 字符串 `browser` 入口文件。`files` 能精确解析时，npm 不会发布的开发文件不计入 | shell / 文件读写 / 网络 / 凭据 / 子代理 / LLM 调用 / 环境变量 |
-| **注入面** | `cordis.patch.yml` + `systemPrompt` / `ctx.skills.register` / `system-prompt/assemble` + 技能文本 | override / disable 了谁（`id` 或 `name`）、注入了什么 |
-| **成本** | 技能文本 + system-prompt 行内字面量字节数 | 估算每请求注入 token（字节 / 4，仅估算） |
-| **来源** | `package.json` 的 `repository`（缺失回退到 git 安装源）+ 安装 spec | 是否锁版本/锁 commit |
-| **更新风险** | 安装脚本（install/postinstall/preinstall；`prepare` 仅扣分） | 是否声明了安装时执行的脚本 |
+- **能力面** — 读：`package.json` 依赖 scope + 静态扫 `lib/`、`dist/`（都没有则回退包根）、`bin/`、`scripts/`、`skills/` / `prompts/`，以及 `main` / `exports` / `bin` / 字符串 `browser` 入口文件；`files` 能精确解析时，npm 不会发布的开发文件不计入。判定：shell / 文件读写 / 网络 / 凭据 / 环境变量 / 子代理 / 宿主运行时 / LLM 调用 / 动态代码
+- **注入面** — 读：`cordis.patch.yml` + `systemPrompt` / `ctx.skills.register` / `system-prompt/assemble` + 技能文本。判定：override / disable 了谁（`id` 或 `name`）、注入了什么；技能与 system-prompt 字面量还会估一个注入 token（字节 / 4），只在「注入」折叠标题旁作成本参考，有估算值才显示
+- **来源** — 读：`package.json` 的 `repository`（缺失回退到 git 安装源）+ 安装 spec。判定：是否锁版本/锁 commit
+- **更新风险** — 读：安装脚本（install/postinstall/preinstall；`prepare` 仅扣分）。判定：是否声明了安装时执行的脚本
 
 ## 给集成方（如插件目录、市场、CI）
 
