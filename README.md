@@ -1,12 +1,14 @@
 # dsh-trust-check
 
+[![Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
+[![npm version](https://img.shields.io/npm/v/dsh-trust-check)](https://www.npmjs.com/package/dsh-trust-check)
+[![npm downloads](https://img.shields.io/npm/dm/dsh-trust-check)](https://www.npmjs.com/package/dsh-trust-check)
+
 [English](README.en.md)
 
 DeepSeek Harness 插件静态**能力披露**：权限、注入、来源、安装脚本——代码判定、可复现、零 token。
 
-> 不是"杀毒软件"，也不做安全承诺。它只做能证明的事：把插件**真实会碰什么、注入了什么、来源是否可核对**摊开给你看，结论每一条都附证据（文件 + 行号 + 片段），你可以自己复核。
->
-> 本项目只产出事实，不下"安全 / 可信"结论，也不提供背书；过滤策略由集成方和用户决定。详见 [产品定位与边界](docs/POSITIONING.md)。
+> 把插件**会碰什么、注入了什么、来源能否核对**摊开，每条附证据（文件 + 行号 + 片段），供你复核。只报告检测到的事实，**不做安全背书，也不做安全推断**；是否拦截或继续使用由集成方与用户决定。详见 [产品定位与边界](docs/POSITIONING.md)。
 
 ## 安装
 
@@ -44,11 +46,17 @@ npx dsh-trust-check --dir ./pkg --exit-code
 
 `--dir` 与 `--profile` 互斥。两种模式的 `--json` 输出同为 `AuditResponse` 形状 `{ schemaVersion, profile, dir?, generatedAt, plugins, errors }`；单目录模式下 `profile` 为空字符串，`dir` 为绝对路径。详见 [docs/audit-schema.md](docs/audit-schema.md) / [docs/INTEGRATION.md](docs/INTEGRATION.md)。
 
-默认退出码始终为 0。加 `--exit-code` 后：`0` 未检出（profile 模式含已确认），`1` 需确认，`2` 有红线，`3` 扫描失败；profile 模式取所有插件中最严重的一项。**`0` 只代表本次静态扫描没有检出，不代表安全。** 参数写错（未知参数、`--dir` 等缺值）会直接报错并以 `1` 退出。
+默认退出码始终为 0。加 `--exit-code` 后：`0` 本次静态扫描未检出（profile 模式含已确认），`1` 需确认，`2` 有红线，`3` 扫描失败；profile 模式取所有插件中最严重的一项。**未检出不是安全背书。** 参数写错（未知参数、`--dir` 等缺值）会直接报错并以 `1` 退出。
 
 | 设置 → 插件体检 | CLI `--dir --json` |
 | --- | --- |
-| ![设置页插件体检](docs/dsh.png) | ![CLI JSON 输出](docs/cli.png) |
+| ![设置页总览](docs/overview.png) | ![展开复核与证据](docs/review.png) |
+
+| 展开复核 | AI 解读 |
+| --- | --- |
+| ![反馈检测问题](docs/feedback.png) | ![AI 解读](docs/AI_read.png) |
+
+![CLI JSON 输出](docs/cli.png)
 
 ### 排障
 
@@ -59,21 +67,26 @@ npx dsh-trust-check --dir ./pkg --exit-code
 
 ## 怎么读报告
 
-设置页与 CLI 采用**决策优先**布局，阅读顺序：
+设置页为单列卡片，同一时间展开一张。
 
-1. **决策**：徽章 + 动作句 +「为什么要小心」（最多 3 条）
-2. **扫描**：能力芯片 → 注入摘要（默认折叠）→ 来源
-3. **取证**：证据按能力分组，默认折叠
+1. **顶部**：一句话定位 + 总览（如「10 个插件 · 3 需确认」）。带颜色的总览条目可点，跳到该类第一张卡。
+2. **收起态**：名称、版本、状态徽章、来源；能力细节点开后再看。
+3. **展开后**：发现与动作说明 → AI 解读（若已生成）→ 能力 / 去向 / 路径 / 密钥 / 注入 / 来源 → 证据 → 扫描限制 → 底部确认条。
+4. **与上次确认不一致时**：右上角显示「需重新确认」；能力有增减时，标题下出现 `+能力` / `−能力` 小标签。
+5. **确认**：在卡片底部，把当前指纹写入本机确认记录，供下次扫描对比。
+
+CLI 打印同一套事实，版式独立于设置页卡片。
 
 | 裁决 | 含义 | 何时出现 |
 |---|---|---|
-| **有红线** | 命中硬红线，默认应停用；可「确认风险」后继续 | `redLines` 非空，且未确认当前指纹 |
+| **有红线** | 命中硬红线。先复核具体事实；了解后可「确认风险」继续 | `redLines` 非空，且未确认当前指纹 |
 | **风险已确认** | 已确认当前红线风险 | 有红线，`trust-ack.json` 与本次扫描一致 |
 | **需确认** | 未见硬红线，但有特权能力或 patch 改动 | 有能力或 override/disable，无红线 |
+| **需重新确认** | 以前确认过，但本次扫描与上次不一致 | 有确认记录，指纹已变（可能来自升级、结果变化或规则更新） |
 | **能力如预期** | 已确认当前能力与去向指纹 | `trust-ack.json` 与本次扫描一致（无红线） |
-| **静态未见风险信号** | 未见红线或特权能力；不是安全保证 | 其余 |
+| **未检出项目** | 未见红线或特权能力 | 其余 |
 
-`score` / `summary` 仍留在 JSON 里供排序与集成方使用，设置页不展示；注入 token 估算标明为**成本参考**，不是信任依据。
+`score` / `summary` 留在 JSON 供排序与集成；设置页不展示。注入 token 估算只在「注入」折叠标题旁作成本参考（有值才显示）。
 
 ### 形状层（代码判定）
 
@@ -83,7 +96,7 @@ npx dsh-trust-check --dir ./pkg --exit-code
 - **工作区外路径**：绝对路径、家目录、路径穿越等。
 - **密钥触摸**：路径、敏感 env 名。
 
-这些只代表「在源码里看到了什么」，不代表「地址/路径安全」；运行时拼接的 URL 看不到（模板 URL 的 `${…}` 若在主机名之后，或紧跟在完整的带点主机名后面（`` `https://api.github.com${path}` ``），主机名仍会记为去向；`${…}` 出现在主机名写完之前则看不到）。
+表示源码里出现了该字面量；运行时拼接的 URL 看不到（模板 URL 的 `${…}` 若在主机名之后，或紧跟在完整的带点主机名后面（`` `https://api.github.com${path}` ``），主机名仍会记为去向；`${…}` 出现在主机名写完之前则看不到）。字面量本身不做安全推断。
 
 **白名单**：常见托管/registry 域名（GitHub、npm、npmmirror、腾讯云镜像等）、DSH 精选目录与 GitHub 代理、常见模型厂商 API（DeepSeek、OpenAI、Anthropic、Google Gemini）。命中白名单的条目默认收起并附简短说明；明文 HTTP 永远不会因白名单降级。
 
@@ -102,7 +115,9 @@ npx dsh-trust-check --dir ./pkg --exit-code
 
 在设置页确认「这些能力符合我装它的目的」后，指纹写入 `~/.dsh/profiles/<profile>/trust-ack.json`。升级后能力、去向、工作区外路径、密钥触摸、红线或技能正文（按内容哈希，而不是字节数）任一变化，都会要求重新确认。确认请求必须带上当前报告的 `ackFingerprint`；内容已经变化时返回 409，并提示重新确认。没有 `digest` 的旧确认一律失效。确认红线走单独的「确认风险」按钮，而且只在指纹一致之后才接受。
 
-**AI 解释**：可选按钮，通过 DSH 已配置的模型解释报告摘要，**不改裁决**；未配置模型时不可用。
+**AI 解读**：阅读辅助，可从确认条打开。用 DSH 已配置的模型解释报告摘要；未配置模型时不可用。生成结果保存在本机；插件版本、检测结果或界面语言变化后需重新生成。
+
+**反馈检测问题**：每条证据可以生成一份草稿；插件详情里另有入口，用来报漏报或说明不清楚。草稿留在页面内存。误报和说明问题会打开检测反馈的 Markdown Issue 编辑器，并带上你改过的标题和正文，由你提交。漏报默认打开 SECURITY.md 里的私密报告页；标明为普通规则缺口、且不含可利用绕过时，才出现公开 Issue。
 
 ### 红线（有则默认应挡住）
 
@@ -116,13 +131,10 @@ npx dsh-trust-check --dir ./pkg --exit-code
 
 ## 审计什么
 
-| 维度 | 读什么 | 判定 |
-|---|---|---|
-| **能力面** | `package.json` 依赖 scope + 静态扫 `lib/`、`dist/`、`bin/`、`scripts/`、技能目录，以及 `main` / `exports` / `bin` / 字符串 `browser` 入口文件。`files` 能精确解析时，npm 不会发布的开发文件不计入 | shell / 文件读写 / 网络 / 凭据 / 子代理 / LLM 调用 / 环境变量 |
-| **注入面** | `cordis.patch.yml` + `systemPrompt` / `ctx.skills.register` / `system-prompt/assemble` + 技能文本 | override / disable 了谁（`id` 或 `name`）、注入了什么 |
-| **成本** | 技能文本 + system-prompt 行内字面量字节数 | 估算每请求注入 token（字节 / 4，仅估算） |
-| **来源** | `package.json` 的 `repository`（缺失回退到 git 安装源）+ 安装 spec | 是否锁版本/锁 commit |
-| **更新风险** | 安装脚本（install/postinstall/preinstall；`prepare` 仅扣分） | 是否声明了安装时执行的脚本 |
+- **能力面** — 读：`package.json` 依赖 scope + 静态扫 `lib/`、`dist/`（都没有则回退包根）、`bin/`、`scripts/`、`skills/` / `prompts/`，以及 `main` / `exports` / `bin` / 字符串 `browser` 入口文件；`files` 能精确解析时，npm 不会发布的开发文件不计入。判定：shell / 文件读写 / 网络 / 凭据 / 环境变量 / 子代理 / 宿主运行时 / LLM 调用 / 动态代码
+- **注入面** — 读：`cordis.patch.yml` + `systemPrompt` / `ctx.skills.register` / `system-prompt/assemble` + 技能文本。判定：override / disable 了谁（`id` 或 `name`）、注入了什么；技能与 system-prompt 字面量还会估一个注入 token（字节 / 4），只在「注入」折叠标题旁作成本参考，有估算值才显示
+- **来源** — 读：`package.json` 的 `repository`（缺失回退到 git 安装源）+ 安装 spec。判定：是否锁版本/锁 commit
+- **更新风险** — 读：安装脚本（install/postinstall/preinstall；`prepare` 仅扣分）。判定：是否声明了安装时执行的脚本
 
 ## 给集成方（如插件目录、市场、CI）
 
@@ -141,7 +153,7 @@ const report = auditPlugin(collectPlugin(extractedDir, spec))
 // 三态含义（是否拦截、是否弹窗由集成方决定）：
 // verdict(report) === 'red'     → 命中高置信度风险信号，建议默认挡住，允许用户确认后继续
 // verdict(report) === 'review'  → 带特权能力，建议展示能力清单
-// verdict(report) === 'clear'   → 本次静态扫描未检出，不代表安全
+// verdict(report) === 'clear'   → 本次静态扫描未检出（不是安全背书）
 ```
 
 CLI 等价调用（market 也可 spawn，无需 DSH）：
@@ -156,8 +168,8 @@ npx dsh-trust-check --dir "$EXTRACTED_DIR" --spec "$INSTALL_SPEC" --json
 
 ## 判定原则
 
-- **代码判定，不是 LLM 打分**：判断全在代码里，不烧 token、结果可复现。
-- **只证"有"，不证"无"**：静态分析只下"检测到了某能力"的结论，从不说"保证没有某能力"。
+- **代码判定，结果可复现**：判断在规则表里完成，不烧 token。
+- **只报告「有」**：下「检测到某能力」的结论；未检出不做安全推断，也不构成安全背书。
 - **证据可复核**：每个能力命中都带 `文件:行号` 和原文片段。
 - **seam 表可热更**：能力判定规则是一张数据表（`src/core/seams.ts`），DSH 接口变了改表不改引擎。
 

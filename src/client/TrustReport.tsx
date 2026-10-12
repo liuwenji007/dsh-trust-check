@@ -1,15 +1,15 @@
 /**
  * Settings section: renders the cached audit report and offers a rescan.
- * Decision-first layout: verdict, shape, scan dimensions, evidence, ack, explain.
+ * Reading order: change note, findings, capabilities with their evidence, detail, scan limits, acknowledgment.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AuditReport, AuditResponse, Capability, DestinationUsage, Evidence, FindingContext, InjectionKind, TrustAckEntry } from '../core/types.ts'
 import {
   ackDrifted,
   capabilityContext,
-  capabilityDelta,
   capabilityTier,
+  capabilityDelta,
   concerns,
   countVerdicts,
   formatInjectionDetail,
@@ -18,7 +18,6 @@ import {
   networkReach,
   presentInjection,
   repositoryHref,
-  topCapabilities,
   verdict,
   type Concern,
   type Verdict,
@@ -32,6 +31,11 @@ import {
 } from '../core/destination-priority.ts'
 import type { TrustKey } from './locales.ts'
 import type { createTrustStore } from './stores.ts'
+import { resolveDialogTheme } from './dialog-theme.ts'
+import { explainCacheKey, pruneExplains, readExplain, writeExplain, type ExplainEntry } from './explain-cache.ts'
+import { ExplainMarkdown } from './explain-markdown.tsx'
+import { FeedbackDialog } from './FeedbackDialog.tsx'
+import type { FrozenFinding } from './feedback-draft.ts'
 import css from './TrustReport.module.css'
 
 export type TrustReportProps =
@@ -40,7 +44,196 @@ export type TrustReportProps =
 
 type T = (key: TrustKey) => string
 
-const EVIDENCE_PREVIEW = 2
+const EVIDENCE_PREVIEW = 3
+
+/** Concerns the capability chips do not already say. */
+const SHAPE_CONCERNS: ReadonlySet<Concern['code']> = new Set([
+  'install-script',
+  'core-tamper',
+  'creds-network',
+  'plaintext-http',
+  'literal-ip',
+  'raw',
+  'external-dest',
+  'secret-touch',
+  'path-escape',
+])
+
+function decisionConcerns(report: AuditReport): Concern[] {
+  return concerns(report, report.redLines.length + 3).filter(c => SHAPE_CONCERNS.has(c.code))
+}
+
+/** Runtime tags per row are only worth showing when rows in the group disagree. */
+function runtimesAgree(rows: { context?: FindingContext }[]): boolean {
+  const key = (row: { context?: FindingContext }) => (row.context?.runtime ?? []).join(',')
+  const first = rows[0]
+  return first === undefined || rows.every(row => key(row) === key(first))
+}
+
+export const EXPLAINED_RULES: ReadonlySet<string> = new Set([
+  'shell.import-or-call',
+  'fs-write.call',
+  'fs-read.import-or-call',
+  'network.import-or-call',
+  'network.fetch',
+  'credentials.material',
+  'credentials.read',
+  'env.read',
+  'subagent.spawn',
+  'llm.call',
+  'dynamic-code.eval',
+  'host-runtime.manifest',
+])
+
+function RuleTip({ rule, t, className }: { rule: string; t: T; className?: string }) {
+  const id = useId()
+  const key = (EXPLAINED_RULES.has(rule) ? `rule.${rule}` : 'rule.unknown') as TrustKey
+  return (
+    <span className={css.ruleTip}>
+      <code
+        className={`${css.ruleCode} ${className ?? ''}`}
+        tabIndex={0}
+        aria-describedby={id}
+        onKeyDown={event => {
+          if (event.key === 'Escape') event.currentTarget.blur()
+        }}
+      >
+        {rule}
+      </code>
+      <span role="tooltip" id={id} className={css.ruleTipBody}>
+        {t(key)}
+        <span className={css.ruleTipNote}>{t('rule.idNote')}</span>
+      </span>
+    </span>
+  )
+}
+
+function sharedRule(rows: Evidence[]): string | undefined {
+  const first = rows[0]?.rule
+  if (first === undefined || first === '' || rows.length < 2) return undefined
+  return rows.every(row => row.rule === first) ? first : undefined
+}
+
+function evidenceDomId(pluginName: string, cap: Capability): string {
+  const safe = pluginName.replace(/[^A-Za-z0-9_-]/g, '-')
+  return `trust-evidence-${safe}-${cap}`
+}
+
+function evidenceRegionId(pluginName: string): string {
+  const safe = pluginName.replace(/[^A-Za-z0-9_-]/g, '-')
+  return `trust-evidence-${safe}`
+}
+
+function formatExplainTime(at: number): string {
+  const date = new Date(at)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`
+  const day = `${date.getMonth() + 1}/${date.getDate()}`
+  return date.toDateString() === new Date().toDateString() ? time : `${day} ${time}`
+}
+
+function SparkIcon() {
+  return (
+    <svg className={css.sparkIcon} viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+      <path
+        fill="currentColor"
+        d="M8 1.5c.3 2.9 1.6 4.2 4.5 4.5-2.9.3-4.2 1.6-4.5 4.5C7.7 7.6 6.4 6.3 3.5 6 6.4 5.7 7.7 4.4 8 1.5Zm4.5 8c.15 1.45.8 2.1 2.25 2.25-1.45.15-2.1.8-2.25 2.25-.15-1.45-.8-2.1-2.25-2.25 1.45-.15 2.1-.8 2.25-2.25Z"
+      />
+    </svg>
+  )
+}
+
+function scrollContainer(el: HTMLElement): HTMLElement | null {
+  for (let node = el.parentElement; node !== null; node = node.parentElement) {
+    if (node === document.body || node === document.documentElement) return null
+    if (/(auto|scroll|overlay)/.test(getComputedStyle(node).overflowY)) return node
+  }
+  return null
+}
+
+/** Bring evidence into view, optionally moving focus. Reduced-motion users get an instant scroll. */
+function revealEvidence(el: HTMLElement | null, focus: boolean): void {
+  if (el === null) return
+  const reduce = typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (focus) el.focus({ preventScroll: true })
+  el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'nearest' })
+}
+
+/**
+ * After an accordion switch, a card above may collapse and yank the opened card upward.
+ * Re-apply the scroll so `el` stays at the same viewport Y it had before the layout change.
+ */
+function restoreScrollAnchor(el: HTMLElement, topBefore: number): void {
+  const delta = el.getBoundingClientRect().top - topBefore
+  if (delta === 0) return
+  const scroller = scrollContainer(el)
+  if (scroller !== null) scroller.scrollTop += delta
+  else window.scrollBy(0, delta)
+}
+
+function freezeEvidence(report: AuditReport, schemaVersion: number, ev: Evidence): FrozenFinding {
+  return {
+    entry: 'evidence',
+    pluginName: report.name,
+    pluginVersion: report.version,
+    spec: report.spec,
+    repository: report.repository,
+    schemaVersion,
+    capability: ev.capability,
+    ruleId: ev.rule !== undefined && ev.rule !== '' ? ev.rule : undefined,
+    file: ev.file,
+    line: ev.line,
+    snippet: ev.snippet,
+    destinations: (report.destinations ?? []).map(item => item.value),
+  }
+}
+
+function freezePlugin(report: AuditReport, schemaVersion: number): FrozenFinding {
+  return {
+    entry: 'plugin',
+    pluginName: report.name,
+    pluginVersion: report.version,
+    spec: report.spec,
+    repository: report.repository,
+    schemaVersion,
+    destinations: (report.destinations ?? []).map(item => item.value),
+  }
+}
+
+function CoverageNotes({ notes, t }: { notes: string[]; t: T }) {
+  if (notes.length === 0) return null
+  return (
+    <section className={css.section}>
+      <details className={css.limits}>
+        <summary className={css.foldSummary}>
+          <span className={css.sectionTitleInline}>{t('coverage.title')}</span>
+          <span className={css.foldMeta}>{t('coverage.count').replace('{count}', String(notes.length))}</span>
+        </summary>
+        <p className={css.sectionHint}>{t('coverage.plain')}</p>
+        <ol className={css.coverageList}>
+          {notes.map((note, index) => (
+            <li key={index} className={css.coverageNote}>{note}</li>
+          ))}
+        </ol>
+      </details>
+    </section>
+  )
+}
+
+function ruleMatch(snippet: string, rule?: string): ReactNode {
+  const name = rule?.split('.').pop()
+  if (name === undefined || name.length < 3) return snippet
+  const index = snippet.search(new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`))
+  if (index < 0) return snippet
+  return (
+    <>
+      {snippet.slice(0, index)}
+      <mark className={css.codeMatch}>{snippet.slice(index, index + name.length)}</mark>
+      {snippet.slice(index + name.length)}
+    </>
+  )
+}
 
 /** Existence/stat checks prove fs-read capability but are low-signal for review. */
 function isPresenceOnlyFsRead(snippet: string): boolean {
@@ -56,89 +249,245 @@ function sortEvidenceRows(rows: Evidence[]): Evidence[] {
   })
 }
 
-function EvidencePanel({
+function EvidenceRow({
+  ev,
+  t,
+  onFeedback,
+  showRule = true,
+  showRuntime = true,
+}: {
+  ev: Evidence
+  t: T
+  onFeedback: (ev: Evidence, opener: HTMLElement) => void
+  showRule?: boolean
+  showRuntime?: boolean
+}) {
+  return (
+    <li className={css.evidenceItem}>
+      <div className={css.evidenceTop}>
+        <span className={css.evidenceMeta}>
+          <code className={css.evidenceFile}>{ev.file}:{ev.line}</code>
+          <ContextTags context={ev.context} t={t} showRuntime={showRuntime} />
+          {showRule && ev.rule !== undefined && ev.rule !== '' && (
+            <RuleTip rule={ev.rule} t={t} className={css.evidenceRule} />
+          )}
+        </span>
+        <button
+          type="button"
+          className={css.evidenceReport}
+          title={t('feedback.evidence')}
+          onClick={event => onFeedback(ev, event.currentTarget)}
+        >
+          {t('feedback.evidenceShort')}
+          <span className={css.srOnly}>：{t('feedback.evidence')}</span>
+        </button>
+      </div>
+      <pre className={css.evidenceSnippet}>
+        <span className={css.lineNo} aria-hidden="true">{ev.line}</span>
+        <code>{ruleMatch(ev.snippet, ev.rule)}</code>
+      </pre>
+    </li>
+  )
+}
+
+/**
+ * Height-capped scroller for an expanded evidence list. Edge fades only show where
+ * more rows are hidden; it becomes a keyboard stop only when it actually overflows.
+ */
+function EvidenceScroll({ label, children }: { label: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [edge, setEdge] = useState({ overflow: false, top: true, bottom: true })
+  const measure = () => {
+    const el = ref.current
+    if (el === null) return
+    const next = {
+      overflow: el.scrollHeight > el.clientHeight + 1,
+      top: el.scrollTop <= 1,
+      bottom: el.scrollTop + el.clientHeight >= el.scrollHeight - 1,
+    }
+    setEdge(prev => (prev.overflow === next.overflow && prev.top === next.top && prev.bottom === next.bottom ? prev : next))
+  }
+  useLayoutEffect(measure)
+  return (
+    <div className={css.evidenceFrame}>
+      <div
+        ref={ref}
+        role="region"
+        aria-label={label}
+        tabIndex={edge.overflow ? 0 : undefined}
+        className={`${css.evidenceScroll} ${edge.top ? '' : css.fadeTop} ${edge.bottom ? '' : css.fadeBottom}`}
+        onScroll={measure}
+      >
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function CapabilityEvidence({
   report,
   t,
-  focusCap,
-  onClearFocus,
+  added,
+  onFeedback,
+  revealSeq,
 }: {
   report: AuditReport
   t: T
-  focusCap: Capability | null
-  onClearFocus: () => void
+  /** Capabilities new since the last acknowledgment; the first one with evidence is selected first. */
+  added: Capability[]
+  onFeedback: (ev: Evidence, opener: HTMLElement) => void
+  /** Bumped by "view all evidence": show every group and move focus here. */
+  revealSeq: number
 }) {
-  const filtered = focusCap === null
-    ? report.evidence
-    : report.evidence.filter(e => e.capability === focusCap)
-
-  const capGroups = useMemo(() => {
-    const map = groupEvidence(filtered)
-    const caps = [...map.keys()].sort(
-      (a, b) => (CAPABILITY_WEIGHT[b] ?? 0) - (CAPABILITY_WEIGHT[a] ?? 0),
-    )
-    return caps.map(cap => ({
-      cap,
-      rows: sortEvidenceRows(map.get(cap) ?? []),
-    }))
-  }, [filtered])
-
+  const groups = useMemo(() => groupEvidence(report.evidence), [report.evidence])
+  const evidenceCaps = useMemo(
+    () => [...groups.keys()].sort((a, b) => (CAPABILITY_WEIGHT[b] ?? 0) - (CAPABILITY_WEIGHT[a] ?? 0)),
+    [groups],
+  )
+  const [selected, setSelected] = useState<Capability | null>(
+    () => added.find(cap => groups.has(cap)) ?? evidenceCaps[0] ?? report.capabilities[0] ?? null,
+  )
+  const [showEvery, setShowEvery] = useState(false)
   const [expandedCaps, setExpandedCaps] = useState<Set<Capability>>(new Set())
+  const regionRef = useRef<HTMLElement>(null)
+  const groupRefs = useRef(new Map<Capability, HTMLDivElement>())
 
   useEffect(() => {
-    if (focusCap !== null) setExpandedCaps(new Set([focusCap]))
-  }, [focusCap])
+    if (revealSeq === 0) return
+    setShowEvery(true)
+    setExpandedCaps(new Set(evidenceCaps))
+    revealEvidence(regionRef.current, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealSeq])
 
-  if (report.evidence.length === 0) return null
+  const choose = (cap: Capability) => {
+    setSelected(cap)
+    setShowEvery(false)
+    requestAnimationFrame(() => revealEvidence(groupRefs.current.get(cap) ?? null, false))
+  }
+
+  const toggleRows = (cap: Capability) => {
+    const wasExpanded = expandedCaps.has(cap)
+    setExpandedCaps(prev => {
+      const next = new Set(prev)
+      if (wasExpanded) next.delete(cap)
+      else next.add(cap)
+      return next
+    })
+    if (wasExpanded) requestAnimationFrame(() => revealEvidence(groupRefs.current.get(cap) ?? null, false))
+  }
+
+  const shown = showEvery ? evidenceCaps : selected !== null && groups.has(selected) ? [selected] : []
 
   return (
-    <section className={css.section}>
-      <details className={css.fold} open={focusCap !== null}>
-        <summary className={css.foldSummary}>
-          <span className={css.sectionTitleInline}>{t('evidence')}</span>
-          <span className={css.countPill}>{filtered.length}</span>
-          <span className={css.foldMeta}>
-            {focusCap !== null ? t(capLabelKey(focusCap)) : t('evidence.grouped')}
-          </span>
-        </summary>
-        <p className={css.sectionHint}>{t('evidence.hint')}</p>
-        {focusCap !== null && (
-          <button type="button" className={css.linkBtn} onClick={onClearFocus}>
-            {t('evidence.clearFilter')}
-          </button>
-        )}
+    <section className={css.section} id={evidenceRegionId(report.name)} tabIndex={-1} ref={regionRef}>
+      <header className={css.sectionHead}>
+        <h3 className={css.sectionTitle}>{t('capabilities')}</h3>
+        {report.evidence.length > 0 && <p className={css.sectionHint}>{t('evidence.hint')}</p>}
+      </header>
+      {report.capabilities.length === 0
+        ? <div className={css.muted}>{t('none')}</div>
+        : (
+            <div className={css.chips}>
+              {report.capabilities.map(cap => {
+                const pressed = !showEvery && selected === cap
+                return (
+                  <button
+                    key={cap}
+                    type="button"
+                    className={`${css.chip} ${css[`tier-${capabilityTier(cap)}`] ?? ''} ${css.chipBtn} ${pressed ? css.chipOn : ''}`}
+                    aria-pressed={pressed}
+                    aria-controls={evidenceDomId(report.name, cap)}
+                    onClick={() => choose(cap)}
+                  >
+                    {capChipText(cap, t, report)}
+                    {added.includes(cap) && ` · ${t('capabilities.new')}`}
+                    {groups.has(cap) && <span className={css.chipCount} aria-hidden="true">{groups.get(cap)?.length}</span>}
+                  </button>
+                )
+              })}
+              {evidenceCaps.length > 1 && (
+                <button
+                  type="button"
+                  className={`${css.chip} ${css.chipBtn} ${css.chipAll} ${showEvery ? css.chipOn : ''}`}
+                  aria-pressed={showEvery}
+                  aria-controls={evidenceRegionId(report.name)}
+                  onClick={() => setShowEvery(true)}
+                >
+                  {t('evidence.all')}
+                  <span className={css.chipCount} aria-hidden="true">{report.evidence.length}</span>
+                </button>
+              )}
+            </div>
+          )}
+
+      {!showEvery && selected !== null && !groups.has(selected) && (
+        <p className={`${css.sectionEmpty} ${css.evidenceEmpty}`}>{t('evidence.none')}</p>
+      )}
+      {shown.length > 0 && (
         <div className={css.evidenceGroups}>
-          {capGroups.map(({ cap, rows }) => {
-            const showAll = expandedCaps.has(cap) || focusCap === cap
+          {shown.map(cap => {
+            const rows = sortEvidenceRows(groups.get(cap) ?? [])
+            const expanded = expandedCaps.has(cap)
             const primary = rows.filter(r => !isPresenceOnlyFsRead(r.snippet))
             const weak = rows.filter(r => isPresenceOnlyFsRead(r.snippet))
             const main = primary.length > 0 ? primary : rows
-            const visible = showAll ? main : main.slice(0, EVIDENCE_PREVIEW)
+            const visible = expanded ? main : main.slice(0, EVIDENCE_PREVIEW)
+            const rule = sharedRule(main)
+            const rowRuntime = !runtimesAgree(main)
+            const list = (
+              <ul className={css.evidenceList}>
+                {visible.map((ev, i) => (
+                  <EvidenceRow
+                    key={`${ev.file}:${ev.line}:${i}`}
+                    ev={ev}
+                    t={t}
+                    onFeedback={onFeedback}
+                    showRule={rule === undefined}
+                    showRuntime={rowRuntime}
+                  />
+                ))}
+              </ul>
+            )
             return (
-              <div key={cap} className={css.evidenceGroup}>
-                <div className={css.evidenceGroupHead}>
-                  <span className={`${css.chip} ${css[`tier-${capabilityTier(cap)}`]}`}>
-                    {capChipText(cap, t, report)}
-                  </span>
-                  <span className={css.countPill}>{rows.length}</span>
-                </div>
-                <ul className={css.evidenceList}>
-                  {visible.map((ev, i) => (
-                    <li key={`${ev.file}:${ev.line}:${i}`} className={css.evidenceItem}>
-                      <span className={css.evidenceMeta}>
-                        <code>{ev.file}</code>:{ev.line}
-                        <ContextTags context={ev.context} t={t} />
+              <div
+                key={cap}
+                id={evidenceDomId(report.name, cap)}
+                tabIndex={-1}
+                className={css.evidenceGroup}
+                ref={el => {
+                  if (el === null) groupRefs.current.delete(cap)
+                  else groupRefs.current.set(cap, el)
+                }}
+              >
+                {(showEvery || rule !== undefined) && (
+                  <div className={css.evidenceGroupHead}>
+                    {showEvery && (
+                      <>
+                        <span className={css.groupLabel}>{capChipText(cap, t, report)}</span>
+                        <span className={css.countPill}>{rows.length}</span>
+                      </>
+                    )}
+                    {rule !== undefined && (
+                      <span className={css.groupRule}>
+                        {t('evidence.rule')} <RuleTip rule={rule} t={t} />
                       </span>
-                      <span className={css.evidenceSnippet}>{ev.snippet}</span>
-                    </li>
-                  ))}
-                </ul>
-                {main.length > EVIDENCE_PREVIEW && !showAll && (
+                    )}
+                  </div>
+                )}
+                {expanded && main.length > EVIDENCE_PREVIEW
+                  ? <EvidenceScroll label={t('evidence.scrollRegion').replace('{cap}', capChipText(cap, t, report))}>{list}</EvidenceScroll>
+                  : list}
+                {main.length > EVIDENCE_PREVIEW && (
                   <button
                     type="button"
-                    className={css.linkBtn}
-                    onClick={() => setExpandedCaps(prev => new Set(prev).add(cap))}
+                    className={css.evidenceToggle}
+                    aria-expanded={expanded}
+                    onClick={() => toggleRows(cap)}
                   >
-                    {t('evidence.showAll')} ({main.length})
+                    {expanded
+                      ? t('evidence.collapse')
+                      : t('evidence.showRest').replace('{count}', String(main.length - EVIDENCE_PREVIEW))}
                   </button>
                 )}
                 {weak.length > 0 && primary.length > 0 && (
@@ -148,13 +497,7 @@ function EvidencePanel({
                     </summary>
                     <ul className={css.evidenceList}>
                       {weak.map((ev, i) => (
-                        <li key={`w-${ev.file}:${ev.line}:${i}`} className={css.evidenceItem}>
-                          <span className={css.evidenceMeta}>
-                            <code>{ev.file}</code>:{ev.line}
-                            <ContextTags context={ev.context} t={t} />
-                          </span>
-                          <span className={css.evidenceSnippet}>{ev.snippet}</span>
-                        </li>
+                        <EvidenceRow key={`w-${ev.file}:${ev.line}:${i}`} ev={ev} t={t} onFeedback={onFeedback} />
                       ))}
                     </ul>
                   </details>
@@ -163,21 +506,36 @@ function EvidencePanel({
             )
           })}
         </div>
-      </details>
+      )}
     </section>
   )
 }
 
+type AckChange = 'ack' | 'revoke'
+
+/** One card open at a time: first red line, else first needing review. */
 function defaultExpandedNames(plugins: AuditReport[], acks?: Record<string, TrustAckEntry>): Set<string> {
-  const names = new Set<string>()
-  for (const plugin of plugins) {
-    if (verdict(plugin, acks?.[plugin.name]) === 'red') names.add(plugin.name)
-  }
-  if (names.size === 0) {
-    const firstReview = plugins.find(p => verdict(p, acks?.[p.name]) === 'review')
-    if (firstReview !== undefined) names.add(firstReview.name)
-  }
-  return names
+  const firstRed = plugins.find(p => verdict(p, acks?.[p.name]) === 'red')
+  if (firstRed !== undefined) return new Set([firstRed.name])
+  const firstReview = plugins.find(p => verdict(p, acks?.[p.name]) === 'review')
+  if (firstReview !== undefined) return new Set([firstReview.name])
+  return new Set()
+}
+
+const VERDICT_ORDER: Record<Verdict, number> = {
+  red: 0,
+  review: 1,
+  accepted: 2,
+  expected: 3,
+  clear: 4,
+}
+
+/** Red lines first, then review, so the list matches the overview sentence. */
+function sortPlugins(plugins: AuditReport[], acks?: Record<string, TrustAckEntry>): AuditReport[] {
+  return [...plugins].sort((a, b) => {
+    const byVerdict = VERDICT_ORDER[verdict(a, acks?.[a.name])] - VERDICT_ORDER[verdict(b, acks?.[b.name])]
+    return byVerdict !== 0 ? byVerdict : a.name.localeCompare(b.name)
+  })
 }
 
 function verdictKey(v: Verdict): TrustKey {
@@ -186,6 +544,17 @@ function verdictKey(v: Verdict): TrustKey {
   if (v === 'review') return 'verdict.review'
   if (v === 'expected') return 'verdict.expected'
   return 'verdict.clear'
+}
+
+function decisionKey(v: Verdict): TrustKey {
+  return `decision.${v}` as TrustKey
+}
+
+/** Install channel only (`npm`, `link`, `git`, …) — never the local path in a `link:` spec. */
+function sourceKind(spec: string): string {
+  const scheme = /^([a-z][a-z0-9+.-]+):/i.exec(spec)?.[1]?.toLowerCase()
+  if (scheme === undefined) return 'npm'
+  return scheme.startsWith('git') ? 'git' : scheme
 }
 
 function actionKey(v: Verdict): TrustKey {
@@ -208,18 +577,18 @@ function capChipText(cap: Capability, t: T, report: AuditReport): string {
     else if (reach === 'same-origin') parts.push(t('cap.network.sameOrigin'))
   }
   const ctx = capabilityContext(report, cap)
-  if (ctx.runtime !== undefined) parts.push(t(`context.runtimeOnly.${ctx.runtime}`))
+  if (ctx.runtime !== undefined && ctx.runtime !== 'server') parts.push(t(`context.runtimeOnly.${ctx.runtime}`))
   if (ctx.packageName !== undefined) {
     parts.push(t('context.originAll').replace('{package}', ctx.packageName))
   }
   return parts.join(' · ')
 }
 
-function ContextTags({ context, t }: { context?: FindingContext; t: T }) {
+function ContextTags({ context, t, showRuntime = true }: { context?: FindingContext; t: T; showRuntime?: boolean }) {
   if (context === undefined) return null
   return (
     <>
-      {context.runtime?.map(runtime => (
+      {showRuntime && context.runtime?.map(runtime => (
         <span key={runtime} className={`${css.tag} ${css.tagContext}`}>{t(`context.runtime.${runtime}`)}</span>
       ))}
       {context.origin !== undefined && (
@@ -260,35 +629,6 @@ function secretKindKey(kind: AuditReport['secretTouches'][number]['kind']): Trus
   return `secretKind.${kind}` as TrustKey
 }
 
-function CapabilityChips({
-  caps,
-  t,
-  report,
-  onSelect,
-}: {
-  caps: Capability[]
-  t: T
-  report: AuditReport
-  onSelect?: (cap: Capability) => void
-}) {
-  if (caps.length === 0) return <div className={css.muted}>{t('none')}</div>
-  return (
-    <div className={css.chips}>
-      {caps.map(cap => (
-        <button
-          key={cap}
-          type="button"
-          className={`${css.chip} ${css[`tier-${capabilityTier(cap)}`]} ${onSelect !== undefined ? css.chipBtn : ''}`}
-          onClick={onSelect !== undefined ? () => onSelect(cap) : undefined}
-          disabled={onSelect === undefined}
-        >
-          {capChipText(cap, t, report)}
-        </button>
-      ))}
-    </div>
-  )
-}
-
 function DestinationsPanel({ report, t }: { report: AuditReport; t: T }) {
   const destinations = useMemo(
     () => (report.destinations ?? []).filter(d => d.kind !== 'relative'),
@@ -318,12 +658,15 @@ function DestinationsPanel({ report, t }: { report: AuditReport; t: T }) {
       highlight !== undefined ? css.destRowHigh : '',
       whitelist !== undefined ? css.destRowSafe : '',
     ].filter(Boolean).join(' ')
+    const usages = distinctUsages(d.sites ?? [])
     return (
       <li key={key} className={rowClass}>
-        <span className={css.destKind}>{t(destKindKey(d.kind))}</span>
         <div className={css.destBody}>
           <div className={css.destValueLine}>
             <code className={css.destValue}>{d.value}</code>
+            {d.kind !== 'https-host' && highlight !== 'plaintext' && (
+              <span className={css.tag}>{t(destKindKey(d.kind))}</span>
+            )}
             {highlight === 'plaintext' && (
               <span className={`${css.tag} ${css.tagPlain}`}>{t('destinations.plaintext')}</span>
             )}
@@ -333,12 +676,6 @@ function DestinationsPanel({ report, t }: { report: AuditReport; t: T }) {
             {highlight === 'public-ip' && (
               <span className={`${css.tag} ${css.tagWarn}`}>{t('destinations.publicIp')}</span>
             )}
-            {whitelist !== undefined && (
-              <span className={`${css.tag} ${css.tagSafe}`}>{t('destinations.allowlisted')}</span>
-            )}
-            {distinctUsages(d.sites ?? []).map(usage => (
-              <span key={usage} className={`${css.tag} ${css.tagContext}`}>{t(`destUsage.${usage}`)}</span>
-            ))}
           </div>
           {whitelist !== undefined && (
             <div className={css.destNote}>{t(`destWhitelist.${whitelist}` as TrustKey)}</div>
@@ -363,6 +700,23 @@ function DestinationsPanel({ report, t }: { report: AuditReport; t: T }) {
             </div>
           )}
         </div>
+        {usages.length > 0 && (
+          <span className={css.destUsages}>
+            <span className={css.srOnly}>{t('destinations.usage')}</span>
+            {usages.map(usage => (
+              <span
+                key={usage}
+                className={[
+                  css.destUsage,
+                  usage === 'request' ? css.destUsageRequest : '',
+                  usage === 'unknown' ? css.destUsageUnknown : '',
+                ].filter(Boolean).join(' ')}
+              >
+                {t(`destUsage.${usage}`)}
+              </span>
+            ))}
+          </span>
+        )}
       </li>
     )
   }
@@ -383,7 +737,6 @@ function DestinationsPanel({ report, t }: { report: AuditReport; t: T }) {
           <summary className={css.foldSummary}>
             {t('destinations.safeFold').replace('{count}', String(safe.length))}
           </summary>
-          <p className={css.sectionHint}>{t('destinations.safeHint')}</p>
           <ul className={css.destList}>
             {safe.map((d, i) => renderRow(d, `s-${i}`, true))}
           </ul>
@@ -404,10 +757,12 @@ function PathEscapesPanel({ report, t }: { report: AuditReport; t: T }) {
       </header>
       <ul className={css.destList}>
         {pathEscapes.map((p, i) => (
-          <li key={i} className={`${css.destRow} ${css.destRowHigh}`}>
-            <span className={css.destKind}>{t(`pathEscape.${p.kind}` as TrustKey)}</span>
+          <li key={i} className={css.destRow}>
             <div className={css.destBody}>
-              <code className={css.destValue}>{p.value}</code>
+              <div className={css.destValueLine}>
+                <code className={css.destValue}>{p.value}</code>
+                <span className={`${css.tag} ${css.tagWarn}`}>{t(`pathEscape.${p.kind}` as TrustKey)}</span>
+              </div>
             </div>
           </li>
         ))}
@@ -419,6 +774,7 @@ function PathEscapesPanel({ report, t }: { report: AuditReport; t: T }) {
 function SecretTouchesPanel({ report, t }: { report: AuditReport; t: T }) {
   const secretTouches = report.secretTouches ?? []
   if (secretTouches.length === 0) return null
+  const rowRuntime = !runtimesAgree(secretTouches)
   return (
     <section className={css.section}>
       <header className={css.sectionHead}>
@@ -427,11 +783,11 @@ function SecretTouchesPanel({ report, t }: { report: AuditReport; t: T }) {
       <ul className={css.destList}>
         {secretTouches.map((s, i) => (
           <li key={i} className={css.destRow}>
-            <span className={css.destKind}>{t(secretKindKey(s.kind))}</span>
             <div className={css.destBody}>
               <div className={css.destValueLine}>
                 <code className={css.destValue}>{s.value}</code>
-                <ContextTags context={s.context} t={t} />
+                <span className={css.tag}>{t(secretKindKey(s.kind))}</span>
+                <ContextTags context={s.context} t={t} showRuntime={rowRuntime} />
               </div>
             </div>
           </li>
@@ -509,29 +865,45 @@ function PluginCardBody({
   report,
   ack,
   profile,
+  schemaVersion,
   t,
   onAckChange,
   onReplaceReport,
+  onOpenFeedback,
 }: {
   report: AuditReport
   ack?: TrustAckEntry
   profile: string
+  schemaVersion: number
   t: T
-  onAckChange: () => void
+  onAckChange: (kind: AckChange) => Promise<void>
   onReplaceReport: (report: AuditReport) => void
+  onOpenFeedback: (finding: FrozenFinding, opener: HTMLElement) => void
 }) {
   const v = verdict(report, ack)
-  const concernList = concerns(report)
-  const drift = ackDrifted(report, ack)
-  const added = capabilityDelta(report, ack).added
+  const concernList = decisionConcerns(report)
+  const { added } = capabilityDelta(report, ack)
   const repoHref = repositoryHref(report.repository)
-  const [evidenceFocus, setEvidenceFocus] = useState<Capability | null>(null)
+  const [revealSeq, setRevealSeq] = useState(0)
   const [ackLoading, setAckLoading] = useState(false)
   const [ackError, setAckError] = useState(false)
   const [ackStale, setAckStale] = useState(false)
   const [explainLoading, setExplainLoading] = useState(false)
-  const [explainText, setExplainText] = useState<string | null>(null)
+  const explainLocale = typeof document !== 'undefined' ? document.documentElement.lang : ''
+  const explainKey = explainCacheKey(report, explainLocale)
+  const [explainEntry, setExplainEntry] = useState<ExplainEntry | null>(
+    () => readExplain(report.name, explainKey) ?? null,
+  )
+  const explainCurrent = explainEntry !== null && explainEntry.key === explainKey ? explainEntry : null
+  const explainText = explainCurrent?.text ?? null
   const [explainError, setExplainError] = useState(false)
+  const explainRef = useRef<HTMLElement>(null)
+  const explainTitleId = `${evidenceRegionId(report.name)}-explain`
+  const [explainSeq, setExplainSeq] = useState(0)
+
+  useEffect(() => {
+    if (explainSeq > 0) revealEvidence(explainRef.current, true)
+  }, [explainSeq])
 
   const postAck = async (acceptRisk = false) => {
     setAckLoading(true)
@@ -554,7 +926,7 @@ function PluginCardBody({
       }
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       setAckStale(false)
-      onAckChange()
+      await onAckChange('ack')
     } catch {
       setAckError(true)
     } finally {
@@ -570,7 +942,7 @@ function PluginCardBody({
         method: 'DELETE',
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      onAckChange()
+      await onAckChange('revoke')
     } catch {
       setAckError(true)
     } finally {
@@ -582,18 +954,24 @@ function PluginCardBody({
     setExplainLoading(true)
     setExplainError(false)
     try {
-      const locale = typeof document !== 'undefined' ? document.documentElement.lang : undefined
       const res = await fetch('/dsh-trust-check/explain', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: report.name, locale }),
+        body: JSON.stringify({ name: report.name, locale: explainLocale }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json() as { text?: string }
-      setExplainText(data.text ?? '')
+      const data = await res.json() as { text?: string, truncated?: boolean }
+      const entry: ExplainEntry = {
+        key: explainKey,
+        text: data.text ?? '',
+        at: Date.now(),
+        ...(data.truncated === true ? { truncated: true } : {}),
+      }
+      writeExplain(report.name, entry)
+      setExplainEntry(entry)
+      setExplainSeq(n => n + 1)
     } catch {
       setExplainError(true)
-      setExplainText(null)
     } finally {
       setExplainLoading(false)
     }
@@ -601,64 +979,71 @@ function PluginCardBody({
 
   return (
     <div className={css.cardBody}>
-      <section className={`${css.decision} ${css[`decision-${v}`]}`}>
-        <p className={css.action}>
-          {t(actionKey(v)).replace('{profile}', profile).replace('{name}', report.name)}
-        </p>
-        {drift && <div className={css.drift}>{t('drift.title')}</div>}
-        {drift && added.length > 0 && (
-          <div className={css.drift}>
-            {t('drift.added').replace('{list}', added.map(capability => t(`cap.${capability}`)).join(', '))}
-          </div>
-        )}
-        {concernList.length > 0 && v !== 'expected' && (
-          <div className={css.concerns}>
-            <h3 className={css.concernTitle}>{t('concerns.title')}</h3>
-            <ul className={css.concernList}>
-              {concernList.map((item, i) => (
-                <li key={i}>{concernLabel(item, t)}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-        <div className={css.actions}>
-          {v === 'review' && (
-            <button type="button" className={css.actionBtn} disabled={ackLoading} onClick={() => void postAck()}>
-              {ackLoading ? t('ack.saving') : t('ack.accept')}
-            </button>
-          )}
-          {v === 'red' && (
-            <button type="button" className={css.actionBtnRisk} disabled={ackLoading} onClick={() => void postAck(true)}>
-              {ackLoading ? t('ack.saving') : t('ack.acceptRisk')}
-            </button>
-          )}
-          {(v === 'expected' || v === 'accepted') && (
-            <button type="button" className={css.actionBtnSecondary} disabled={ackLoading} onClick={() => void revokeAck()}>
-              {t('ack.revoke')}
-            </button>
-          )}
-          <button type="button" className={css.actionBtnSecondary} disabled={explainLoading} onClick={() => void explain()}>
-            {explainLoading ? t('explain.loading') : t('explain.button')}
+      <section className={css.decision}>
+        <h3 className={css.srOnly}>{t(decisionKey(v))}</h3>
+        <div className={css.decisionHead}>
+          <p className={css.action}>
+            {t(actionKey(v)).replace('{profile}', profile).replace('{name}', report.name)}
+          </p>
+          <button
+            type="button"
+            className={css.linkBtn}
+            onClick={event => {
+              onOpenFeedback(freezePlugin(report, schemaVersion), event.currentTarget)
+            }}
+          >
+            {t('feedback.general')}
           </button>
         </div>
-        {ackStale && <div className={css.errorInline}>{t('ack.stale')}</div>}
-        {ackError && <div className={css.errorInline}>{t('ack.error')}</div>}
-        {explainError && <div className={css.muted}>{t('explain.error')}</div>}
-        {explainText !== null && (
-          <div className={css.explainBox}>
-            <div className={css.muted}>{t('explain.disclaimer')}</div>
-            <p className={css.explainText}>{explainText}</p>
-          </div>
+        {concernList.length > 0 && v !== 'expected' && (
+          <ul className={css.concernList} aria-label={t('concerns.title')}>
+            {concernList.map((item, i) => (
+              <li key={i} className={i < report.redLines.length ? css.concernRed : undefined}>
+                {concernLabel(item, t)}
+              </li>
+            ))}
+          </ul>
         )}
       </section>
 
-      <div className={css.scanStack}>
-        <section className={css.section}>
-          <header className={css.sectionHead}>
-            <h3 className={css.sectionTitle}>{t('capabilities')}</h3>
-          </header>
-          <CapabilityChips caps={report.capabilities} t={t} report={report} onSelect={cap => setEvidenceFocus(cap)} />
+      {explainText !== null && (
+        <section className={css.explainBox} tabIndex={-1} ref={explainRef} aria-labelledby={explainTitleId}>
+          <div className={css.explainHead}>
+            <h3 className={`${css.sectionTitle} ${css.explainTitleRow}`} id={explainTitleId}>
+              <SparkIcon />
+              {t('explain.title')}
+            </h3>
+            <span className={css.sectionHint}>{t('explain.disclaimer')}</span>
+          </div>
+          <ExplainMarkdown text={explainText} />
+          {explainCurrent!.truncated === true && (
+            <p className={css.explainCut}>{t('explain.truncated')}</p>
+          )}
+          <div className={css.explainFoot}>
+            <span>{t('explain.generatedAt').replace('{time}', formatExplainTime(explainCurrent!.at))}</span>
+            <button
+              type="button"
+              className={css.linkBtn}
+              disabled={explainLoading}
+              aria-busy={explainLoading || undefined}
+              onClick={() => void explain()}
+            >
+              {explainLoading ? t('explain.loading') : t('explain.regenerate')}
+            </button>
+          </div>
         </section>
+      )}
+
+      <div className={css.scanStack}>
+        <CapabilityEvidence
+          report={report}
+          t={t}
+          added={added}
+          onFeedback={(ev, opener) => {
+            onOpenFeedback(freezeEvidence(report, schemaVersion, ev), opener)
+          }}
+          revealSeq={revealSeq}
+        />
 
         <DestinationsPanel report={report} t={t} />
         <PathEscapesPanel report={report} t={t} />
@@ -671,9 +1056,7 @@ function PluginCardBody({
             <p className={css.sectionHint}>{t('source.hint')}</p>
           </header>
           <div className={css.meta}>
-            {report.pinned
-              ? <span className={`${css.tag} ${css.tagSafe}`}>{t('pinned')}</span>
-              : <span className={`${css.tag} ${css.tagWarn}`}>{t('unpinned')}</span>}
+            {!report.pinned && <span className={`${css.tag} ${css.tagWarn}`}>{t('unpinned')}</span>}
             {report.repository === undefined && (
               <span className={`${css.tag} ${css.tagWarn}`}>{t('noRepo')}</span>
             )}
@@ -707,8 +1090,57 @@ function PluginCardBody({
           )}
         </section>
 
-        <EvidencePanel report={report} t={t} focusCap={evidenceFocus} onClearFocus={() => setEvidenceFocus(null)} />
       </div>
+
+      <CoverageNotes notes={report.coverageNotes ?? []} t={t} />
+
+      <section className={css.ackBar}>
+        <div className={css.ackRow}>
+          <div className={css.actions}>
+            {v === 'review' && (
+              <button type="button" className={css.actionBtn} disabled={ackLoading} onClick={() => void postAck()}>
+                {ackLoading ? t('ack.saving') : t('ack.accept')}
+              </button>
+            )}
+            {v === 'red' && (
+              <button type="button" className={css.actionBtnSecondary} disabled={ackLoading} onClick={() => void postAck(true)}>
+                {ackLoading ? t('ack.saving') : t('ack.acceptRisk')}
+              </button>
+            )}
+            {(v === 'expected' || v === 'accepted') && (
+              <button type="button" className={css.actionBtnSecondary} disabled={ackLoading} onClick={() => void revokeAck()}>
+                {t('ack.revoke')}
+              </button>
+            )}
+          </div>
+          <div className={css.ackLinks}>
+            <button
+              type="button"
+              className={css.aiBtn}
+              disabled={explainLoading}
+              aria-busy={explainLoading || undefined}
+              onClick={() => {
+                if (explainText !== null) revealEvidence(explainRef.current, true)
+                else void explain()
+              }}
+            >
+              <SparkIcon />
+              {explainLoading
+                ? t('explain.loading')
+                : explainText !== null ? t('explain.view') : t('explain.button')}
+            </button>
+            {report.evidence.length > 0 && (
+              <button type="button" className={css.linkBtn} onClick={() => setRevealSeq(n => n + 1)}>
+                {t('ack.viewEvidence')}
+              </button>
+            )}
+          </div>
+        </div>
+        {ackStale && <div className={css.errorInline} role="status">{t('ack.stale')}</div>}
+        {ackError && <div className={css.errorInline} role="status">{t('ack.error')}</div>}
+        {explainError && <div className={css.errorInline} role="status">{t('explain.error')}</div>}
+      </section>
+      <p className={css.ackNote}>{t('ack.scope')}</p>
     </div>
   )
 }
@@ -717,41 +1149,80 @@ function PluginRow({
   report,
   ack,
   profile,
+  schemaVersion,
   t,
   expanded,
+  settled,
+  onSettledEnd,
   onToggle,
   onAckChange,
   onReplaceReport,
+  onOpenFeedback,
 }: {
   report: AuditReport
   ack?: TrustAckEntry
   profile: string
+  schemaVersion: number
   t: T
   expanded: boolean
+  /** Just acknowledged and folded: briefly highlight the card so the reader sees where it went. */
+  settled: boolean
+  onSettledEnd: () => void
   onToggle: () => void
-  onAckChange: () => void
+  onAckChange: (kind: AckChange) => Promise<void>
   onReplaceReport: (report: AuditReport) => void
+  onOpenFeedback: (finding: FrozenFinding, opener: HTMLElement) => void
 }) {
   const v = verdict(report, ack)
-  const previewCaps = topCapabilities(report, 3)
+  const drift = ack !== undefined && ackDrifted(report, ack)
+  const { added, removed } = capabilityDelta(report, ack)
+  const badgeLabel = drift && v !== 'red' ? t('verdict.reconfirm') : t(verdictKey(v))
+  const badgeTone = drift && v !== 'red' ? 'review' : v
+  const sourceLine = [
+    t('card.source').replace('{kind}', sourceKind(report.spec)),
+    t(report.pinned ? 'pinned' : 'unpinned'),
+    ...(ack !== undefined ? [t('card.lastAck').replace('{date}', new Date(ack.at).toLocaleDateString())] : []),
+  ].join(' · ')
 
   return (
-    <article className={`${css.plugin} ${css[`verdict-${v}`]}`}>
+    <article
+      className={`${css.plugin} ${expanded ? css.pluginOpen : settled ? css.pluginSettled : ''}`}
+      data-plugin={report.name}
+      onAnimationEnd={event => {
+        if (event.target === event.currentTarget) onSettledEnd()
+      }}
+    >
       <button type="button" className={css.pluginToggle} aria-expanded={expanded} onClick={onToggle}>
         <span className={css.toggleMain}>
           <span className={css.nameLine}>
             <span className={css.name}>{report.name}</span>
             <span className={css.version}>{report.version}</span>
           </span>
-          <span className={`${css.statusBadge} ${css[`badge-${v}`]}`}>{t(verdictKey(v))}</span>
+          <span className={`${css.statusBadge} ${css[`badge-${badgeTone}`]}`}>{badgeLabel}</span>
         </span>
-        {previewCaps.length > 0 && (
-          <span className={css.previewChips}>
-            {previewCaps.map(cap => (
-              <span key={cap} className={`${css.chip} ${css[`tier-${capabilityTier(cap)}`]}`}>
-                {capChipText(cap, t, report)}
+        <span className={css.sourceLine}>{sourceLine}</span>
+        {(added.length > 0 || removed.length > 0) && (
+          <span className={css.driftPills}>
+            {added.length > 0 && (
+              <span className={css.driftGroup}>
+                <span className={css.srOnly}>{t('drift.added')}</span>
+                {added.map(cap => (
+                  <span key={`+${cap}`} className={`${css.deltaPill} ${css.deltaAdded}`}>
+                    <span aria-hidden="true">+ </span>{t(capLabelKey(cap))}
+                  </span>
+                ))}
               </span>
-            ))}
+            )}
+            {removed.length > 0 && (
+              <span className={css.driftGroup}>
+                <span className={css.srOnly}>{t('drift.removed')}</span>
+                {removed.map(cap => (
+                  <span key={`-${cap}`} className={`${css.deltaPill} ${css.deltaRemoved}`}>
+                    <span aria-hidden="true">− </span>{t(capLabelKey(cap))}
+                  </span>
+                ))}
+              </span>
+            )}
           </span>
         )}
         <span className={css.srOnly}>{expanded ? t('collapsePlugin') : t('expandPlugin')}</span>
@@ -761,9 +1232,11 @@ function PluginRow({
           report={report}
           ack={ack}
           profile={profile}
+          schemaVersion={schemaVersion}
           t={t}
           onAckChange={onAckChange}
           onReplaceReport={onReplaceReport}
+          onOpenFeedback={onOpenFeedback}
         />
       )}
     </article>
@@ -780,8 +1253,22 @@ export function TrustReport({ useStore, actions, t }: TrustReportProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [feedback, setFeedback] = useState<{ id: number, finding: FrozenFinding, opener: HTMLElement } | null>(null)
+  const feedbackSeq = useRef(0)
+  const rootRef = useRef<HTMLDivElement>(null)
+  /** When opening a card, keep its header under the same viewport Y after siblings collapse. */
+  const expandAnchorRef = useRef<{ name: string, top: number } | null>(null)
 
-  const refresh = async () => {
+  const openFeedback = (finding: FrozenFinding, opener: HTMLElement) => {
+    feedbackSeq.current += 1
+    setFeedback({ id: feedbackSeq.current, finding, opener })
+  }
+
+  const [settleName, setSettleName] = useState<string | null>(null)
+  const [settledName, setSettledName] = useState<string | null>(null)
+
+  /** `afterAck` keeps the reader's place instead of re-deriving which cards are open. */
+  const refresh = async (afterAck?: { name: string, kind: AckChange }) => {
     setLoading(true)
     setError(false)
     try {
@@ -789,13 +1276,27 @@ export function TrustReport({ useStore, actions, t }: TrustReportProps) {
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const data = await response.json() as AuditResponse
       actions.setReport(data, Date.now())
-      setExpanded(defaultExpandedNames(data.plugins, data.acks))
+      if (afterAck === undefined) {
+        setExpanded(defaultExpandedNames(data.plugins, data.acks))
+      } else if (afterAck.kind === 'ack') {
+        setExpanded(prev => {
+          const next = new Set(prev)
+          next.delete(afterAck.name)
+          return next
+        })
+        setSettleName(afterAck.name)
+        setSettledName(afterAck.name)
+      }
     } catch {
       setError(true)
     } finally {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (normalizedReport !== null) pruneExplains(normalizedReport.plugins.map(p => p.name))
+  }, [normalizedReport])
 
   useEffect(() => {
     if (report === null) void refresh()
@@ -805,31 +1306,131 @@ export function TrustReport({ useStore, actions, t }: TrustReportProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const overview = useMemo(() => {
+  /**
+   * The sticky acknowledgment bar needs an opaque plate (cards are transparent on some hosts) and
+   * must offset the scroll container's bottom padding, which Chrome excludes from the sticky area.
+   */
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    if (root === null) return
+    const apply = () => {
+      root.style.setProperty('--trust-plate', resolveDialogTheme(root).background)
+      const scroller = scrollContainer(root)
+      const padding = scroller === null ? 0 : parseFloat(getComputedStyle(scroller).paddingBottom) || 0
+      root.style.setProperty('--trust-stick', `${-padding}px`)
+    }
+    apply()
+    const observer = new MutationObserver(apply)
+    for (const node of [document.documentElement, document.body]) {
+      observer.observe(node, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] })
+    }
+    window.addEventListener('resize', apply)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', apply)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (settleName === null) return
+    setSettleName(null)
+    const card = [...(rootRef.current?.querySelectorAll<HTMLElement>('[data-plugin]') ?? [])]
+      .find(el => el.dataset.plugin === settleName)
+    revealEvidence(card?.querySelector<HTMLElement>('[aria-expanded]') ?? null, true)
+  }, [settleName])
+
+  const overviewParts = useMemo(() => {
     if (normalizedReport === null || normalizedReport.plugins.length === 0) return null
     const counts = countVerdicts(normalizedReport.plugins, normalizedReport.acks)
-    return `${normalizedReport.plugins.length} ${t('overview.plugins')} · ${counts.red} ${t('verdict.red')} · ${counts.accepted} ${t('verdict.accepted')} · ${counts.review} ${t('verdict.review')} · ${counts.expected} ${t('verdict.expected')} · ${counts.clear} ${t('verdict.clear')}`
+    const buckets = (['red', 'accepted', 'review', 'expected', 'clear'] as const)
+      .filter(v => counts[v] > 0)
+      .map(v => ({ verdict: v, count: counts[v], label: t(verdictKey(v)) }))
+    return {
+      total: `${normalizedReport.plugins.length} ${t('overview.plugins')}`,
+      buckets,
+    }
   }, [normalizedReport, t])
 
+  const [jumpName, setJumpName] = useState<string | null>(null)
+
+  const jumpToVerdict = (target: Verdict) => {
+    if (normalizedReport === null) return
+    const match = sortPlugins(normalizedReport.plugins, normalizedReport.acks)
+      .find(plugin => verdict(plugin, normalizedReport.acks?.[plugin.name]) === target)
+    if (match === undefined) return
+    expandAnchorRef.current = null
+    setSettledName(null)
+    setExpanded(new Set([match.name]))
+    setJumpName(match.name)
+  }
+
   const togglePlugin = (name: string) => {
+    // Any manual toggle ends the post-ack highlight, including when opening a different card.
+    setSettledName(null)
     setExpanded(prev => {
-      const next = new Set(prev)
-      if (next.has(name)) next.delete(name)
-      else next.add(name)
-      return next
+      if (prev.has(name)) {
+        expandAnchorRef.current = null
+        const next = new Set(prev)
+        next.delete(name)
+        return next
+      }
+      const card = rootRef.current?.querySelector<HTMLElement>(`[data-plugin="${CSS.escape(name)}"]`)
+      expandAnchorRef.current = card === null || card === undefined
+        ? null
+        : { name, top: card.getBoundingClientRect().top }
+      return new Set([name])
     })
   }
 
+  useLayoutEffect(() => {
+    const anchor = expandAnchorRef.current
+    if (anchor === null) return
+    expandAnchorRef.current = null
+    const card = rootRef.current?.querySelector<HTMLElement>(`[data-plugin="${CSS.escape(anchor.name)}"]`)
+    if (card !== null && card !== undefined) restoreScrollAnchor(card, anchor.top)
+  }, [expanded])
+
+  useLayoutEffect(() => {
+    if (jumpName === null) return
+    const name = jumpName
+    setJumpName(null)
+    const card = rootRef.current?.querySelector<HTMLElement>(`[data-plugin="${CSS.escape(name)}"]`)
+    const header = card?.querySelector<HTMLElement>('[aria-expanded]')
+    if (header === null || header === undefined) return
+    const reduce = typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    header.focus({ preventScroll: true })
+    header.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
+  }, [jumpName, expanded])
+
   return (
-    <div className={css.root}>
+    <div className={css.root} ref={rootRef}>
       <div className={css.head}>
         <div className={css.headText}>
           <h2 className={css.title}>{t('settings.title')}</h2>
           <p className={css.intro}>{t('intro')}</p>
+          {overviewParts !== null && (
+            <p className={css.overview}>
+              <span>{overviewParts.total}</span>
+              {overviewParts.buckets.map(bucket => (
+                <span key={bucket.verdict}>
+                  <span className={css.overviewSep} aria-hidden="true"> · </span>
+                  <button
+                    type="button"
+                    className={`${css.overviewJump} ${css[`overview-${bucket.verdict}`]}`}
+                    onClick={() => jumpToVerdict(bucket.verdict)}
+                    aria-label={t('overview.jump').replace('{label}', bucket.label)}
+                  >
+                    {bucket.count} {bucket.label}
+                  </button>
+                </span>
+              ))}
+            </p>
+          )}
           <details className={css.help}>
             <summary>{t('howToRead.title')}</summary>
             <p>{t('howToRead.body')}</p>
-            <p className={css.muted}>{t('postInstall.note')}</p>
+            <p className={css.helpNote}>{t('postInstall.note')}</p>
           </details>
         </div>
         <div className={css.headActions}>
@@ -842,24 +1443,26 @@ export function TrustReport({ useStore, actions, t }: TrustReportProps) {
         </div>
       </div>
 
-      {overview !== null && <div className={css.overview}>{overview}</div>}
+      {error && <div className={css.error} role="alert">{t('loadError')}</div>}
 
-      {error && <div className={css.error}>{t('loadError')}</div>}
-
-      {!error && normalizedReport !== null && normalizedReport.plugins.length === 0 && (
+      {!error && normalizedReport !== null && normalizedReport.plugins.length === 0 && normalizedReport.errors.length === 0 && (
         <div className={css.empty}>{t('empty')}</div>
       )}
 
-      {normalizedReport !== null && normalizedReport.plugins.map(plugin => (
+      {normalizedReport !== null && sortPlugins(normalizedReport.plugins, normalizedReport.acks).map(plugin => (
         <PluginRow
           key={plugin.name}
           report={normalizeAuditReport(plugin)}
           ack={normalizedReport.acks?.[plugin.name]}
           profile={normalizedReport.profile === '' ? 'web' : normalizedReport.profile}
+          schemaVersion={normalizedReport.schemaVersion}
           t={t}
           expanded={expanded.has(plugin.name)}
+          settled={settledName === plugin.name}
+          onSettledEnd={() => setSettledName(name => (name === plugin.name ? null : name))}
           onToggle={() => togglePlugin(plugin.name)}
-          onAckChange={() => void refresh()}
+          onAckChange={kind => refresh({ name: plugin.name, kind })}
+          onOpenFeedback={openFeedback}
           onReplaceReport={next => {
             if (report === null) return
             actions.setReport({
@@ -880,6 +1483,17 @@ export function TrustReport({ useStore, actions, t }: TrustReportProps) {
             ))}
           </ul>
         </section>
+      )}
+
+      {feedback !== null && (
+        <FeedbackDialog
+          key={feedback.id}
+          finding={feedback.finding}
+          themeRoot={rootRef.current}
+          returnFocus={feedback.opener}
+          t={t}
+          onClose={() => setFeedback(null)}
+        />
       )}
     </div>
   )

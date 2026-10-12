@@ -3,12 +3,13 @@
  * Transpiles src/ without tsc project references or a sibling harness checkout.
  */
 import { readFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { basename, dirname, resolve as resolvePath } from 'node:path'
 import { defineConfig, type UserConfig } from 'tsdown'
 import { transform } from 'lightningcss'
 
 const PACKAGE_ID = 'dsh-trust-check'
+const PAGE_VERSION = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version as string
 
 const CSS_VIRTUAL_PREFIX = '\0dsh-css:'
 const CSS_VIRTUAL_SUFFIX = '.mjs'
@@ -63,6 +64,7 @@ const client: UserConfig = {
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production'),
     'import.meta.env.MODE': JSON.stringify(process.env.NODE_ENV ?? 'production'),
     'import.meta.env': JSON.stringify({ MODE: process.env.NODE_ENV ?? 'production' }),
+    __DSH_TRUST_PAGE_VERSION__: JSON.stringify(PAGE_VERSION),
   },
   plugins: [
     {

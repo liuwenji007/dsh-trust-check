@@ -8,7 +8,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import { readAckStore, removeAck, setAck } from './core/ack.ts'
 import { auditPlugin } from './core/audit.ts'
-import { explainWithLlm } from './host/llm-explain.ts'
+import { explainWithLlmResult, type ExplainResult } from './host/llm-explain.ts'
 import { buildExplainPrompt } from './core/explain.ts'
 import { collectPlugin, readInstalled, resolveProfileDir } from './fs.ts'
 import { buildAuditResponse } from './core/response.ts'
@@ -53,7 +53,7 @@ export {
 export { injectionFingerprint } from './core/injection.ts'
 export { blankComments, isCodeFile, stripComments } from './core/strip-comments.ts'
 export { buildExplainPrompt, EXPLAIN_SYSTEM } from './core/explain.ts'
-export { explainWithLlm, resolveExplainRoute } from './host/llm-explain.ts'
+export { explainWithLlm, explainWithLlmResult, resolveExplainRoute, type ExplainResult } from './host/llm-explain.ts'
 export type { Concern, ConcernCode, NetworkReach, RedLineCode, Verdict } from './core/present.ts'
 export { collectPlugin, readInstalled, resolveProfileDir } from './fs.ts'
 export { readNpmProvenance } from './npm-provenance.ts'
@@ -287,8 +287,8 @@ export function runAudit(profile: string): AuditResponse {
   return buildAuditResponse({ profile, plugins, errors, acks })
 }
 
-async function llmExplain(ctx: Context, prompt: string): Promise<string> {
-  return explainWithLlm(ctx, prompt)
+async function llmExplain(ctx: Context, prompt: string): Promise<ExplainResult> {
+  return explainWithLlmResult(ctx, prompt)
 }
 
 function guard(request: IncomingMessage, response: ServerResponse): boolean {
@@ -401,8 +401,8 @@ export function apply(ctx: Context, config?: Config): void {
                 return
               }
               const prompt = buildExplainPrompt(lookup.report, body.locale)
-              const text = await llmExplain(hostCtx, prompt)
-              sendJson(response, 200, { name: body.name, text, disclaimer: 'explanation only, not a security verdict' })
+              const { text, truncated } = await llmExplain(hostCtx, prompt)
+              sendJson(response, 200, { name: body.name, text, truncated, disclaimer: 'explanation only, not a security verdict' })
             } catch (error) {
               if (sendBodyError(response, error)) return
               const message = error instanceof Error ? error.message : String(error)

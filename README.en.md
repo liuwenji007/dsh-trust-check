@@ -1,12 +1,14 @@
 # dsh-trust-check
 
+[![Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
+[![npm version](https://img.shields.io/npm/v/dsh-trust-check)](https://www.npmjs.com/package/dsh-trust-check)
+[![npm downloads](https://img.shields.io/npm/dm/dsh-trust-check)](https://www.npmjs.com/package/dsh-trust-check)
+
 [中文](README.md)
 
 Static **capability disclosure** for DeepSeek Harness plugins: permissions, injections, source, and install scripts — code-judged, reproducible, zero tokens.
 
-> Not an antivirus, and it makes no safety promises. It proves only what is provable: what a plugin really touches, what it injects, and whether its source can be checked — with evidence (file + line + snippet) for every claim, so you can verify it yourself.
->
-> This project produces facts, not "safe / trusted" verdicts, and it does not endorse plugins; filtering policy belongs to integrators and users. See [Positioning and boundaries](docs/POSITIONING.md) (Chinese).
+> Surfaces **what a plugin touches, what it injects, and whether its source can be checked**, each with evidence (file + line + snippet) you can verify. It reports detected facts only — **not a safety endorsement, and it makes no safety inference**. Whether to block or continue is up to integrators and users. See [Positioning and boundaries](docs/POSITIONING.md) (Chinese).
 
 ## Install
 
@@ -44,11 +46,17 @@ npx dsh-trust-check --dir ./pkg --exit-code
 
 `--dir` and `--profile` are mutually exclusive. Both modes emit the same `AuditResponse` shape for `--json`: `{ schemaVersion, profile, dir?, generatedAt, plugins, errors }`; in single-directory mode `profile` is an empty string and `dir` is the absolute path. See [docs/audit-schema.md](docs/audit-schema.md) and [docs/INTEGRATION.md](docs/INTEGRATION.md).
 
-The exit code is always 0 by default. With `--exit-code`: `0` nothing detected (in profile mode, also acknowledged), `1` review, `2` red line, `3` scan failed; profile mode reports the worst plugin. **`0` only means this static pass found nothing — not that the plugin is safe.** Usage errors (unknown flag, missing value for `--dir` etc.) print to stderr and exit `1`.
+The exit code is always 0 by default. With `--exit-code`: `0` nothing detected in this static pass (in profile mode, also acknowledged), `1` review, `2` red line, `3` scan failed; profile mode reports the worst plugin. **A miss is not a safety endorsement.** Usage errors (unknown flag, missing value for `--dir` etc.) print to stderr and exit `1`.
 
 | Settings → Plugin Trust | CLI `--dir --json` |
 | --- | --- |
-| ![Settings plugin trust](docs/dsh.png) | ![CLI JSON output](docs/cli.png) |
+| ![Settings overview](docs/overview.png) | ![CLI JSON output](docs/cli.png) |
+
+| Expanded review | AI reading |
+| --- | --- |
+| ![Expanded review and evidence](docs/review.png) | ![AI reading](docs/AI_read.png) |
+
+![Detection feedback](docs/feedback.png)
 
 ### Troubleshooting
 
@@ -59,21 +67,26 @@ The exit code is always 0 by default. With `--exit-code`: `0` nothing detected (
 
 ## How to read the report
 
-The settings UI and CLI use a **decision-first** layout. Reading order:
+Settings use a single column of cards, with one plugin open at a time.
 
-1. **Decision**: badge + action line + "why be careful" (up to 3 bullets)
-2. **Scan**: capability chips → injection summary (collapsed) → source
-3. **Evidence**: grouped by capability, collapsed by default
+1. **Header**: one-line positioning plus an overview (e.g. “10 plugins · 3 review”). Colored overview items jump to the first card in that bucket.
+2. **Collapsed card**: name, version, status badge, and source. Capability detail appears after you expand.
+3. **Expanded card**: findings and action copy → AI reading (if generated) → capabilities / destinations / paths / secrets / injections / source → evidence → scan limits → acknowledgment bar at the bottom.
+4. **When the last acknowledgment no longer matches**: the badge shows **reconfirm**; capability gains and losses appear as `+cap` / `−cap` pills under the title.
+5. **Acknowledgment**: at the bottom of the card; writes the current fingerprint to the local acknowledgment store for the next scan.
+
+The CLI prints the same facts in its own layout.
 
 | Verdict | Meaning | When |
 |---|---|---|
-| **Red line(s)** | Hard red line hit; stop by default — or confirm risk to keep using | `redLines` non-empty, current fingerprint not acknowledged |
+| **Red line(s)** | A hard red line was detected. Review the specific facts; you can confirm the risk to keep using it | `redLines` non-empty, current fingerprint not acknowledged |
 | **Risk accepted** | You confirmed the current red-line risk | Has red lines, `trust-ack.json` matches this scan |
 | **Review** | No hard red lines, but privileged capabilities or patch changes | Has capabilities or override/disable, no red lines |
+| **Reconfirm** | You acknowledged before, but this scan no longer matches | An acknowledgment exists and the fingerprint changed (upgrade, findings, or scan-rule updates) |
 | **As expected** | You acknowledged the current capability/shape fingerprint | `trust-ack.json` matches this scan (no red lines) |
-| **Nothing detected** | No red lines or privileged capabilities — not a safety guarantee | Everything else |
+| **Nothing detected** | No red lines or privileged capabilities | Everything else |
 
-`score` / `summary` stay in JSON for sorting and integrators; the settings UI does not show them. Injected token estimates are labeled as **cost hints** only.
+`score` / `summary` stay in JSON for sorting and integrators; the settings UI omits them. Injected token estimates appear only as a cost hint on the Injections fold summary (when non-zero).
 
 ### Shape layer (code-judged)
 
@@ -83,7 +96,7 @@ Besides capability chips, the report extracts three kinds of literal facts from 
 - **Workspace path escapes**: absolute paths, home directory, traversal, …
 - **Secret touches**: paths, sensitive env names.
 
-These mean "we saw this string in source", not "this address/path is safe"; runtime-built URLs are invisible (a template URL still reports its host when `${…}` comes after the host or directly follows a complete dotted host, as in `` `https://api.github.com${path}` ``; `${…}` before the host is complete hides it).
+They mean the literal appears in source; runtime-built URLs are invisible (a template URL still reports its host when `${…}` comes after the host or directly follows a complete dotted host, as in `` `https://api.github.com${path}` ``; `${…}` before the host is complete hides it). The literal itself carries no safety inference.
 
 **Allowlist**: common host / registry domains (GitHub, npm, npmmirror, Tencent Cloud mirrors, …), the curated DSH catalog and GitHub proxies, and common model-vendor APIs (DeepSeek, OpenAI, Anthropic, Google Gemini). Allowlisted entries are collapsed by default with a short note; plaintext HTTP is never downgraded by the allowlist.
 
@@ -102,7 +115,9 @@ These mean "we saw this string in source", not "this address/path is safe"; runt
 
 After you confirm capabilities match why you installed the plugin, the fingerprint is stored in `~/.dsh/profiles/<profile>/trust-ack.json`. An upgrade that changes capabilities, destinations, path escapes, secrets, red lines, or skill text (by content hash, not byte length) must be confirmed again. The confirmation request sends the report's `ackFingerprint`; a mismatch returns 409 and asks you to review the refreshed report. Older acknowledgements without a `digest` no longer match. Accepting a red line still requires its own "confirm risk" action, and only after the fingerprint matches.
 
-**AI explain**: optional button; uses your DSH-configured model to explain the report summary only, **does not change the verdict**; unavailable when no model is configured.
+**AI reading**: a reading aid, also reachable from the acknowledgment bar. Uses your DSH-configured model to explain the report summary; unavailable when no model is configured. The text is saved on this device; regenerate after the plugin version, findings, or UI language change.
+
+**Report a detection issue**: each evidence row can build a draft, and the plugin detail has a separate entry for a miss or an unclear explanation. The draft stays in page memory. Inaccurate detections and unclear explanations open the detection-feedback Markdown issue editor with the title and body you edited; you submit it there. A miss opens the private report page from SECURITY.md. A public issue appears when you mark it as an ordinary rule gap with no exploitable bypass.
 
 ### Red lines (default block)
 
@@ -116,13 +131,10 @@ Red lines cap the numeric score at 49 (avoiding "100 + high risk"). **The verdic
 
 ## What it audits
 
-| Dimension | Reads | Judgement |
-|---|---|---|
-| **Capabilities** | `package.json` dependency scopes + static scan of `lib/`, `dist/`, `bin/`, `scripts/`, skill dirs, and `main` / `exports` / `bin` / string `browser` entry files. When `files` parses exactly, dev-only files npm would not publish are not counted | shell / file read / file write / network / credentials / sub-agents / LLM calls / env reads |
-| **Injections** | `cordis.patch.yml` + `systemPrompt` / `ctx.skills.register` / `system-prompt/assemble` + skill text | who it overrides/disables (`id` or `name`), what it injects |
-| **Cost** | skill text + system-prompt inline literal bytes | estimated injected tokens per request (bytes / 4, estimate only) |
-| **Source** | `package.json` `repository` (falls back to the git install source) + install spec | pinned version / pinned commit |
-| **Update risk** | install scripts (install/postinstall/preinstall; `prepare` is deduction-only) | whether scripts are declared to run at install time |
+- **Capabilities** — Reads: `package.json` dependency scopes + static scan of `lib/` / `dist/` (falls back to the package root when neither exists), `bin/`, `scripts/`, `skills/` / `prompts/`, and `main` / `exports` / `bin` / string `browser` entry files; when `files` parses exactly, dev-only files npm would not publish are not counted. Judges: shell / file read / file write / network / credentials / env / sub-agents / host-runtime / LLM / dynamic-code
+- **Injections** — Reads: `cordis.patch.yml` + `systemPrompt` / `ctx.skills.register` / `system-prompt/assemble` + skill text. Judges: who it overrides/disables (`id` or `name`), what it injects; skill and system-prompt literals also yield an injected-token estimate (bytes / 4), shown only as a cost hint on the Injections fold summary when non-zero
+- **Source** — Reads: `package.json` `repository` (falls back to the git install source) + install spec. Judges: pinned version / pinned commit
+- **Update risk** — Reads: install scripts (install/postinstall/preinstall; `prepare` is deduction-only). Judges: whether scripts are declared to run at install time
 
 ## For integrators (plugin catalogs, markets, CI)
 
@@ -141,7 +153,7 @@ const report = auditPlugin(collectPlugin(extractedDir, spec))
 // What the three states mean (whether to block or prompt is the integrator's call):
 // verdict(report) === 'red'    → high-confidence risk signal; suggest blocking by default, user may confirm
 // verdict(report) === 'review' → privileged capabilities; suggest showing the capability list
-// verdict(report) === 'clear'  → nothing detected in this static pass; not a safety claim
+// verdict(report) === 'clear'  → nothing detected in this static pass (not a safety endorsement)
 ```
 
 CLI equivalent (market can spawn without DSH):
@@ -156,8 +168,8 @@ Parse `--json` uniformly: `plugins[0]` for single `--dir`, or the full `plugins`
 
 ## Principles
 
-- **Code-judged, not LLM-scored**: every judgement is code, zero tokens, reproducible.
-- **Proves presence, never absence**: static analysis only claims "detected X"; it never claims "guaranteed no Y".
+- **Code-judged and reproducible**: judgements come from the rule table, zero tokens.
+- **Reports presence**: claims "detected X"; a miss is not a safety inference or endorsement.
 - **Evidence you can re-check**: every capability hit carries `file:line` and a snippet.
 - **Hot-swappable seam table**: detection rules are a data table (`src/core/seams.ts`); DSH API changes mean editing the table, not the engine.
 

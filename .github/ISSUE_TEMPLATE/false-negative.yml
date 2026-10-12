@@ -6,9 +6,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        Static analysis proves presence, never absence — a miss is still worth a rule if the construct is a call site or import the table can name.
+        Static analysis proves presence, never absence. Paste what the settings page showed, or the smallest snippet. You do not need to read the scanner source. If the miss is an exploitable bypass, use the private report linked from SECURITY.md instead of this public form.
 
-        静态分析只证有、不证无。如果漏掉的是规则表能叫出名字的调用点或 import，仍然值得补一条。
+        静态分析只证有、不证无。粘贴设置页草稿或最小片段即可，不必先读扫描器源码。如果这是可利用的绕过，请改走 SECURITY.md 里的私密报告，不要用这个公开表单。
   - type: dropdown
     id: surface
     attributes:
@@ -34,9 +34,9 @@ body:
     id: current
     attributes:
       label: Current rule (if any) / 现有规则
-      description: Quote the pattern in `src/core/seams.ts` or `src/core/shape.ts` that almost matches, or write "none".
+      description: Optional. Write "none" if you have not looked at the scanner source. A settings-page draft is enough.
     validations:
-      required: true
+      required: false
   - type: checkboxes
     id: bypass-class
     attributes:
