@@ -8,17 +8,39 @@ Each release lists **Affects catalog results** first: anything that can change w
 
 `schemaVersion`: 2.
 
-### Affects catalog results
+## 0.2.2 — 2026-10-12
+
+`schemaVersion`: 2.
+
+### 中文
+
+设置页更好扫读：单列手风琴、可跳转总览、漂移进徽章、AI 解读可本机缓存，并支持起草检测问题反馈。`schemaVersion`、确认 API 与权限行为不变。
+
+#### 影响目录结果
+
+- **相对路径且 `${…}` 前路径已固定的 `fetch` 不算 `network`。** `fetch('/dsh-xu/${this.name}')`、`` fetch(`/api/${id}`) `` 仍落在页面源；引号内的 `${` 是字面量；模板插值若跟在 `/` 后再加非斜杠字符，或跟在 `./` / `../` 后，无法换主机。`` fetch(`/${name}`) ``、`` fetch(`${url}`) ``、变量与拼接仍计入。字面量经 `\` / `\n` / `\u` / 八进制折叠后变成 `//host` 的仍计入。仅当这类调用是唯一证据时，可能去掉 `network`。
+
+#### 其他
+
+- **阅读表面**：单列手风琴（同时只开一张）；顶部通俗定位 + 带颜色、可点击的总览，跳到该类第一张卡；收起态只留名称 / 版本 / 徽章 / 来源。漂移不再用整块提示——徽章显示「需重新确认」，能力增减用 `+` / `−` 小标签。展开后：发现 → AI 解读 → 能力与证据 → 扫描限制 → 底部确认条。确认 API、指纹校验、红线与文案契约不变。
+- **检测问题反馈**：可从证据行或插件整体起草；草稿只在页面内存；两步弹窗、不透明底板、窄屏底部抽屉；必填项有标识，阻塞时字段标红。公开 Issue / 漏报私密页行为不变。
+- **AI 解读**：通俗提示词；插件数据加边界与引号；更高输出上限，触顶时标记截断；按插件 / 版本 / 风险指纹 / 语言本机缓存，可重新生成。不改变检测结果或确认。
+- **文档**：中英文 README「怎么读报告」与截图已对齐（`overview` / `review` / `AI_read` / `feedback` / `cli`）；顶部增加 npm 与 Awesome DSH Plugin 徽章。
+
+### English
+
+Easier Settings reading: single-column accordion, jumpable overview, drift in the badge, cacheable AI reading, and in-page detection-feedback drafts. `schemaVersion`, acknowledgment API, and permission behavior are unchanged.
+
+#### Affects catalog results
 
 - **A relative `fetch` whose path is fixed before `${…}` is not `network`.** `fetch('/dsh-xu/${this.name}')` and `` fetch(`/api/${id}`) `` stay on the page origin: a quoted `${` is literal text, and a template interpolation after `/` plus a non-slash character, or after `./` / `../`, cannot pick another host. `` fetch(`/${name}`) ``, `` fetch(`${url}`) ``, variables, and concatenation still count. A literal that becomes `//host` after `\` / `\n` / `\u` / octal folding still counts (`fetch('/\n/evil.com')`, `fetch('/\\evil.com')`, `fetch('/\057/evil.com')`). This can remove `network` when those calls were the only evidence.
 
-### Other
+#### Other
 
-- Settings reading surface: single-column accordion (one plugin open at a time); denser header with a plain intro and a colored, clickable overview that jumps to the first card in that bucket; collapsed cards show name / version / badge / source only. Drift no longer uses a callout block — the badge shows **reconfirm**, with `+cap` / `−cap` pills when capabilities changed. Findings, evidence, scan limits, and a floating acknowledgment bar follow inside the open card. `coverageNotes` stay plain text. Choosing a capability still scrolls to its evidence. Acknowledgment API, stale-fingerprint check, red-line data, and the wording contract are unchanged. **Affects catalog results: None.**
-- Settings can draft a detection-issue report from one evidence row, or from the plugin for a miss or an unclear explanation. The draft stays in memory. Returning to the form and previewing again keeps the title and body already edited, until the type, note, or attachments change. The feedback dialog uses an opaque plate from the settings host so the report behind it does not show through. Public issues open the detection-feedback Markdown editor with the edited title and body; a miss goes to the private advisory page unless you explicitly mark an ordinary rule gap. No audit API, `schemaVersion`, fingerprint, or permission behavior changes. **Affects catalog results: None.**
-- AI reading aid: plain-language prompt with untrusted plugin data fenced and quoted; higher output budget with a truncated flag when the model hits `max-tokens`; local cache keyed by plugin / version / risk fingerprint / locale, with regenerate and a generated-at line. Replies render a small Markdown subset (titles, lists, bold, inline code). Does not change findings or acknowledgments. **Affects catalog results: None.**
-- Feedback dialog polish: two steps, finding and contract version, type choices as buttons, fixed footer, bottom sheet on narrow screens, dark `color-scheme` for native controls, focus to the first field of each step and back to the trigger after leaving the discard prompt. Detection and acknowledgment logic are unchanged. **Affects catalog results: None.**
-- Docs: README / README.en “how to read” and AI reading notes match the current settings UI; screenshots updated (`overview` / `review` / `AI_read` / `feedback` / `cli`); npm and Awesome DSH Plugin badges at the top. **Affects catalog results: None.**
+- **Reading surface**: single-column accordion (one plugin open at a time); denser header with a plain intro and a colored, clickable overview that jumps to the first card in that bucket; collapsed cards show name / version / badge / source only. Drift no longer uses a callout — the badge shows **reconfirm**, with `+cap` / `−cap` pills when capabilities changed. Inside the open card: findings → AI reading → capabilities and evidence → scan limits → floating acknowledgment bar. Acknowledgment API, fingerprint check, red-line data, and the wording contract are unchanged.
+- **Detection feedback**: draft from one evidence row or from the plugin; draft stays in page memory; two-step dialog, opaque plate, bottom sheet on narrow screens; required fields marked, blocked submit highlighted in red. Public issue / private miss reporting unchanged.
+- **AI reading**: plain-language prompt with untrusted plugin data fenced and quoted; higher output budget with a truncated flag on `max-tokens`; local cache keyed by plugin / version / risk fingerprint / locale, with regenerate. Does not change findings or acknowledgments.
+- **Docs**: README / README.en “how to read” and screenshots updated (`overview` / `review` / `AI_read` / `feedback` / `cli`); npm and Awesome DSH Plugin badges at the top.
 
 ## 0.2.1 — 2026-10-10
 
