@@ -81,7 +81,11 @@ describe('detection feedback dialog', () => {
     renderReport()
     await openEvidence(user)
     await user.click(screen.getByRole('button', { name: zh['feedback.next'] }))
-    expect(screen.getByRole('status').textContent).toContain(zh['feedback.note.required'])
+    const noteAlert = screen.getByRole('alert')
+    expect(noteAlert.textContent).toContain(zh['feedback.note.required'])
+    expect(noteAlert.className).toMatch(/fieldError/)
+    expect(screen.getByLabelText(zh['feedback.note']).getAttribute('aria-invalid')).toBe('true')
+    expect(document.querySelectorAll('[class*="required"]').length).toBeGreaterThan(0)
 
     await user.type(screen.getByLabelText(zh['feedback.note']), '注释里的示例 URL')
     await user.click(screen.getByRole('button', { name: zh['feedback.next'] }))
@@ -257,14 +261,23 @@ describe('detection feedback dialog', () => {
     expect(document.activeElement).toBe(screen.getByLabelText(zh['feedback.note']))
   })
 
-  it('requires a type on the general entry', async () => {
+  it('defaults the issue type and only blocks on an empty note', async () => {
     const user = userEvent.setup()
     renderReport()
     await user.click(screen.getByRole('button', { name: zh['feedback.general'] }))
+    const kindRadio = screen.getByRole('radio', { name: zh['feedback.kind.inaccurate'] }) as HTMLInputElement
+    expect(kindRadio.checked).toBe(true)
+    expect(screen.getByText(zh['feedback.kind.legend']).textContent).toContain('*')
+    await user.click(screen.getByRole('button', { name: zh['feedback.next'] }))
+    const noteAlert = screen.getByRole('alert')
+    expect(noteAlert.textContent).toContain(zh['feedback.note.required'])
+    expect(noteAlert.className).toMatch(/fieldError/)
+    expect(screen.getByLabelText(zh['feedback.note']).getAttribute('aria-invalid')).toBe('true')
+    expect(screen.queryByLabelText(zh['feedback.bodyField'])).toBeNull()
+
     await user.type(screen.getByLabelText(zh['feedback.note']), '说不清')
     await user.click(screen.getByRole('button', { name: zh['feedback.next'] }))
-    expect(screen.getByRole('status').textContent).toContain(zh['feedback.kind.required'])
-    expect(screen.queryByLabelText(zh['feedback.bodyField'])).toBeNull()
+    expect(screen.getByLabelText(zh['feedback.bodyField'])).toBeTruthy()
   })
 
   it('shows an oversized draft before the link and lets that link open', async () => {

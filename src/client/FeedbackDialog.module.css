@@ -22,6 +22,7 @@
 
 .dialog {
   --fb-focus: var(--fb-accent-ink);
+  --fb-danger: var(--dsw-alias-state-error-primary, #dc2626);
 
   position: relative;
   isolation: isolate;
@@ -171,6 +172,17 @@
   font-weight: 600;
 }
 
+.field > .label {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.required {
+  color: var(--fb-danger);
+  font-weight: 700;
+}
+
 .fieldset {
   margin: 0 0 16px;
   padding: 0;
@@ -281,6 +293,17 @@
   border-color: var(--fb-accent-line);
 }
 
+.fieldInvalid textarea,
+.fieldInvalid input {
+  border-color: color-mix(in srgb, var(--fb-danger) 70%, transparent);
+}
+
+.fieldInvalid textarea:focus,
+.fieldInvalid input:focus {
+  border-color: var(--fb-danger);
+  outline-color: var(--fb-danger);
+}
+
 .field .draftBody {
   min-height: 240px;
   font-family: var(--fb-mono);
@@ -296,13 +319,20 @@
 }
 
 .live {
-  min-height: 1.4em;
-  margin: 6px 0 8px;
+  min-height: 0;
+  margin: 0;
   font-size: 12px;
 }
 
 .live p {
   margin: 0;
+}
+
+.fieldError {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--fb-danger);
 }
 
 .note {

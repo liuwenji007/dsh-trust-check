@@ -84,7 +84,8 @@ export function FeedbackDialog({
   onClose: () => void
 }) {
   const titleId = useId()
-  const errorId = useId()
+  const noteId = useId()
+  const noteErrorId = useId()
   const kindName = useId()
   const dialogRef = useRef<HTMLDivElement>(null)
   const backdropRef = useRef<HTMLDivElement>(null)
@@ -92,14 +93,13 @@ export function FeedbackDialog({
   const onKeyRef = useRef<(event: KeyboardEvent) => void>(() => {})
   const returnFocusRef = useRef(returnFocus)
   returnFocusRef.current = returnFocus
-  const [kind, setKind] = useState<FeedbackKind | null>(finding.entry === 'evidence' ? 'inaccurate' : null)
+  const [kind, setKind] = useState<FeedbackKind>('inaccurate')
   const [note, setNote] = useState('')
   const [attachments, setAttachments] = useState<FeedbackAttachments>(emptyAttachments)
   const [ordinaryGap, setOrdinaryGap] = useState(false)
   const [step, setStep] = useState<'form' | 'preview'>('form')
   const [draft, setDraft] = useState<FeedbackDraft | null>(null)
   const [noteError, setNoteError] = useState(false)
-  const [kindError, setKindError] = useState(false)
   const [discarding, setDiscarding] = useState(false)
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
 
@@ -219,11 +219,14 @@ export function FeedbackDialog({
   })
 
   const goPreview = () => {
-    const missingKind = kind === null
     const missingNote = note.trim() === ''
-    setKindError(missingKind)
     setNoteError(missingNote)
-    if (missingKind || missingNote || kind === null) return
+    if (missingNote) {
+      queueMicrotask(() => {
+        dialogRef.current?.querySelector<HTMLTextAreaElement>('textarea[data-step-focus]')?.focus()
+      })
+      return
+    }
     const source = previewSourceKey(kind)
     setCopyState('idle')
     setStep('preview')
@@ -259,7 +262,7 @@ export function FeedbackDialog({
   }
 
   const issue = draft === null ? null : issueCreateUrl(draft.title, draft.body)
-  const allowPublic = kind !== null && publicIssueAllowed(kind, ordinaryGap)
+  const allowPublic = publicIssueAllowed(kind, ordinaryGap)
 
   const copyOverflowDraft = () => {
     if (issue?.overflow !== true || draft === null) return
@@ -299,7 +302,7 @@ export function FeedbackDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        aria-describedby={noteError || kindError ? errorId : undefined}
+        aria-describedby={noteError ? noteErrorId : undefined}
         style={{
           color: theme.color,
           background: theme.background,
@@ -341,8 +344,11 @@ export function FeedbackDialog({
               </div>
             </dl>
 
-            <fieldset className={css.fieldset}>
-              <legend className={css.label}>{t('feedback.kind.legend')}</legend>
+            <fieldset className={css.fieldset} aria-required="true">
+              <legend className={css.label}>
+                {t('feedback.kind.legend')}
+                <span className={css.required} title={t('feedback.required')} aria-hidden="true">*</span>
+              </legend>
               <div className={css.types}>
                 {KINDS.map((value, index) => (
                   <label key={value} className={`${css.type} ${kind === value ? css.typeActive : ''}`}>
@@ -355,7 +361,6 @@ export function FeedbackDialog({
                       data-autofocus={index === 0 ? '' : undefined}
                       onChange={() => {
                         setKind(value)
-                        setKindError(false)
                         if (value !== 'missed') setOrdinaryGap(false)
                       }}
                     />
@@ -365,18 +370,30 @@ export function FeedbackDialog({
               </div>
             </fieldset>
 
-            <label className={css.field}>
-              <span className={css.label}>{t('feedback.note')}</span>
+            <div className={`${css.field} ${noteError ? css.fieldInvalid : ''}`}>
+              <div className={css.label}>
+                <label htmlFor={noteId}>{t('feedback.note')}</label>
+                <span className={css.required} title={t('feedback.required')} aria-hidden="true">*</span>
+              </div>
               <textarea
+                id={noteId}
                 value={note}
                 data-step-focus=""
-                aria-invalid={noteError}
+                required
+                aria-required="true"
+                aria-invalid={noteError || undefined}
+                aria-describedby={noteError ? noteErrorId : undefined}
                 onChange={event => {
                   setNote(event.target.value)
                   setNoteError(false)
                 }}
               />
-            </label>
+              {noteError && (
+                <p id={noteErrorId} className={css.fieldError} role="alert">
+                  {t('feedback.note.required')}
+                </p>
+              )}
+            </div>
 
             <fieldset className={css.fieldset}>
               <legend className={css.label}>{t('feedback.attach.legend')}</legend>
@@ -416,11 +433,6 @@ export function FeedbackDialog({
             )}
 
             <p className={css.privacy}>{t('feedback.privacy')}</p>
-
-            <div id={errorId} className={css.live} role="status">
-              {kindError && <p>{t('feedback.kind.required')}</p>}
-              {noteError && <p>{t('feedback.note.required')}</p>}
-            </div>
           </div>
         ) : draft !== null && issue !== null && (
           <div>
