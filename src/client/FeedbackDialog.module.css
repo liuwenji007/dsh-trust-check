@@ -1,8 +1,8 @@
 .backdrop {
-  --fb-accent: #346859;
-  --fb-accent-ink: color-mix(in srgb, #346859 55%, currentColor);
-  --fb-accent-soft: color-mix(in srgb, #346859 12%, transparent);
-  --fb-accent-line: color-mix(in srgb, #346859 45%, transparent);
+  --fb-accent: var(--dsw-alias-brand-primary, #4f6ef7);
+  --fb-accent-ink: var(--fb-accent);
+  --fb-accent-soft: color-mix(in srgb, var(--fb-accent) 10%, transparent);
+  --fb-accent-line: color-mix(in srgb, var(--fb-accent) 45%, transparent);
   --fb-line: var(--dsw-alias-border-l2, color-mix(in srgb, currentColor 14%, transparent));
   --fb-line-strong: color-mix(in srgb, currentColor 22%, transparent);
   --fb-fill: color-mix(in srgb, currentColor 4%, transparent);
@@ -16,7 +16,7 @@
   align-items: flex-start;
   justify-content: center;
   padding: 6vh 16px 16px;
-  background: color-mix(in srgb, #18201d 38%, transparent);
+  background: var(--dsw-alias-bg-mask-1, color-mix(in srgb, black 40%, transparent));
   overflow: auto;
 }
 
@@ -357,9 +357,10 @@
 }
 
 .primary {
-  border-color: var(--fb-accent);
-  background: var(--fb-accent);
-  color: #ffffff;
+  --fb-button-fill: var(--dsw-alias-button-primary-fill, var(--fb-accent));
+  border-color: var(--fb-button-fill);
+  background: var(--fb-button-fill);
+  color: var(--dsw-alias-label-primary-foreground, #ffffff);
   font-weight: 600;
 }
 
@@ -368,7 +369,7 @@
 }
 
 .primary:hover {
-  background: color-mix(in srgb, var(--fb-accent) 86%, black);
+  background: color-mix(in srgb, var(--fb-button-fill) 88%, black);
 }
 
 .confirm {

@@ -17,6 +17,8 @@ export type StreamChunkLike = {
 export type CollectedStreamText = {
   readonly text: string
   readonly reasoning: string
+  /** `finish.reason.kind` of the stream, e.g. `max-tokens` when the output was cut off. */
+  readonly finish?: string
 }
 
 /**
@@ -31,6 +33,7 @@ export async function collectStreamParts(
   const blocks = new Map<number, string>()
   let reasoning = ''
   let fallback = ''
+  let finish: string | undefined
 
   for await (const chunk of stream) {
     if (signal?.aborted) throw new Error('aborted')
@@ -40,6 +43,8 @@ export async function collectStreamParts(
         const message = chunk.reason?.failure?.message
         throw new Error(typeof message === 'string' && message !== '' ? message : kind ?? 'llm failed')
       }
+      finish = kind
+      continue
     }
     const index = typeof chunk.index === 'number' ? chunk.index : 0
     switch (chunk.type) {
@@ -65,7 +70,7 @@ export async function collectStreamParts(
   const fromBlocks = joinIndexed(blocks)
   const fromDeltas = joinIndexed(deltas)
   const text = (fromBlocks || fromDeltas || fallback).trim()
-  return { text, reasoning: reasoning.trim() }
+  return { text, reasoning: reasoning.trim(), ...(finish === undefined ? {} : { finish }) }
 }
 
 function joinIndexed(map: Map<number, string>): string {

@@ -4,7 +4,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { EXPLAIN_SYSTEM } from '../core/explain.ts'
-import { collectStreamText } from './stream-text.ts'
+import { collectStreamParts } from './stream-text.ts'
 
 type LlmRuntime = {
   listProviders(): readonly { id: string }[]
@@ -60,8 +60,24 @@ export async function resolveExplainRoute(ctx: Context): Promise<{ provider: str
   return undefined
 }
 
+/**
+ * Room for reasoning models, whose thinking counts against the same budget;
+ * the prompt keeps the visible answer short.
+ */
+const EXPLAIN_MAX_TOKENS = 4096
+
+export type ExplainResult = {
+  readonly text: string
+  /** The model hit the token budget, so the text ends mid-thought. */
+  readonly truncated: boolean
+}
+
 /** Stream one bounded explanation; does not change audit verdict. */
 export async function explainWithLlm(ctx: Context, prompt: string): Promise<string> {
+  return (await explainWithLlmResult(ctx, prompt)).text
+}
+
+export async function explainWithLlmResult(ctx: Context, prompt: string): Promise<ExplainResult> {
   const llm = (ctx as Context & { llm?: LlmRuntime }).llm
   if (llm === undefined) {
     throw new Error('llm service is not available')
@@ -75,7 +91,7 @@ export async function explainWithLlm(ctx: Context, prompt: string): Promise<stri
   const agents = (ctx as Context & { agents?: AgentsRegistry }).agents
   const sessionId = agents?.list()[0]?.id
 
-  const text = await collectStreamText(llm.stream({
+  const parts = await collectStreamParts(llm.stream({
     provider: route.provider,
     model: route.model,
     system: EXPLAIN_SYSTEM,
@@ -85,12 +101,14 @@ export async function explainWithLlm(ctx: Context, prompt: string): Promise<stri
       content: [{ type: 'text', text: prompt }],
       source: { kind: 'plugin', plugin: 'dsh-trust-check' },
     }],
-    maxTokens: 1200,
+    maxTokens: EXPLAIN_MAX_TOKENS,
     temperature: 0.3,
     ...(sessionId === undefined ? {} : { sessionId }),
   }))
 
-  const trimmed = text.trim()
-  if (trimmed === '') throw new Error('llm returned empty response')
-  return trimmed
+  const truncated = parts.finish === 'max-tokens'
+  if (parts.text === '' && truncated) throw new Error('llm used the whole token budget before answering')
+  const text = (parts.text || parts.reasoning).trim()
+  if (text === '') throw new Error('llm returned empty response')
+  return { text, truncated }
 }

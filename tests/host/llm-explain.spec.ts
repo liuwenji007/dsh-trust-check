@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { explainWithLlm, resolveExplainRoute } from '../../src/host/llm-explain.ts'
+import { explainWithLlm, explainWithLlmResult, resolveExplainRoute } from '../../src/host/llm-explain.ts'
 
 describe('resolveExplainRoute', () => {
   it('prefers a live agent session header config', async () => {
@@ -76,5 +76,45 @@ describe('explainWithLlm', () => {
       model: 'm',
       system: expect.stringContaining('NOT a security verdict'),
     }))
+  })
+
+  function ctxWith(chunks: Record<string, unknown>[]) {
+    async function* stream() {
+      yield* chunks
+    }
+    return {
+      agents: { list: () => [] },
+      llm: {
+        listProviders: () => [{ id: 'p' }],
+        listModels: async () => [{ id: 'm' }],
+        stream: vi.fn(() => stream()),
+      },
+    }
+  }
+
+  it('flags a reading cut off by the token budget', async () => {
+    const ctx = ctxWith([
+      { type: 'reasoning-delta', index: 0, text: 'thinking' },
+      { type: 'text-delta', index: 1, text: '可能属于本职的：三段' },
+      { type: 'finish', reason: { kind: 'max-tokens' } },
+    ])
+    await expect(explainWithLlmResult(ctx as never, 'p')).resolves.toEqual({ text: '可能属于本职的：三段', truncated: true })
+    expect(ctx.llm.stream).toHaveBeenCalledWith(expect.objectContaining({ maxTokens: 4096 }))
+  })
+
+  it('refuses to show bare reasoning when the budget ran out before any answer', async () => {
+    const ctx = ctxWith([
+      { type: 'reasoning-delta', index: 0, text: 'still thinking' },
+      { type: 'finish', reason: { kind: 'max-tokens' } },
+    ])
+    await expect(explainWithLlmResult(ctx as never, 'p')).rejects.toThrow(/token budget/)
+  })
+
+  it('reports a complete reading as not truncated', async () => {
+    const ctx = ctxWith([
+      { type: 'text-delta', index: 0, text: 'done.' },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ])
+    await expect(explainWithLlmResult(ctx as never, 'p')).resolves.toEqual({ text: 'done.', truncated: false })
   })
 })

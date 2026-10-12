@@ -72,7 +72,7 @@ function renderReport(row: AuditReport = plugin()) {
 }
 
 async function openEvidence(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('button', { name: zh['feedback.evidence'] }))
+  await user.click(screen.getByRole('button', { name: new RegExp(zh['feedback.evidence']) }))
 }
 
 describe('detection feedback dialog', () => {
