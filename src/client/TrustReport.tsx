@@ -18,7 +18,6 @@ import {
   networkReach,
   presentInjection,
   repositoryHref,
-  topCapabilities,
   verdict,
   type Concern,
   type Verdict,
@@ -159,6 +158,18 @@ function revealEvidence(el: HTMLElement | null, focus: boolean): void {
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches
   if (focus) el.focus({ preventScroll: true })
   el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'nearest' })
+}
+
+/**
+ * After an accordion switch, a card above may collapse and yank the opened card upward.
+ * Re-apply the scroll so `el` stays at the same viewport Y it had before the layout change.
+ */
+function restoreScrollAnchor(el: HTMLElement, topBefore: number): void {
+  const delta = el.getBoundingClientRect().top - topBefore
+  if (delta === 0) return
+  const scroller = scrollContainer(el)
+  if (scroller !== null) scroller.scrollTop += delta
+  else window.scrollBy(0, delta)
 }
 
 function freezeEvidence(report: AuditReport, schemaVersion: number, ev: Evidence): FrozenFinding {
@@ -502,16 +513,29 @@ function CapabilityEvidence({
 
 type AckChange = 'ack' | 'revoke'
 
+/** One card open at a time: first red line, else first needing review. */
 function defaultExpandedNames(plugins: AuditReport[], acks?: Record<string, TrustAckEntry>): Set<string> {
-  const names = new Set<string>()
-  for (const plugin of plugins) {
-    if (verdict(plugin, acks?.[plugin.name]) === 'red') names.add(plugin.name)
-  }
-  if (names.size === 0) {
-    const firstReview = plugins.find(p => verdict(p, acks?.[p.name]) === 'review')
-    if (firstReview !== undefined) names.add(firstReview.name)
-  }
-  return names
+  const firstRed = plugins.find(p => verdict(p, acks?.[p.name]) === 'red')
+  if (firstRed !== undefined) return new Set([firstRed.name])
+  const firstReview = plugins.find(p => verdict(p, acks?.[p.name]) === 'review')
+  if (firstReview !== undefined) return new Set([firstReview.name])
+  return new Set()
+}
+
+const VERDICT_ORDER: Record<Verdict, number> = {
+  red: 0,
+  review: 1,
+  accepted: 2,
+  expected: 3,
+  clear: 4,
+}
+
+/** Red lines first, then review, so the list matches the overview sentence. */
+function sortPlugins(plugins: AuditReport[], acks?: Record<string, TrustAckEntry>): AuditReport[] {
+  return [...plugins].sort((a, b) => {
+    const byVerdict = VERDICT_ORDER[verdict(a, acks?.[a.name])] - VERDICT_ORDER[verdict(b, acks?.[b.name])]
+    return byVerdict !== 0 ? byVerdict : a.name.localeCompare(b.name)
+  })
 }
 
 function verdictKey(v: Verdict): TrustKey {
@@ -858,8 +882,7 @@ function PluginCardBody({
 }) {
   const v = verdict(report, ack)
   const concernList = decisionConcerns(report)
-  const drift = ack !== undefined && ackDrifted(report, ack)
-  const { added, removed } = capabilityDelta(report, ack)
+  const { added } = capabilityDelta(report, ack)
   const repoHref = repositoryHref(report.repository)
   const [revealSeq, setRevealSeq] = useState(0)
   const [ackLoading, setAckLoading] = useState(false)
@@ -956,35 +979,6 @@ function PluginCardBody({
 
   return (
     <div className={css.cardBody}>
-      {drift && (
-        <section className={css.drift}>
-          <p className={css.driftTitle}>
-            <span>{t('drift.title')}</span>
-            {added.length > 0 && (
-              <span className={css.driftGroup}>
-                <span className={css.srOnly}>{t('drift.added')}</span>
-                {added.map(cap => (
-                  <span key={cap} className={`${css.deltaPill} ${css.deltaAdded}`}>
-                    <span aria-hidden="true">+ </span>{t(capLabelKey(cap))}
-                  </span>
-                ))}
-              </span>
-            )}
-            {removed.length > 0 && (
-              <span className={css.driftGroup}>
-                <span className={css.srOnly}>{t('drift.removed')}</span>
-                {removed.map(cap => (
-                  <span key={cap} className={`${css.deltaPill} ${css.deltaRemoved}`}>
-                    <span aria-hidden="true">− </span>{t(capLabelKey(cap))}
-                  </span>
-                ))}
-              </span>
-            )}
-          </p>
-          <p className={css.driftNote}>{t('drift.ruleNote')}</p>
-        </section>
-      )}
-
       <section className={css.decision}>
         <h3 className={css.srOnly}>{t(decisionKey(v))}</h3>
         <div className={css.decisionHead}>
@@ -1044,7 +1038,7 @@ function PluginCardBody({
         <CapabilityEvidence
           report={report}
           t={t}
-          added={drift ? added : []}
+          added={added}
           onFeedback={(ev, opener) => {
             onOpenFeedback(freezeEvidence(report, schemaVersion, ev), opener)
           }}
@@ -1180,7 +1174,10 @@ function PluginRow({
   onOpenFeedback: (finding: FrozenFinding, opener: HTMLElement) => void
 }) {
   const v = verdict(report, ack)
-  const previewCaps = topCapabilities(report, 3)
+  const drift = ack !== undefined && ackDrifted(report, ack)
+  const { added, removed } = capabilityDelta(report, ack)
+  const badgeLabel = drift && v !== 'red' ? t('verdict.reconfirm') : t(verdictKey(v))
+  const badgeTone = drift && v !== 'red' ? 'review' : v
   const sourceLine = [
     t('card.source').replace('{kind}', sourceKind(report.spec)),
     t(report.pinned ? 'pinned' : 'unpinned'),
@@ -1201,14 +1198,31 @@ function PluginRow({
             <span className={css.name}>{report.name}</span>
             <span className={css.version}>{report.version}</span>
           </span>
-          <span className={`${css.statusBadge} ${css[`badge-${v}`]}`}>{t(verdictKey(v))}</span>
+          <span className={`${css.statusBadge} ${css[`badge-${badgeTone}`]}`}>{badgeLabel}</span>
         </span>
         <span className={css.sourceLine}>{sourceLine}</span>
-        {!expanded && previewCaps.length > 0 && (
-          <span className={css.previewChips}>
-            {previewCaps.map(cap => (
-              <span key={cap} className={`${css.chip} ${css[`tier-${capabilityTier(cap)}`] ?? ''}`}>{capChipText(cap, t, report)}</span>
-            ))}
+        {(added.length > 0 || removed.length > 0) && (
+          <span className={css.driftPills}>
+            {added.length > 0 && (
+              <span className={css.driftGroup}>
+                <span className={css.srOnly}>{t('drift.added')}</span>
+                {added.map(cap => (
+                  <span key={`+${cap}`} className={`${css.deltaPill} ${css.deltaAdded}`}>
+                    <span aria-hidden="true">+ </span>{t(capLabelKey(cap))}
+                  </span>
+                ))}
+              </span>
+            )}
+            {removed.length > 0 && (
+              <span className={css.driftGroup}>
+                <span className={css.srOnly}>{t('drift.removed')}</span>
+                {removed.map(cap => (
+                  <span key={`-${cap}`} className={`${css.deltaPill} ${css.deltaRemoved}`}>
+                    <span aria-hidden="true">− </span>{t(capLabelKey(cap))}
+                  </span>
+                ))}
+              </span>
+            )}
           </span>
         )}
         <span className={css.srOnly}>{expanded ? t('collapsePlugin') : t('expandPlugin')}</span>
@@ -1242,6 +1256,8 @@ export function TrustReport({ useStore, actions, t }: TrustReportProps) {
   const [feedback, setFeedback] = useState<{ id: number, finding: FrozenFinding, opener: HTMLElement } | null>(null)
   const feedbackSeq = useRef(0)
   const rootRef = useRef<HTMLDivElement>(null)
+  /** When opening a card, keep its header under the same viewport Y after siblings collapse. */
+  const expandAnchorRef = useRef<{ name: string, top: number } | null>(null)
 
   const openFeedback = (finding: FrozenFinding, opener: HTMLElement) => {
     feedbackSeq.current += 1
@@ -1323,24 +1339,69 @@ export function TrustReport({ useStore, actions, t }: TrustReportProps) {
     revealEvidence(card?.querySelector<HTMLElement>('[aria-expanded]') ?? null, true)
   }, [settleName])
 
-  const overview = useMemo(() => {
+  const overviewParts = useMemo(() => {
     if (normalizedReport === null || normalizedReport.plugins.length === 0) return null
     const counts = countVerdicts(normalizedReport.plugins, normalizedReport.acks)
-    const parts = (['red', 'accepted', 'review', 'expected', 'clear'] as const)
+    const buckets = (['red', 'accepted', 'review', 'expected', 'clear'] as const)
       .filter(v => counts[v] > 0)
-      .map(v => `${counts[v]} ${t(verdictKey(v))}`)
-    return [`${normalizedReport.plugins.length} ${t('overview.plugins')}`, ...parts].join(' · ')
+      .map(v => ({ verdict: v, count: counts[v], label: t(verdictKey(v)) }))
+    return {
+      total: `${normalizedReport.plugins.length} ${t('overview.plugins')}`,
+      buckets,
+    }
   }, [normalizedReport, t])
 
+  const [jumpName, setJumpName] = useState<string | null>(null)
+
+  const jumpToVerdict = (target: Verdict) => {
+    if (normalizedReport === null) return
+    const match = sortPlugins(normalizedReport.plugins, normalizedReport.acks)
+      .find(plugin => verdict(plugin, normalizedReport.acks?.[plugin.name]) === target)
+    if (match === undefined) return
+    expandAnchorRef.current = null
+    setSettledName(null)
+    setExpanded(new Set([match.name]))
+    setJumpName(match.name)
+  }
+
   const togglePlugin = (name: string) => {
-    setSettledName(current => (current === name ? null : current))
+    // Any manual toggle ends the post-ack highlight, including when opening a different card.
+    setSettledName(null)
     setExpanded(prev => {
-      const next = new Set(prev)
-      if (next.has(name)) next.delete(name)
-      else next.add(name)
-      return next
+      if (prev.has(name)) {
+        expandAnchorRef.current = null
+        const next = new Set(prev)
+        next.delete(name)
+        return next
+      }
+      const card = rootRef.current?.querySelector<HTMLElement>(`[data-plugin="${CSS.escape(name)}"]`)
+      expandAnchorRef.current = card === null || card === undefined
+        ? null
+        : { name, top: card.getBoundingClientRect().top }
+      return new Set([name])
     })
   }
+
+  useLayoutEffect(() => {
+    const anchor = expandAnchorRef.current
+    if (anchor === null) return
+    expandAnchorRef.current = null
+    const card = rootRef.current?.querySelector<HTMLElement>(`[data-plugin="${CSS.escape(anchor.name)}"]`)
+    if (card !== null && card !== undefined) restoreScrollAnchor(card, anchor.top)
+  }, [expanded])
+
+  useLayoutEffect(() => {
+    if (jumpName === null) return
+    const name = jumpName
+    setJumpName(null)
+    const card = rootRef.current?.querySelector<HTMLElement>(`[data-plugin="${CSS.escape(name)}"]`)
+    const header = card?.querySelector<HTMLElement>('[aria-expanded]')
+    if (header === null || header === undefined) return
+    const reduce = typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    header.focus({ preventScroll: true })
+    header.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
+  }, [jumpName, expanded])
 
   return (
     <div className={css.root} ref={rootRef}>
@@ -1348,13 +1409,28 @@ export function TrustReport({ useStore, actions, t }: TrustReportProps) {
         <div className={css.headText}>
           <h2 className={css.title}>{t('settings.title')}</h2>
           <p className={css.intro}>{t('intro')}</p>
-          <p className={css.postInstall}>
-            <span className={css.scopeDot} aria-hidden="true" />
-            {t('postInstall.note')}
-          </p>
+          {overviewParts !== null && (
+            <p className={css.overview}>
+              <span>{overviewParts.total}</span>
+              {overviewParts.buckets.map(bucket => (
+                <span key={bucket.verdict}>
+                  <span className={css.overviewSep} aria-hidden="true"> · </span>
+                  <button
+                    type="button"
+                    className={`${css.overviewJump} ${css[`overview-${bucket.verdict}`]}`}
+                    onClick={() => jumpToVerdict(bucket.verdict)}
+                    aria-label={t('overview.jump').replace('{label}', bucket.label)}
+                  >
+                    {bucket.count} {bucket.label}
+                  </button>
+                </span>
+              ))}
+            </p>
+          )}
           <details className={css.help}>
             <summary>{t('howToRead.title')}</summary>
             <p>{t('howToRead.body')}</p>
+            <p className={css.helpNote}>{t('postInstall.note')}</p>
           </details>
         </div>
         <div className={css.headActions}>
@@ -1367,15 +1443,13 @@ export function TrustReport({ useStore, actions, t }: TrustReportProps) {
         </div>
       </div>
 
-      {overview !== null && <div className={css.overview}>{overview}</div>}
-
       {error && <div className={css.error} role="alert">{t('loadError')}</div>}
 
       {!error && normalizedReport !== null && normalizedReport.plugins.length === 0 && normalizedReport.errors.length === 0 && (
         <div className={css.empty}>{t('empty')}</div>
       )}
 
-      {normalizedReport !== null && normalizedReport.plugins.map(plugin => (
+      {normalizedReport !== null && sortPlugins(normalizedReport.plugins, normalizedReport.acks).map(plugin => (
         <PluginRow
           key={plugin.name}
           report={normalizeAuditReport(plugin)}

@@ -98,8 +98,12 @@ describe('settings card reading order', () => {
       coverageNotes: ['dynamic import target in lib/index.js', 'computed module name in lib/index.js'],
     })]))
 
-    expect(screen.queryByText(zh['drift.title'])).toBeNull()
-    expect(screen.getByText(zh['postInstall.note']).closest('details')).toBeNull()
+    expect(screen.queryByText(zh['verdict.reconfirm'])).toBeNull()
+    const helpFold = screen.getByText(zh['howToRead.title']).closest('details') as HTMLDetailsElement
+    expect(helpFold.open).toBe(false)
+    expect(screen.getByText(zh['postInstall.note']).closest('details')).toBe(helpFold)
+    await user.click(screen.getByText(zh['howToRead.title']))
+    expect(helpFold.open).toBe(true)
     const limitsFold = screen.getByText(zh['coverage.title']).closest('details') as HTMLDetailsElement
     expect(limitsFold.open).toBe(false)
     expect(screen.getByText('2 项需要留意')).toBeTruthy()
@@ -238,7 +242,7 @@ describe('settings card reading order', () => {
     expect(screen.queryByRole('region', { name: zh['explain.title'] })).toBeNull()
   })
 
-  it('hides the change note when the acknowledgment still matches', async () => {
+  it('hides the reconfirm badge when the acknowledgment still matches', async () => {
     const user = userEvent.setup()
     const row = plugin()
     const ack: TrustAckEntry = {
@@ -249,12 +253,13 @@ describe('settings card reading order', () => {
       at: '2026-10-01T00:00:00.000Z',
     }
     renderReport(response([row], { acks: { [row.name]: ack } }))
+    expect(screen.queryByText(zh['verdict.reconfirm'])).toBeNull()
+    expect(screen.getByText(zh['verdict.expected'])).toBeTruthy()
     await user.click(screen.getByRole('button', { name: /展开插件详情/ }))
-    expect(screen.queryByText(zh['drift.title'])).toBeNull()
     expect(screen.getByRole('button', { name: zh['ack.revoke'] })).toBeTruthy()
   })
 
-  it('shows the capability delta against the last acknowledgment, including a possible rule update', () => {
+  it('puts drift on the status badge and capability delta pills, not a callout block', () => {
     const row = plugin({ capabilities: ['network', 'shell', 'env'] })
     const ack = {
       capabilities: ['network', 'fs-read'],
@@ -264,16 +269,37 @@ describe('settings card reading order', () => {
       at: '2026-10-01T00:00:00.000Z',
     } as TrustAckEntry
     renderReport(response([row], { acks: { [row.name]: ack } }))
-    expect(screen.getByText(zh['drift.title'])).toBeTruthy()
+    expect(screen.getByText(zh['verdict.reconfirm'])).toBeTruthy()
     const addedRow = screen.getByText(zh['drift.added']).parentElement
     const removedRow = screen.getByText(zh['drift.removed']).parentElement
     expect(addedRow?.textContent).toContain(zh['cap.shell'])
     expect(addedRow?.textContent).toContain(zh['cap.env'])
     expect(addedRow?.textContent).not.toContain(zh['cap.network'])
     expect(removedRow?.textContent).toContain(zh['cap.fs-read'])
-    expect(screen.getByText(zh['drift.ruleNote'])).toBeTruthy()
     expect(screen.getByRole('button', { name: `${zh['cap.shell']} · ${zh['capabilities.new']}` })).toBeTruthy()
     expect(screen.queryByRole('button', { name: new RegExp(`${zh['cap.network']}.*${zh['capabilities.new']}`) })).toBeNull()
+  })
+
+  it('jumps from the overview summary to the first plugin in that bucket', async () => {
+    const user = userEvent.setup()
+    renderReport(response([
+      plugin({
+        name: 'red-one',
+        redLines: ['shell-exec-with-network'],
+        band: 'red',
+        score: 10,
+        capabilities: ['shell'] as Capability[],
+      }),
+      plugin({ name: 'review-one', capabilities: ['network'] as Capability[], band: 'yellow', score: 40 }),
+      plugin({ name: 'review-two', capabilities: ['fs-read'] as Capability[], band: 'yellow', score: 50 }),
+    ]))
+    expect(document.querySelector('[data-plugin="red-one"] [aria-expanded]')?.getAttribute('aria-expanded')).toBe('true')
+    await user.click(screen.getByRole('button', {
+      name: zh['overview.jump'].replace('{label}', zh['verdict.review']),
+    }))
+    expect(document.querySelector('[data-plugin="red-one"] [aria-expanded]')?.getAttribute('aria-expanded')).toBe('false')
+    expect(document.querySelector('[data-plugin="review-one"] [aria-expanded]')?.getAttribute('aria-expanded')).toBe('true')
+    expect(document.activeElement).toBe(document.querySelector('[data-plugin="review-one"] [aria-expanded]'))
   })
 
   it('names the install channel without a local path and opens all evidence from the acknowledgment bar', async () => {
@@ -454,20 +480,111 @@ describe('settings card reading order', () => {
     const card = document.querySelector<HTMLElement>('[data-plugin="first-plugin"]')
     expect(card?.className).toContain('pluginSettled')
     expect(card?.className).not.toContain('pluginOpen')
-    for (const type of ['animationend', 'webkitAnimationEnd']) {
-      fireEvent(card as HTMLElement, new Event(type, { bubbles: true }))
-    }
+
+    await user.click(header('second-plugin') as HTMLElement)
     expect(card?.className).not.toContain('pluginSettled')
+    expect(header('second-plugin')?.getAttribute('aria-expanded')).toBe('true')
   })
 
-  it('marks the open card as the current one', async () => {
+  it('also clears the settled highlight when its own animation ends', async () => {
     const user = userEvent.setup()
-    renderReport(response([plugin({ name: 'first-plugin' }), plugin({ name: 'second-plugin' })]))
-    const card = (name: string) => document.querySelector<HTMLElement>(`[data-plugin="${name}"]`)
-    expect(card('first-plugin')?.className).toContain('pluginOpen')
-    expect(card('second-plugin')?.className).not.toContain('pluginOpen')
-    await user.click(card('second-plugin')?.querySelector('[aria-expanded]') as HTMLElement)
-    expect(card('second-plugin')?.className).toContain('pluginOpen')
+    const row = plugin({ name: 'first-plugin' })
+    const ack: TrustAckEntry = {
+      capabilities: ['network', 'shell'],
+      destinations: [],
+      secretTouches: [],
+      digest: 'fp-1',
+      at: '2026-10-11T00:00:00.000Z',
+    }
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      if (String(input) === '/dsh-trust-check/ack') return { status: 200, ok: true, json: async () => ({}) }
+      return { status: 200, ok: true, json: async () => response([row], { acks: { [row.name]: ack } }) }
+    })
+    renderReport(response([row]))
+    await user.click(screen.getByRole('button', { name: zh['ack.accept'] }))
+    const card = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>('[data-plugin="first-plugin"]')
+      expect(el?.className).toContain('pluginSettled')
+      return el as HTMLElement
+    })
+    for (const type of ['animationend', 'webkitAnimationEnd']) {
+      fireEvent(card, new Event(type, { bubbles: true }))
+    }
+    expect(card.className).not.toContain('pluginSettled')
+  })
+
+  it('lists red-line plugins before review, and keeps collapsed cards to name plus status', () => {
+    renderReport(response([
+      plugin({ name: 'zzz-clear', capabilities: [], evidence: [], band: 'green', score: 100, summary: 'clear' }),
+      plugin({ name: 'needs-review', capabilities: ['network'] as Capability[], band: 'yellow', score: 40 }),
+      plugin({
+        name: 'has-red',
+        redLines: ['shell-exec-with-network'],
+        band: 'red',
+        score: 10,
+        capabilities: ['shell', 'network'] as Capability[],
+      }),
+    ]))
+    const names = [...document.querySelectorAll('[data-plugin]')].map(el => el.getAttribute('data-plugin'))
+    expect(names).toEqual(['has-red', 'needs-review', 'zzz-clear'])
+    expect(document.querySelector('[data-plugin="zzz-clear"]')?.textContent).not.toContain(zh['cap.shell'])
+    expect(document.querySelector('[data-plugin="has-red"] [aria-expanded="true"]')).toBeTruthy()
+    expect(screen.getByText(zh.intro)).toBeTruthy()
+    expect(document.querySelector('[class*="overview"]')?.textContent).toContain(`1 ${zh['verdict.red']}`)
+    const help = screen.getByText(zh['howToRead.title']).closest('details') as HTMLDetailsElement
+    expect(help.open).toBe(false)
+    expect(screen.getByText(zh['postInstall.note']).closest('details')).toBe(help)
+  })
+
+  it('keeps only one plugin card open at a time', async () => {
+    const user = userEvent.setup()
+    renderReport(response([
+      plugin({ name: 'first-plugin', redLines: ['shell-exec-with-network'], band: 'red', score: 10 }),
+      plugin({ name: 'second-plugin', redLines: ['shell-exec-with-network'], band: 'red', score: 10 }),
+      plugin({ name: 'third-plugin' }),
+    ]))
+    const header = (name: string) =>
+      document.querySelector<HTMLElement>(`[data-plugin="${name}"] [aria-expanded]`)
+    expect(header('first-plugin')?.getAttribute('aria-expanded')).toBe('true')
+    expect(header('second-plugin')?.getAttribute('aria-expanded')).toBe('false')
+
+    await user.click(header('second-plugin') as HTMLElement)
+    expect(header('first-plugin')?.getAttribute('aria-expanded')).toBe('false')
+    expect(header('second-plugin')?.getAttribute('aria-expanded')).toBe('true')
+    expect(header('third-plugin')?.getAttribute('aria-expanded')).toBe('false')
+
+    await user.click(header('second-plugin') as HTMLElement)
+    expect(header('second-plugin')?.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('keeps the opened card under the same viewport line when a card above collapses', async () => {
+    const user = userEvent.setup()
+    renderReport(response([
+      plugin({ name: 'first-plugin', redLines: ['shell-exec-with-network'], band: 'red', score: 10 }),
+      plugin({ name: 'second-plugin' }),
+    ]))
+    const card = (name: string) => document.querySelector<HTMLElement>(`[data-plugin="${name}"]`)!
+    // First read = before layout (toggle); second = after the card above collapses.
+    const tops = [400, 120]
+    const rect = (top: number) => ({
+      top,
+      bottom: top + 40,
+      left: 0,
+      right: 100,
+      width: 100,
+      height: 40,
+      x: 0,
+      y: top,
+      toJSON: () => ({}),
+    })
+    vi.spyOn(card('second-plugin'), 'getBoundingClientRect').mockImplementation(() => rect(tops.shift() ?? 120))
+    const scrollBy = vi.spyOn(window, 'scrollBy').mockImplementation(() => {})
+
+    await user.click(card('second-plugin').querySelector('[aria-expanded]') as HTMLElement)
+    expect(scrollBy).toHaveBeenCalledWith(0, 120 - 400)
+    expect(card('first-plugin').querySelector('[aria-expanded]')?.getAttribute('aria-expanded')).toBe('false')
+    expect(card('second-plugin').querySelector('[aria-expanded]')?.getAttribute('aria-expanded')).toBe('true')
+    scrollBy.mockRestore()
   })
 
   it('shows a partial failure beside plugins, and does not offer the install-empty state when every plugin failed', () => {
@@ -528,6 +645,11 @@ describe('settings card reading order', () => {
     const overview = document.querySelector('[class*="overview"]')?.textContent ?? ''
     expect(overview).toContain(`1 ${zh['verdict.review']}`)
     expect(overview).not.toMatch(/(^|· )0 /)
+    const reviewJump = screen.getByRole('button', {
+      name: zh['overview.jump'].replace('{label}', zh['verdict.review']),
+    })
+    expect(reviewJump).toBeTruthy()
+    expect(reviewJump.className).toMatch(/overview-review/)
 
     const destinations = screen.getByRole('heading', { name: zh.destinations }).closest('section') as HTMLElement
     expect(destinations.textContent).not.toContain(zh['destKind.https-host'])

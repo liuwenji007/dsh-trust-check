@@ -27,7 +27,7 @@
   container: trust-report / inline-size;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   color: inherit;
   line-height: 1.5;
 }
@@ -74,26 +74,8 @@
   color: var(--trust-muted);
 }
 
-.postInstall {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 8px 0 0;
-  font-size: 12px;
-  color: var(--trust-muted);
-  line-height: 1.5;
-}
-
-.scopeDot {
-  flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--trust-accent-ink);
-}
-
 .help {
-  margin-top: 8px;
+  margin-top: 6px;
   font-size: 12px;
 }
 
@@ -110,6 +92,10 @@
   margin: 8px 0 0;
   color: var(--trust-muted);
   line-height: 1.55;
+}
+
+.helpNote {
+  margin-top: 6px;
 }
 
 .refresh {
@@ -139,11 +125,49 @@
 }
 
 .overview {
-  padding: 0 0 10px;
-  border-bottom: 1px solid var(--trust-line);
-  font-size: 12px;
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--trust-ink);
+  line-height: 1.45;
+}
+
+.overviewSep {
   color: var(--trust-muted);
-  line-height: 1.5;
+  font-weight: 400;
+}
+
+.overviewJump {
+  padding: 0;
+  border: none;
+  border-bottom: 1px dotted color-mix(in srgb, currentColor 45%, transparent);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.overviewJump:hover {
+  border-bottom-color: currentColor;
+}
+
+.overview-red {
+  color: var(--trust-red);
+}
+
+.overview-accepted,
+.overview-review {
+  color: var(--trust-amber);
+}
+
+.overview-expected {
+  color: var(--trust-accent-ink);
+}
+
+.overview-clear {
+  color: var(--trust-muted);
+  font-weight: 500;
 }
 
 .error {
@@ -209,8 +233,8 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 4px;
-  padding: 14px 16px;
+  gap: 2px;
+  padding: 11px 14px;
   border: none;
   background: transparent;
   color: inherit;
@@ -301,13 +325,6 @@
   background: var(--trust-fill-strong);
 }
 
-.previewChips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 4px;
-}
-
 /* —— Card body —— */
 
 /* Large blocks (summary, scan detail, acknowledgment) are split by rules; titled scan sections are panels. */
@@ -317,24 +334,11 @@
   padding: 0 16px;
 }
 
-.drift {
-  margin: 4px 0 0;
-  padding: 1px 0 1px 13px;
-  border-left: 3px solid var(--trust-accent-line);
-}
-
-.drift p {
-  margin: 0;
-}
-
-.driftTitle {
+.driftPills {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
   gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--trust-ink);
+  margin-top: 2px;
 }
 
 .driftGroup {
@@ -361,12 +365,6 @@
 .deltaRemoved {
   color: var(--trust-muted);
   background: var(--trust-fill-strong);
-}
-
-.drift .driftNote {
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--trust-muted);
 }
 
 .decision {
