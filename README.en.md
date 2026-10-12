@@ -48,15 +48,17 @@ npx dsh-trust-check --dir ./pkg --exit-code
 
 The exit code is always 0 by default. With `--exit-code`: `0` nothing detected in this static pass (in profile mode, also acknowledged), `1` review, `2` red line, `3` scan failed; profile mode reports the worst plugin. **A miss is not a safety endorsement.** Usage errors (unknown flag, missing value for `--dir` etc.) print to stderr and exit `1`.
 
-| Settings → Plugin Trust | CLI `--dir --json` |
+| Settings → Plugin Trust | Expanded review |
 | --- | --- |
-| ![Settings overview](docs/overview.png) | ![CLI JSON output](docs/cli.png) |
+| ![Settings overview](docs/overview.png) | ![Expanded review and evidence](docs/review.png) |
 
-| Expanded review | AI reading |
+| Detection feedback | AI reading |
 | --- | --- |
-| ![Expanded review and evidence](docs/review.png) | ![AI reading](docs/AI_read.png) |
+| ![Detection feedback](docs/feedback.png) | ![AI reading](docs/AI_read.png) |
 
-![Detection feedback](docs/feedback.png)
+| CLI `--dir --json` |
+| --- |
+| ![CLI JSON output](docs/cli.png) |
 
 ### Troubleshooting
 

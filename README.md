@@ -48,15 +48,17 @@ npx dsh-trust-check --dir ./pkg --exit-code
 
 默认退出码始终为 0。加 `--exit-code` 后：`0` 本次静态扫描未检出（profile 模式含已确认），`1` 需确认，`2` 有红线，`3` 扫描失败；profile 模式取所有插件中最严重的一项。**未检出不是安全背书。** 参数写错（未知参数、`--dir` 等缺值）会直接报错并以 `1` 退出。
 
-| 设置 → 插件体检 | CLI `--dir --json` |
+| 设置 → 插件体检 | 展开复核 |
 | --- | --- |
 | ![设置页总览](docs/overview.png) | ![展开复核与证据](docs/review.png) |
 
-| 展开复核 | AI 解读 |
+| 问题反馈 | AI 解读 |
 | --- | --- |
 | ![反馈检测问题](docs/feedback.png) | ![AI 解读](docs/AI_read.png) |
 
-![CLI JSON 输出](docs/cli.png)
+| CLI `--dir --json` |
+| --- |
+| ![CLI JSON 输出](docs/cli.png) |
 
 ### 排障
 
