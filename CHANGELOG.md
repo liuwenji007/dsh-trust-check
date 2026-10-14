@@ -8,6 +8,11 @@ Each release lists **Affects catalog results** first: anything that can change w
 
 `schemaVersion`: 2.
 
+### Other
+
+- Settings: the checkup now audits the profile the host is running instead of falling back to `web`. DSH Desktop starts a profile without a `--profile` flag, so a `desktop` profile reported `profile directory does not exist` (#13). The profile comes from a desktop shell's `desktopProfiles`, then `profile` in cordis.yml, then the launcher's `profileContext`, then `--profile`, then `web`; a host-published directory is used as-is, and acknowledgements follow it.
+- Settings: on the `desktop` profile, the red-line action points to DSH Desktop's plugin manager. The dsh CLI refuses that profile by name, so `dsh plugin --profile desktop remove` could not work.
+
 ## 0.2.2 — 2026-10-12
 
 `schemaVersion`: 2.

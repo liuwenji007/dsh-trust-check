@@ -557,8 +557,9 @@ function sourceKind(spec: string): string {
   return scheme.startsWith('git') ? 'git' : scheme
 }
 
-function actionKey(v: Verdict): TrustKey {
-  if (v === 'red') return 'action.red'
+function actionKey(v: Verdict, profile: string): TrustKey {
+  // The dsh CLI refuses the Desktop profile by name, so its removal command would fail.
+  if (v === 'red') return profile.toLowerCase() === 'desktop' ? 'action.red.desktop' : 'action.red'
   if (v === 'accepted') return 'action.accepted'
   if (v === 'review') return 'action.review'
   if (v === 'expected') return 'action.expected'
@@ -983,7 +984,7 @@ function PluginCardBody({
         <h3 className={css.srOnly}>{t(decisionKey(v))}</h3>
         <div className={css.decisionHead}>
           <p className={css.action}>
-            {t(actionKey(v)).replace('{profile}', profile).replace('{name}', report.name)}
+            {t(actionKey(v, profile)).replace('{profile}', profile).replace('{name}', report.name)}
           </p>
           <button
             type="button"

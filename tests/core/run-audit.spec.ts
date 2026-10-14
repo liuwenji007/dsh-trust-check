@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { resolveInstalledKey, runAudit } from '../../src/index.ts'
+import { resolveActiveProfile, resolveInstalledKey, runAudit } from '../../src/index.ts'
 
 const previousHome = process.env.DSH_HOME
 
@@ -69,6 +69,93 @@ describe('runAudit', () => {
     } finally {
       rmSync(home, { recursive: true, force: true })
     }
+  })
+})
+
+describe('runAudit with a host-owned profile directory', () => {
+  it('reads the directory it is given, not the one derived from the name', () => {
+    const elsewhere = mkdtempSync(join(tmpdir(), 'dsh-desktop-profile-'))
+    const home = mkdtempSync(join(tmpdir(), 'dsh-home-unused-'))
+    process.env.DSH_HOME = home
+    try {
+      writeFileSync(join(elsewhere, 'package.json'), JSON.stringify({ dependencies: {} }))
+      const res = runAudit('desktop', elsewhere)
+      expect(res.profile).toBe('desktop')
+      expect(res.errors).toEqual([])
+    } finally {
+      rmSync(elsewhere, { recursive: true, force: true })
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('resolveActiveProfile', () => {
+  const home = join(tmpdir(), 'dsh-home-resolve')
+  const desktopDir = join(tmpdir(), 'desktop-owned', 'desktop')
+  const services = (map: Record<string, unknown>) => (name: string) => map[name]
+
+  it('follows the launcher profileContext when DSH Desktop passes no --profile flag', () => {
+    process.env.DSH_HOME = home
+    const active = resolveActiveProfile(
+      services({ profileContext: { name: 'desktop', dir: desktopDir } }),
+      undefined,
+      ['node', 'launcher.js'],
+    )
+    expect(active).toEqual({ name: 'desktop', dir: desktopDir })
+  })
+
+  it('lets a desktop shell profile win over cordis.yml and the launcher', () => {
+    const shellDir = join(tmpdir(), 'shell', 'work')
+    const active = resolveActiveProfile(
+      services({
+        desktopProfiles: { current: { name: 'work', dir: shellDir } },
+        profileContext: { name: 'desktop', dir: desktopDir },
+      }),
+      { profile: 'web' },
+      [],
+    )
+    expect(active).toEqual({ name: 'work', dir: shellDir })
+  })
+
+  it('prefers cordis.yml over the launcher, keeping the launcher dir when the names agree', () => {
+    process.env.DSH_HOME = home
+    const launcher = services({ profileContext: { name: 'desktop', dir: desktopDir } })
+    expect(resolveActiveProfile(launcher, { profile: 'web' }, [])).toEqual({ name: 'web', dir: join(home, 'profiles', 'web') })
+    expect(resolveActiveProfile(launcher, { profile: 'desktop' }, [])).toEqual({ name: 'desktop', dir: desktopDir })
+  })
+
+  it('ignores host profiles with a traversal name or a relative dir', () => {
+    process.env.DSH_HOME = home
+    for (const bad of [{ name: '..', dir: desktopDir }, { name: 'desktop', dir: 'profiles/desktop' }, { name: 'desktop' }]) {
+      expect(resolveActiveProfile(services({ profileContext: bad }), undefined, [])).toEqual({
+        name: 'web',
+        dir: join(home, 'profiles', 'web'),
+      })
+    }
+  })
+
+  it('falls through an unusable desktop shell, and lets the launcher win over --profile', () => {
+    const active = resolveActiveProfile(
+      services({
+        desktopProfiles: { current: { name: '', dir: '' } },
+        profileContext: { name: ' desktop ', dir: desktopDir },
+      }),
+      undefined,
+      ['dsh', '--profile', 'work'],
+    )
+    expect(active).toEqual({ name: 'desktop', dir: desktopDir })
+  })
+
+  it('falls back to the --profile flag, then web', () => {
+    process.env.DSH_HOME = home
+    expect(resolveActiveProfile(services({}), undefined, ['dsh', '--profile', 'work'])).toEqual({
+      name: 'work',
+      dir: join(home, 'profiles', 'work'),
+    })
+    expect(resolveActiveProfile(services({}), undefined, ['dsh'])).toEqual({
+      name: 'web',
+      dir: join(home, 'profiles', 'web'),
+    })
   })
 })
 

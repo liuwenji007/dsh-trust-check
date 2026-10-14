@@ -115,7 +115,7 @@ They mean the literal appears in source; runtime-built URLs are invisible (a tem
 
 ### Mark as expected
 
-After you confirm capabilities match why you installed the plugin, the fingerprint is stored in `~/.dsh/profiles/<profile>/trust-ack.json`. An upgrade that changes capabilities, destinations, path escapes, secrets, red lines, or skill text (by content hash, not byte length) must be confirmed again. The confirmation request sends the report's `ackFingerprint`; a mismatch returns 409 and asks you to review the refreshed report. Older acknowledgements without a `digest` no longer match. Accepting a red line still requires its own "confirm risk" action, and only after the fingerprint matches.
+After you confirm capabilities match why you installed the plugin, the fingerprint is stored in `trust-ack.json` in the active profile directory (usually `~/.dsh/profiles/<profile>/`; under DSH Desktop the host decides where it lives). An upgrade that changes capabilities, destinations, path escapes, secrets, red lines, or skill text (by content hash, not byte length) must be confirmed again. The confirmation request sends the report's `ackFingerprint`; a mismatch returns 409 and asks you to review the refreshed report. Older acknowledgements without a `digest` no longer match. Accepting a red line still requires its own "confirm risk" action, and only after the fingerprint matches.
 
 **AI reading**: a reading aid, also reachable from the acknowledgment bar. Uses your DSH-configured model to explain the report summary; unavailable when no model is configured. The text is saved on this device; regenerate after the plugin version, findings, or UI language change.
 
