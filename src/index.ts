@@ -3,7 +3,7 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import { readAckStore, removeAck, setAck } from './core/ack.ts'
@@ -64,7 +64,7 @@ export const name = 'dsh-trust-check'
 /** Host services required for audit routes and optional LLM explanation. */
 export const inject = ['webServer', 'loader', 'llm', 'agents']
 
-/** Optional cordis.yml configuration; profile defaults to `web`. */
+/** Optional cordis.yml configuration; profile defaults to the host's active profile. */
 export type Config = {
   profile?: string
 }
@@ -84,11 +84,67 @@ interface Host {
   logger?: { warn(message: string): void; info?(message: string): void }
 }
 
-function argvProfile(): string | undefined {
-  const argv = process.argv
+function argvProfile(argv: readonly string[]): string | undefined {
   const flag = argv.indexOf('--profile')
   if (flag !== -1 && flag + 1 < argv.length && !argv[flag + 1].startsWith('-')) return argv[flag + 1]
   return undefined
+}
+
+/** A profile by name, and the directory its manifest and plugins live in. */
+export interface ActiveProfile {
+  name: string
+  dir: string
+}
+
+/**
+ * Same rule as DSH's own profile names: only empty, traversal-shaped,
+ * launcher-owned, or separator-bearing names are refused.
+ */
+function isProfileName(name: string): boolean {
+  return name !== ''
+    && name !== '.'
+    && name !== '..'
+    && name !== 'node_modules'
+    && !name.includes('/')
+    && !name.includes('\\')
+    && !name.includes('\0')
+}
+
+/** A host-published `{ name, dir }`, or undefined when either field is unusable. */
+function hostProfile(value: unknown): ActiveProfile | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const { name, dir } = value as { name?: unknown; dir?: unknown }
+  if (typeof name !== 'string' || typeof dir !== 'string') return undefined
+  const trimmedName = name.trim()
+  const trimmedDir = dir.trim()
+  if (!isProfileName(trimmedName) || !isAbsolute(trimmedDir)) return undefined
+  return { name: trimmedName, dir: trimmedDir }
+}
+
+/**
+ * The profile this host process serves. DSH Desktop starts a profile through
+ * the launcher, not the CLI, so there is no `--profile` flag to read; the
+ * host names the profile and owns where it lives. A desktop shell's
+ * `desktopProfiles` wins, then `profile` from cordis.yml, then the launcher's
+ * `profileContext`, then the flag, then `web`.
+ */
+export function resolveActiveProfile(
+  service: (name: string) => unknown,
+  config?: Config,
+  argv: readonly string[] = process.argv,
+): ActiveProfile {
+  const shell = service('desktopProfiles') as { current?: unknown } | null | undefined
+  const shellProfile = hostProfile(shell?.current)
+  if (shellProfile !== undefined) return shellProfile
+  const launched = hostProfile(service('profileContext'))
+  if (config?.profile !== undefined) {
+    return launched?.name.toLowerCase() === config.profile.toLowerCase()
+      ? launched
+      : { name: config.profile, dir: resolveProfileDir(config.profile) }
+  }
+  if (launched !== undefined) return launched
+  const name = argvProfile(argv) ?? 'web'
+  return { name, dir: resolveProfileDir(name) }
 }
 
 function sendJson(response: ServerResponse, status: number, payload: unknown): void {
@@ -237,8 +293,7 @@ export function resolveInstalledKey(
 
 type PluginLookup = { report: AuditReport } | { ambiguous: true } | undefined
 
-function findPluginReport(profile: string, name: string): PluginLookup {
-  const profileDir = resolveProfileDir(profile)
+function findPluginReport(profileDir: string, name: string): PluginLookup {
   const installed = readInstalled(profileDir)
   const resolved = resolveInstalledKey(profileDir, installed, name)
   if (resolved === undefined || 'ambiguous' in resolved) return resolved
@@ -252,8 +307,7 @@ function sendLookupFailure(response: ServerResponse, lookup: Exclude<PluginLooku
   else sendJson(response, 400, { error: 'plugin-name-ambiguous' })
 }
 
-export function runAudit(profile: string): AuditResponse {
-  const profileDir = resolveProfileDir(profile)
+export function runAudit(profile: string, profileDir: string = resolveProfileDir(profile)): AuditResponse {
   const plugins: AuditReport[] = []
   const errors: AuditResponse['errors'] = []
   let installed: Record<string, string>
@@ -302,7 +356,8 @@ function guard(request: IncomingMessage, response: ServerResponse): boolean {
 export function apply(ctx: Context, config?: Config): void {
   ctx.inject(['webServer', 'loader', 'llm', 'agents'], (hostCtx: Context) => {
     const host = hostCtx as unknown as Host
-    const profile = config?.profile ?? argvProfile() ?? 'web'
+    // Per request: the launcher may publish profileContext after this plugin mounts.
+    const activeProfile = (): ActiveProfile => resolveActiveProfile(name => ctx.get(name), config)
 
     host.effect(() => {
       const disposers = [
@@ -316,7 +371,8 @@ export function apply(ctx: Context, config?: Config): void {
               return
             }
             if (!guard(request, response)) return
-            sendJson(response, 200, runAudit(profile))
+            const profile = activeProfile()
+            sendJson(response, 200, runAudit(profile.name, profile.dir))
           },
         }),
         host.webServer.register({
@@ -336,7 +392,8 @@ export function apply(ctx: Context, config?: Config): void {
                   sendJson(response, 400, { error: 'name is required' })
                   return
                 }
-                const lookup = findPluginReport(profile, body.name)
+                const profileDir = activeProfile().dir
+                const lookup = findPluginReport(profileDir, body.name)
                 if (lookup === undefined || 'ambiguous' in lookup) {
                   sendLookupFailure(response, lookup)
                   return
@@ -351,7 +408,7 @@ export function apply(ctx: Context, config?: Config): void {
                   sendJson(response, 400, { error: decision.error })
                   return
                 }
-                const entry = setAck(resolveProfileDir(profile), report)
+                const entry = setAck(profileDir, report)
                 sendJson(response, 200, { name: body.name, ack: entry })
               } catch (error) {
                 if (sendBodyError(response, error)) return
@@ -367,7 +424,7 @@ export function apply(ctx: Context, config?: Config): void {
                 return
               }
               try {
-                removeAck(resolveProfileDir(profile), name)
+                removeAck(activeProfile().dir, name)
               } catch (error) {
                 sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) })
                 return
@@ -395,7 +452,7 @@ export function apply(ctx: Context, config?: Config): void {
                 sendJson(response, 400, { error: 'name is required' })
                 return
               }
-              const lookup = findPluginReport(profile, body.name)
+              const lookup = findPluginReport(activeProfile().dir, body.name)
               if (lookup === undefined || 'ambiguous' in lookup) {
                 sendLookupFailure(response, lookup)
                 return

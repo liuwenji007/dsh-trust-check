@@ -339,6 +339,16 @@ describe('settings card reading order', () => {
     expect(screen.queryByRole('button', { name: zh['ack.accept'] })).toBeNull()
   })
 
+  it('points a Desktop red line at the plugin manager instead of a CLI removal it would refuse', () => {
+    renderReport(response([plugin({
+      redLines: ['runs code at install time (install)'],
+      hasBuildScript: true,
+      buildScripts: ['install'],
+    })], { profile: 'desktop' }))
+    expect(screen.getByText(/DSH 桌面端的插件管理中移除 demo-plugin/)).toBeTruthy()
+    expect(screen.queryByText(/dsh plugin --profile/)).toBeNull()
+  })
+
   it('keeps an old cached report readable when notes, rule ids, and context are absent', () => {
     const row = plugin({
       evidence: [{ capability: 'shell', file: 'old.js', line: 1, snippet: 'spawn("x")' }],
