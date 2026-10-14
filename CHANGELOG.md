@@ -4,14 +4,35 @@ Each release lists **Affects catalog results** first: anything that can change w
 
 `schemaVersion` is the JSON contract version (see [docs/audit-schema.md](docs/audit-schema.md)). It is noted on every release; a bump means the JSON shape or the wording contract broke, or a field became a stable contract.
 
-## Unreleased
+## 0.2.3 — 2026-10-15
 
 `schemaVersion`: 2.
 
-### Other
+### 中文
 
-- Settings: the checkup now audits the profile the host is running instead of falling back to `web`. DSH Desktop starts a profile without a `--profile` flag, so a `desktop` profile reported `profile directory does not exist` (#13). The profile comes from a desktop shell's `desktopProfiles`, then `profile` in cordis.yml, then the launcher's `profileContext`, then `--profile`, then `web`; a host-published directory is used as-is, and acknowledgements follow it.
-- Settings: on the `desktop` profile, the red-line action points to DSH Desktop's plugin manager. The dsh CLI refuses that profile by name, so `dsh plugin --profile desktop remove` could not work.
+修复 DSH 桌面版设置页体检读错 profile 的问题。检测规则、`schemaVersion`、确认 API 与独立 CLI 行为不变。
+
+#### 影响目录结果
+
+无。
+
+#### 其他
+
+- **体检跟随宿主当前 profile**（[#13](https://github.com/liuwenji007/dsh-trust-check/issues/13)）：DSH 桌面版启动 profile 时不带 `--profile`，设置页此前回落到 `web`，`desktop` profile 会报 `profile directory does not exist`。现在依次取：桌面壳的 `desktopProfiles` → cordis.yml 的 `profile` → launcher 的 `profileContext` → `--profile` → `web`。宿主给出的目录直接使用，确认记录 `trust-ack.json` 也写在该目录下。
+- **桌面版红线提示**：`desktop` profile 下，红线的处理建议改为到 DSH 桌面端插件管理中移除。dsh CLI 会按名字拒绝该 profile，原来的 `dsh plugin --profile desktop remove` 无法执行。
+
+### English
+
+Fixes the Settings checkup reading the wrong profile on DSH Desktop. Detection rules, `schemaVersion`, the acknowledgment API, and the standalone CLI are unchanged.
+
+#### Affects catalog results
+
+None.
+
+#### Other
+
+- **The checkup follows the host's active profile** ([#13](https://github.com/liuwenji007/dsh-trust-check/issues/13)). DSH Desktop starts a profile without a `--profile` flag, so Settings fell back to `web` and a `desktop` profile reported `profile directory does not exist`. The profile now comes from a desktop shell's `desktopProfiles`, then `profile` in cordis.yml, then the launcher's `profileContext`, then `--profile`, then `web`. A host-published directory is used as-is, and `trust-ack.json` acknowledgments are stored there.
+- **Red-line action on Desktop**: on the `desktop` profile, the red-line action points to DSH Desktop's plugin manager. The dsh CLI refuses that profile by name, so `dsh plugin --profile desktop remove` could not work.
 
 ## 0.2.2 — 2026-10-12
 
