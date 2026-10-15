@@ -85,22 +85,82 @@ export const EXPLAINED_RULES: ReadonlySet<string> = new Set([
   'host-runtime.manifest',
 ])
 
+const TIP_DELAY_MS = 200
+const TIP_GAP = 6
+const TIP_EDGE = 8
+
+/**
+ * Cards and evidence lists clip their overflow, so the tip is positioned against the viewport
+ * and, where supported, promoted to the top layer as a manual popover.
+ */
 function RuleTip({ rule, t, className }: { rule: string; t: T; className?: string }) {
   const id = useId()
   const key = (EXPLAINED_RULES.has(rule) ? `rule.${rule}` : 'rule.unknown') as TrustKey
+  const anchorRef = useRef<HTMLElement>(null)
+  const tipRef = useRef<HTMLSpanElement>(null)
+  const timer = useRef<number | undefined>(undefined)
+  const [open, setOpen] = useState(false)
+
+  const show = () => {
+    window.clearTimeout(timer.current)
+    timer.current = window.setTimeout(() => setOpen(true), TIP_DELAY_MS)
+  }
+  const hide = () => {
+    window.clearTimeout(timer.current)
+    setOpen(false)
+  }
+
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+
+  useLayoutEffect(() => {
+    const anchor = anchorRef.current
+    const tip = tipRef.current
+    if (!open || anchor === null || tip === null) return
+    const popover = typeof tip.showPopover === 'function'
+    if (popover) {
+      tip.setAttribute('popover', 'manual')
+      tip.showPopover()
+    }
+    const place = () => {
+      const a = anchor.getBoundingClientRect()
+      const { offsetWidth: w, offsetHeight: h } = tip
+      const left = Math.max(TIP_EDGE, Math.min(a.left, window.innerWidth - w - TIP_EDGE))
+      const below = a.bottom + TIP_GAP
+      const top = below + h > window.innerHeight - TIP_EDGE ? Math.max(TIP_EDGE, a.top - TIP_GAP - h) : below
+      tip.style.left = `${left}px`
+      tip.style.top = `${top}px`
+    }
+    place()
+    window.addEventListener('scroll', place, true)
+    window.addEventListener('resize', place)
+    return () => {
+      window.removeEventListener('scroll', place, true)
+      window.removeEventListener('resize', place)
+      if (popover && tip.matches(':popover-open')) tip.hidePopover()
+    }
+  }, [open])
+
   return (
-    <span className={css.ruleTip}>
+    <span className={css.ruleTip} onMouseEnter={show} onMouseLeave={hide}>
       <code
+        ref={anchorRef}
         className={`${css.ruleCode} ${className ?? ''}`}
         tabIndex={0}
         aria-describedby={id}
+        onFocus={event => {
+          if (event.currentTarget.matches(':focus-visible')) show()
+        }}
+        onBlur={hide}
         onKeyDown={event => {
-          if (event.key === 'Escape') event.currentTarget.blur()
+          if (event.key === 'Escape') {
+            hide()
+            event.currentTarget.blur()
+          }
         }}
       >
         {rule}
       </code>
-      <span role="tooltip" id={id} className={css.ruleTipBody}>
+      <span ref={tipRef} role="tooltip" id={id} className={css.ruleTipBody} data-open={open || undefined}>
         {t(key)}
         <span className={css.ruleTipNote}>{t('rule.idNote')}</span>
       </span>

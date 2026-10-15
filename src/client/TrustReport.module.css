@@ -1053,7 +1053,6 @@ details[open] > .foldSummary::before {
 }
 
 .ruleTip {
-  position: relative;
   display: inline-flex;
 }
 
@@ -1076,12 +1075,16 @@ details[open] > .foldSummary::before {
 }
 
 .ruleTipBody {
-  position: absolute;
-  top: calc(100% + 6px);
+  position: fixed;
+  inset: auto;
+  top: 0;
   left: 0;
-  z-index: 5;
+  z-index: 1000;
   width: max-content;
-  max-width: min(320px, 70vw);
+  height: auto;
+  max-width: min(320px, calc(100vw - 16px));
+  margin: 0;
+  overflow: visible;
   padding: 8px 10px;
   border: 1px solid var(--trust-line-strong);
   border-radius: 6px;
@@ -1097,14 +1100,19 @@ details[open] > .foldSummary::before {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transition: opacity 120ms ease 200ms, visibility 0s linear 320ms;
+  transition: opacity 120ms ease, visibility 0s linear 120ms;
 }
 
-.ruleTip:hover .ruleTipBody,
-.ruleCode:focus-visible + .ruleTipBody {
+.ruleTipBody[data-open] {
   opacity: 1;
   visibility: visible;
-  transition: opacity 120ms ease 200ms, visibility 0s linear 200ms;
+  transition: opacity 120ms ease, visibility 0s;
+}
+
+@starting-style {
+  .ruleTipBody[data-open] {
+    opacity: 0;
+  }
 }
 
 .ruleTipNote {
@@ -1576,8 +1584,7 @@ details[open] > .foldSummary::before {
 
 @media (prefers-reduced-motion: reduce) {
   .ruleTipBody,
-  .ruleTip:hover .ruleTipBody,
-  .ruleCode:focus-visible + .ruleTipBody,
+  .ruleTipBody[data-open],
   .refresh,
   .plugin,
   .pluginToggle,
