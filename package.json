@@ -1,9 +1,10 @@
 {
   "name": "dsh-trust-check",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Static capability disclosure for DeepSeek Harness plugins: capabilities, injected prompts, install scripts, and provenance, each with file:line evidence. Facts, not a safety verdict.",
   "license": "MIT",
   "type": "module",
+  "icon": "./icon.png",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/liuwenji007/dsh-trust-check.git"
@@ -36,7 +37,8 @@
       "import": "./lib/index.js"
     },
     "./client": "./lib/client.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./icon": "./icon.png"
   },
   "files": [
     "lib/index.js",
@@ -44,6 +46,7 @@
     "lib/client.js",
     "lib/client.js.map",
     "bin/trust-check.mjs",
+    "icon.png",
     "cordis.patch.yml",
     "docs/audit-schema.md",
     "docs/INTEGRATION.md",
