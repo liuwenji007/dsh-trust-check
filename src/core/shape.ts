@@ -54,16 +54,18 @@ const CREDENTIALS_IMPORT = new RegExp(
  * aliased (`const x = ctx.get('credentials')`), and requiring the name let a
  * real read-and-post shape pass as `review`.
  *
- * A bare `read(` / `getXxx(` is also not matched: those names are ordinary DOM
- * and collection methods (`getItem`, `getBoundingClientRect`,
- * `getRandomValues`), which red-lined `dsh-pocket` and `agent-teams`.
- * Destructuring the seam down to a bare function name (`const { resolve } =
- * ctx.credentials` then `resolve(…)`) and reading a secret path held in a
- * variable stay known misses: telling those from ordinary calls needs scope
- * tracking, not a line regex. Seam *object* aliases (`const x = …; x.resolve`)
- * are collected separately and do count.
+ * A bare `read(` / `readRecord(` / `getXxx(` is also not matched: those names
+ * are ordinary locals and methods (`function readRecord()`, `this.readRecord()`,
+ * DOM `getItem` / `getBoundingClientRect`), which red-lined plugins that never
+ * touch the credentials seam. Destructuring the seam down to a bare function
+ * name (`const { resolve } = ctx.credentials` then `resolve(…)`) and reading a
+ * secret path held in a variable stay known misses: telling those from ordinary
+ * calls needs scope tracking, not a line regex. Seam *object* aliases
+ * (`const x = …; x.resolve` / `provider = credCtx.credentials`) and chained
+ * seam reads (`ctx.get('credentials').readRecord(…)`, `credentials?.resolve(…)`)
+ * are matched separately and do count.
  */
-const CREDENTIALS_READ = /(?<![\w$])credentials\s*\.\s*(?:resolve|read|readRecord|get[A-Z]\w*)\s*\(|(?<![\w$])readRecord\s*\(/g
+const CREDENTIALS_READ = /(?<![\w$])credentials\s*(?:\?\.\s*|\.\s*)(?:resolve|read|readRecord|get[A-Z]\w*)\s*\(/g
 /** Keychain libraries: these calls return the secret itself, not a handle. */
 const KEYCHAIN_READ = new RegExp(
   String.raw`\b(?:keytar|keychain)\.(?:default\.)?(?:${KEYCHAIN_BARE_READ_METHODS})\s*\(`,
@@ -274,6 +276,11 @@ function escapeForRegExp(text: string): string {
 const CTX_RECEIVER = /(?:[A-Za-z_$][\w$]*\.)?(?:ctx|[a-z][\w$]*Ctx)|this\.ctx/
 // Optional chaining on `.get?.('credentials')` is still a seam binding.
 const SEAM_RECEIVERS = new RegExp(`(?:${CTX_RECEIVER.source})\\s*\\.\\s*get\\s*(?:\\?\\.\\s*)?\\(\\s*['"]credentials['"]\\s*\\)|(?:${CTX_RECEIVER.source})\\s*\\.\\s*credentials\\b`)
+/** `ctx.get('credentials').readRecord(…)` — property form is in CREDENTIALS_READ. */
+const SEAM_GET_VALUE_READ = new RegExp(
+  `(?:${CTX_RECEIVER.source})\\s*\\.\\s*get\\s*(?:\\?\\.\\s*)?\\(\\s*['"]credentials['"]\\s*\\)\\s*(?:\\?\\.\\s*|\\.\\s*)(?:resolve|read|readRecord|get[A-Z]\\w*)\\s*\\(`,
+  'g',
+)
 const KEYCHAIN_MODULE_NAMES = ['keytar', 'keychain']
 const SEAM_METHODS = 'resolve|read|readRecord|get[A-Z]\\w*'
 const KEYCHAIN_METHODS = KEYCHAIN_READ_METHODS
@@ -287,6 +294,7 @@ const KEYCHAIN_FROM = "['\"](?:keytar|keychain)['\"]"
  *   const x = ctx.get?.('credentials')     // optional-chain get
  *   const x = await ctx.get('credentials') // await does not break the binding
  *   const x = ctx.credentials              // property access
+ *   credentialsProvider = credCtx.credentials ?? null  // plain reassignment
  *   const { credentials } = ctx            // destructured off ctx
  *   const { credentials: c } = ctx         // renamed destructure
  *   import kt from 'keytar'                // default / namespace / default-as
@@ -301,8 +309,16 @@ export function collectSeamAliases(lines: readonly string[]): string[] {
   const boundModuleNames = new Set<string>()
   /** Keychain alias → the module name it was rebound from (`const k = keychain`). */
   const keychainRoot = new Map<string, string>()
-  const assignAwait = new RegExp(`\\b(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*await\\s+(?:${SEAM_RECEIVERS.source})`, 'g')
-  const assignDirect = new RegExp(`\\b(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*(?:${SEAM_RECEIVERS.source})(?!\\s*\\()`, 'g')
+  // Declaration or plain reassignment from the seam (`x = credCtx.credentials ?? null`).
+  // Optional `await` and a trailing `??` / `||` default do not break the binding.
+  // Reject member access (`ctx.get('credentials').readRecord(…)`) and an
+  // immediate call (`ctx.get('credentials')()` / `ctx.credentials()`) so neither
+  // a method result nor a call result is treated as a credentials handle.
+  // `(?<!\.)` keeps `this.x = …` / `obj.x = …` from polluting the bare local alias set.
+  const assignFromSeam = new RegExp(
+    `\\b(?:(?:const|let|var)\\s+)?(?<!\\.)([A-Za-z_$][\\w$]*)\\s*=\\s*(?:await\\s+)?(?:${SEAM_RECEIVERS.source})(?!\\s*(?:\\?\\.|\\.|\\())`,
+    'g',
+  )
   const addSeam = (name: string) => { names.add(name); seam.add(name) }
   const addKeychain = (name: string) => {
     names.add(name)
@@ -310,10 +326,7 @@ export function collectSeamAliases(lines: readonly string[]): string[] {
     if (KEYCHAIN_MODULE_NAMES.includes(name)) boundModuleNames.add(name)
   }
   for (const line of lines) {
-    for (const m of line.matchAll(assignAwait)) {
-      if (m[1] !== undefined) addSeam(m[1])
-    }
-    for (const m of line.matchAll(assignDirect)) {
+    for (const m of line.matchAll(assignFromSeam)) {
       if (m[1] !== undefined) addSeam(m[1])
     }
     const destructured = new RegExp(`\\b(?:const|let|var)\\s*\\{([^}]*)\\}\\s*=\\s*(?:${CTX_RECEIVER.source})`).exec(line)
@@ -324,8 +337,8 @@ export function collectSeamAliases(lines: readonly string[]): string[] {
     }
     // Declaration or plain reassignment of an already-known alias
     // (`const b = a` / `b = a`). RHS must already be in `names` so ordinary
-    // `x = y` assignments never become seam aliases.
-    const rebound = /\b(?:(?:const|let|var)\s+)?([A-Za-z_$][\w$]*)\s*=\s*([A-Za-z_$][\w$]*)\s*$/.exec(line)
+    // `x = y` assignments never become seam aliases. `(?<!\.)` skips `this.b = a`.
+    const rebound = /\b(?:(?:const|let|var)\s+)?(?<!\.)([A-Za-z_$][\w$]*)\s*=\s*([A-Za-z_$][\w$]*)\s*$/.exec(line)
     if (rebound?.[1] !== undefined && rebound[2] !== undefined && names.has(rebound[2])) {
       names.add(rebound[1])
       if (seam.has(rebound[2])) seam.add(rebound[1])
@@ -376,7 +389,11 @@ const KEYCHAIN_BARE_PREFIX = 'keychain-bare:'
  */
 export function credentialReadCalls(line: string, seamAliases: readonly string[] = []): string[] {
   CREDENTIALS_READ.lastIndex = 0
-  const calls = [...(line.match(CREDENTIALS_READ) ?? [])]
+  SEAM_GET_VALUE_READ.lastIndex = 0
+  const calls = [
+    ...(line.match(CREDENTIALS_READ) ?? []),
+    ...(line.match(SEAM_GET_VALUE_READ) ?? []),
+  ]
   for (const entry of seamAliases) {
     const prefixed = entry.startsWith(KEYCHAIN_PREFIX)
     const barePrefixed = entry.startsWith(KEYCHAIN_BARE_PREFIX)
@@ -386,9 +403,12 @@ export function credentialReadCalls(line: string, seamAliases: readonly string[]
     const alias = prefixed
       ? entry.slice(KEYCHAIN_PREFIX.length)
       : barePrefixed ? entry.slice(KEYCHAIN_BARE_PREFIX.length) : entry
-    if (!alias || !line.includes(`${alias}.`)) continue
+    if (!alias || (!line.includes(`${alias}.`) && !line.includes(`${alias}?.`))) continue
     const methods = prefixed ? KEYCHAIN_METHODS : bareModule ? KEYCHAIN_BARE_READ_METHODS : SEAM_METHODS
-    const re = new RegExp(`(?<![\\w$])${escapeForRegExp(alias)}\\s*\\.\\s*(?:${methods})\\s*\\(`, 'g')
+    const re = new RegExp(
+      `(?<![\\w$])${escapeForRegExp(alias)}\\s*(?:\\?\\.\\s*|\\.\\s*)(?:${methods})\\s*\\(`,
+      'g',
+    )
     calls.push(...(line.match(re) ?? []))
   }
   return calls

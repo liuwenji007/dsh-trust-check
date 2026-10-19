@@ -142,6 +142,30 @@ describe('scanCapabilities', () => {
     expect(write.capabilities).toContain('credentials')
   })
 
+  it('shows credentials for renamed destructure and *Ctx handle reads', () => {
+    const renamed = scanCapabilities(input({
+      'lib/index.js': [
+        "const { credentials: c } = ctx",
+        "await c.resolve('API_KEY')",
+      ].join('\n'),
+    }))
+    expect(renamed.capabilities).toContain('credentials')
+    expect(renamed.evidence.some(e => e.rule === 'credentials.read')).toBe(true)
+
+    const host = scanCapabilities(input({
+      'lib/index.js': "const x = hostCtx.get('credentials')\n",
+    }))
+    expect(host.capabilities).toContain('credentials')
+
+    const localHelper = scanCapabilities(input({
+      'lib/index.js': [
+        'const readRecord = () => store.get()',
+        'const record = readRecord()',
+      ].join('\n'),
+    }))
+    expect(localHelper.capabilities).not.toContain('credentials')
+  })
+
   it('treats keytar method references without a direct call as credentials', () => {
     for (const line of [
       'const find = promisify(keytar.findPassword)',

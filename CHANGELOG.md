@@ -4,6 +4,36 @@ Each release lists **Affects catalog results** first: anything that can change w
 
 `schemaVersion` is the JSON contract version (see [docs/audit-schema.md](docs/audit-schema.md)). It is noted on every release; a bump means the JSON shape or the wording contract broke, or a field became a stable contract.
 
+## Unreleased
+
+`schemaVersion`: 2.
+
+### 中文
+
+#### 影响目录结果
+
+- **裸 `readRecord(` 不再算读凭据。** 本地 `function readRecord()` / `this.readRecord()` 曾误报 `creds-network`。字面 `credentials.readRecord(` 以及经接缝别名的 `.readRecord(` 仍算。
+- **接缝链式 / 可选链读值仍算。** `ctx.get('credentials').readRecord(…)`、`ctx.get('credentials').resolve(…)`、`credentials?.readRecord(…)` 会命中；把链式调用的返回值、以及 `ctx.get('credentials')()` / `ctx.credentials()` 这类立刻再调用的结果收成接缝别名的误收已去掉。
+- **接缝别名赋值放宽。** `credentialsProvider = credCtx.credentials ?? null` 这类无 `const`、带 `??`/`||` 默认值的赋值会进入别名表，其后的 `.resolve` / `.readRecord` 等仍算读值；`this.x = …` / `obj.x = …` 不进入裸名别名表。
+- **`credentials` 芯片与红线共用别名感知。** 解构改名、`*Ctx` 句柄、以及上类 provider 别名上的读值会显示 `credentials` 芯片；`credentials.material` 的接收者也扩到 `hostCtx` / `credCtx` / `this.ctx` 等，与 shape 侧一致。已确认风险的插件若指纹含上述字段，升级后可能需重新确认。目录需 bump pin 并 `PROBE_ALL=1`。
+
+#### 其他
+
+无。
+
+### English
+
+#### Affects catalog results
+
+- **Bare `readRecord(` is no longer a credential read.** Local helpers (`function readRecord()`, `this.readRecord()`) were false `creds-network` hits. Literal `credentials.readRecord(` and `.readRecord(` through a seam alias still count.
+- **Chained / optional-chained seam value reads still count.** `ctx.get('credentials').readRecord(…)`, `ctx.get('credentials').resolve(…)`, and `credentials?.readRecord(…)` match; the return value of a chained call, and of an immediate re-call (`ctx.get('credentials')()` / `ctx.credentials()`), is no longer collected as a seam alias.
+- **Seam alias assignment is broader.** Plain reassignment with a `??` / `||` default (`credentialsProvider = credCtx.credentials ?? null`) enters the alias table, so later `.resolve` / `.readRecord` still count as value reads; `this.x = …` / `obj.x = …` do not enter the bare-name alias set.
+- **The `credentials` chip shares alias awareness with the red line.** Renamed destructures, `*Ctx` handles, and provider aliases above show the chip; `credentials.material` receivers expand to `hostCtx` / `credCtx` / `this.ctx` to match shape. Plugins whose ack fingerprint includes those fields may need reconfirmation after upgrade. Catalogs should bump the pin and run `PROBE_ALL=1`.
+
+#### Other
+
+None.
+
 ## 0.2.3 — 2026-10-15
 
 `schemaVersion`: 2.

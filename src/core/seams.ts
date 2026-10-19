@@ -80,19 +80,20 @@ export const CAPABILITY_RULES: readonly CapabilityRule[] = [
   {
     id: 'credentials.material',
     capability: 'credentials',
+    // Receivers match shape.ts: `ctx` / `this.ctx` / `*Ctx` (hostCtx, credCtx, …).
     pattern: new RegExp(
-      String.raw`(?:require\(|from\s+|import\s*\(\s*)['"](?:keychain|keytar|dotenv)['"]|${KEYCHAIN_MEMBER_SOURCE}|\bdotenv\.config\b|\bctx\.credentials\b|\bctx\.get\(\s*['"]credentials['"]\s*\)|['"\`](?:(?:~\/|\.\/|\/|[A-Za-z]:\\)[^'"\`\s]*\.ssh[^'"\`\s]*|\.ssh\/[^'"\`\s]+)['"\`]|['"\`](?:(?:~\/|\.\/|\/|[A-Za-z]:\\)[^'"\`\s]*\.aws\/credentials[^'"\`\s]*|\.aws\/credentials)['"\`]|(?:~\/|\.\/|\/)\.netrc\b|\.gnupg(?:\/|\\|$)|\.docker\/config\.json|\.kube\/config|[/\\]id_rsa\b|[/\\]id_ed25519\b`,
+      String.raw`(?:require\(|from\s+|import\s*\(\s*)['"](?:keychain|keytar|dotenv)['"]|${KEYCHAIN_MEMBER_SOURCE}|\bdotenv\.config\b|(?:(?:[A-Za-z_$][\w$]*\.)?(?:ctx|[a-z][\w$]*Ctx)|this\.ctx)\s*\.\s*(?:credentials\b|get\s*(?:\?\.\s*)?\(\s*['"]credentials['"]\s*\))|['"\`](?:(?:~\/|\.\/|\/|[A-Za-z]:\\)[^'"\`\s]*\.ssh[^'"\`\s]*|\.ssh\/[^'"\`\s]+)['"\`]|['"\`](?:(?:~\/|\.\/|\/|[A-Za-z]:\\)[^'"\`\s]*\.aws\/credentials[^'"\`\s]*|\.aws\/credentials)['"\`]|(?:~\/|\.\/|\/)\.netrc\b|\.gnupg(?:\/|\\|$)|\.docker\/config\.json|\.kube\/config|[/\\]id_rsa\b|[/\\]id_ed25519\b`,
     ),
     label: 'Credential / secret access',
   },
-  // The seam is often reached through a local alias (`const credentials =
-  // ctx.get('credentials')`), which the handle rule above does not see. Reading
-  // through the alias is still credential access, so the chip must show it —
-  // otherwise a plugin can carry the red line with no matching chip.
+  // Value reads through the seam (literal `credentials.resolve(` or a local
+  // alias / renamed destructure) are applied in capability.ts via the same
+  // `credentialReadCalls` helper the red line uses — a second regex here would
+  // miss aliases and reopen "red line with no matching chip".
   {
     id: 'credentials.read',
     capability: 'credentials',
-    pattern: /\bcredentials\.(?:resolve|readRecord|read|get[A-Z]\w*)\s*\(/,
+    pattern: /(?!)/, // never matches; scanCapabilities fills this rule
     label: 'Credential / secret access',
   },
   // --- environment -------------------------------------------------------

@@ -4,6 +4,7 @@
  */
 
 import { CAPABILITY_RULES, HOST_RUNTIME_PREFIXES } from './seams.ts'
+import { collectSeamAliases, credentialReadCalls } from './shape.ts'
 import { stripComments } from './strip-comments.ts'
 import type { Capability, Evidence, PluginInput } from './types.ts'
 
@@ -217,9 +218,19 @@ export function scanCapabilities(input: PluginInput): CapabilityScan {
   for (const [file, content] of Object.entries(input.sources)) {
     const originalLines = content.split('\n')
     const scannedLines = stripComments(content, file).split('\n')
+    // Host-credentials seam aliases only. keytar/keychain reads already hit
+    // `credentials.material`; feeding them here would double-count evidence and
+    // crowd out the `credentials.read` fact under the display cap.
+    const seamAliases = collectSeamAliases(scannedLines).filter(alias =>
+      alias !== 'keytar'
+      && alias !== 'keychain'
+      && !alias.startsWith('keychain:')
+      && !alias.startsWith('keychain-bare:'),
+    )
     for (let i = 0; i < scannedLines.length; i++) {
       const stripped = scannedLines[i]
       for (const rule of CAPABILITY_RULES) {
+        if (rule.id === 'credentials.read') continue
         const match = rule.pattern.exec(stripped)
         if (match !== null) {
           if (rule.id === 'dynamic-code.eval' && isConstantDynamicCode(stripped)) continue
@@ -232,6 +243,17 @@ export function scanCapabilities(input: PluginInput): CapabilityScan {
             rule: rule.id,
           })
         }
+      }
+      const readCalls = credentialReadCalls(stripped, seamAliases)
+      if (readCalls.length > 0) {
+        capabilities.add('credentials')
+        evidence.push({
+          capability: 'credentials',
+          file,
+          line: i + 1,
+          snippet: (originalLines[i] ?? stripped).trim().slice(0, 120),
+          rule: 'credentials.read',
+        })
       }
       // fetch() is special-cased (not in CAPABILITY_RULES): a same-origin
       // relative-path fetch is a call into the DSH host, not egress. Only

