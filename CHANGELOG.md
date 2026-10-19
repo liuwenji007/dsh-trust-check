@@ -12,6 +12,30 @@ Each release lists **Affects catalog results** first: anything that can change w
 
 #### 影响目录结果
 
+无。
+
+#### 其他
+
+无。
+
+### English
+
+#### Affects catalog results
+
+None.
+
+#### Other
+
+None.
+
+## 0.2.4 — 2026-10-19
+
+`schemaVersion`: 2.
+
+### 中文
+
+#### 影响目录结果
+
 - **裸 `readRecord(` 不再算读凭据。** 本地 `function readRecord()` / `this.readRecord()` 曾误报 `creds-network`。字面 `credentials.readRecord(` 以及经接缝别名的 `.readRecord(` 仍算。
 - **接缝链式 / 可选链读值仍算。** `ctx.get('credentials').readRecord(…)`、`ctx.get('credentials').resolve(…)`、`credentials?.readRecord(…)` 会命中；把链式调用的返回值、以及 `ctx.get('credentials')()` / `ctx.credentials()` 这类立刻再调用的结果收成接缝别名的误收已去掉。
 - **接缝别名赋值放宽。** `credentialsProvider = credCtx.credentials ?? null` 这类无 `const`、带 `??`/`||` 默认值的赋值会进入别名表，其后的 `.resolve` / `.readRecord` 等仍算读值；`this.x = …` / `obj.x = …` 不进入裸名别名表。
@@ -19,7 +43,7 @@ Each release lists **Affects catalog results** first: anything that can change w
 
 #### 其他
 
-无。
+- **插件列表图标**：打包 `icon.png`，并在 `package.json` 声明 `icon` / `exports["./icon"]`，设置 → 插件 → 已安装 会显示自定义图标，而不再是默认图。
 
 ### English
 
@@ -32,7 +56,7 @@ Each release lists **Affects catalog results** first: anything that can change w
 
 #### Other
 
-None.
+- **Plugin list icon**: ship `icon.png` and declare `icon` / `exports["./icon"]` in `package.json` so Settings → Plugins → Installed shows a custom mark instead of the default artwork.
 
 ## 0.2.3 — 2026-10-15
 
