@@ -1,6 +1,8 @@
 /**
  * Presentation layer: maps AuditReport JSON to human-facing verdicts and
- * concern lists. Shared by the settings UI and CLI; no DOM, no locale strings.
+ * concern lists. Shared by the settings UI and CLI; no DOM. Concern one-liners
+ * for `en`/`zh` live here so CLI and Settings stay aligned without importing
+ * the client locale bundle.
  */
 
 import { ackMatchesReport } from './ack-fingerprint.ts'
@@ -77,12 +79,37 @@ const CONCERN_EN: Partial<Record<ConcernCode, string>> = {
   subagent: 'Spawn sub-agents',
   'host-runtime': 'Call host runtime APIs',
   llm: 'Call language models',
+  'dynamic-code': 'Execute dynamic code',
 }
 
-/** English one-liner for CLI / non-UI consumers. */
-export function concernText(concern: Concern): string {
+const CONCERN_ZH: Partial<Record<ConcernCode, string>> = {
+  'install-script': '安装时会执行脚本',
+  'core-tamper': '覆盖或禁用了 DSH 核心 bundle',
+  'creds-network': '代码中检出：读取凭据的值，且有网络访问',
+  'plaintext-http': '代码中检出：明文 http:// 外连',
+  'literal-ip': '代码中检出：直接连接 IP 地址',
+  'external-dest': '源码里出现外连地址（字面量）',
+  'secret-touch': '可能触摸密钥或敏感环境变量',
+  'path-escape': '可能触摸工作区外的路径',
+  shell: '会执行系统命令',
+  'fs-write': '会写本地文件',
+  'fs-read': '会读本地文件',
+  network: '会访问网络',
+  credentials: '会读取凭据或密钥',
+  env: '会读取环境变量',
+  subagent: '会启动子代理',
+  'host-runtime': '会调用宿主运行时',
+  llm: '会调用语言模型',
+  'dynamic-code': '会动态执行代码',
+}
+
+export type PresentLang = 'en' | 'zh'
+
+/** One-liner for CLI / non-UI consumers. Defaults to English (Settings key parity). */
+export function concernText(concern: Concern, lang: PresentLang = 'en'): string {
   if (concern.code === 'raw') return concern.detail ?? ''
-  return CONCERN_EN[concern.code] ?? concern.code
+  const table = lang === 'zh' ? CONCERN_ZH : CONCERN_EN
+  return table[concern.code] ?? concern.code
 }
 
 /** Up to `max` concern bullets: red lines first, then shape, then capabilities by weight. */

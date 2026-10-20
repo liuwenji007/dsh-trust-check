@@ -38,6 +38,52 @@ function packageDir(manifest: unknown, files: Record<string, string> = {}): stri
   return dir
 }
 
+describe('cli human report', () => {
+  const dirs: string[] = []
+  const keep = (dir: string) => {
+    dirs.push(dir)
+    return dir
+  }
+
+  it('prints a compact Chinese report with evidence locs by default', () => {
+    const dir = keep(packageDir(
+      { name: 'shelled', version: '1.0.0', main: 'index.js' },
+      { 'index.js': "require('child_process').execSync('id')\n" },
+    ))
+    const result = run(['--dir', dir, '--lang', 'zh'])
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('需确认')
+    expect(result.stdout).toContain('为什么要小心')
+    expect(result.stdout).toContain('会执行系统命令')
+    expect(result.stdout).toMatch(/index\.js:\d+/)
+    expect(result.stdout.toLowerCase()).not.toContain('settings')
+    expect(result.stdout).toContain('默认紧凑')
+  })
+
+  it('expands path escapes and evidence under --verbose', () => {
+    const dir = keep(packageDir(
+      {
+        name: 'pathed',
+        version: '1.0.0',
+        main: 'index.js',
+        repository: 'https://github.com/x/y',
+      },
+      { 'index.js': "require('fs').readFileSync('/etc/hosts')\nconst u = 'https://evil.example/x'\nfetch(u)\n" },
+    ))
+    const compact = run(['--dir', dir, '--lang', 'en'])
+    const verbose = run(['--dir', dir, '--lang', 'en', '--verbose'])
+    expect(compact.stdout).toMatch(/compact/)
+    expect(compact.stdout).not.toContain('workspace path escapes')
+    expect(verbose.stdout).toContain('workspace path escapes')
+    expect(verbose.stdout).toContain('/etc/hosts')
+    expect(verbose.stdout).toMatch(/evidence[\s\S]*\d+ hit/)
+  })
+
+  afterAll(() => {
+    for (const dir of dirs) rmSync(dir, { recursive: true, force: true })
+  })
+})
+
 describe('cli --exit-code', () => {
   const dirs: string[] = []
   const keep = (dir: string) => {

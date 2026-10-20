@@ -6,6 +6,8 @@
  *   npx dsh-trust-check --profile work          # another profile
  *   npx dsh-trust-check --dir ./my-plugin       # audit one package tree
  *   npx dsh-trust-check --dir ./pkg --spec npm:x@1.0.0 --json
+ *   npx dsh-trust-check --verbose               # full per-plugin dump
+ *   npx dsh-trust-check --lang en               # English (default: zh unless LANG=en*)
  *
  * No DSH host needed for profile or --dir mode.
  */
@@ -15,29 +17,21 @@ import {
   auditPlugin,
   buildAuditResponse,
   collectPlugin,
-  concernText,
-  concerns,
-  countVerdicts,
-  formatInjectionDetail,
-  partitionDestinations,
-  networkReach,
+  formatHumanReport,
+  resolveCliColor,
+  resolveCliLang,
   runAudit,
   verdict,
 } from '../lib/index.js'
-
-const ACTION_EN = {
-  red: 'Stop by default; confirm the risk in Settings if you still want to keep it.',
-  accepted: 'Red-line risk acknowledged in Settings; upgrade may prompt again.',
-  review: 'No hard red lines; if capabilities match why you installed it, mark as expected in Settings.',
-  expected: 'Capabilities marked as expected in Settings.',
-  clear: 'No red lines or privileged capabilities detected.',
-}
 
 function parseArgs(argv) {
   const args = {
     profile: process.env.DSH_PROFILE ?? 'web',
     json: false,
     exitCode: false,
+    verbose: false,
+    lang: undefined,
+    colorFlag: undefined,
     dir: undefined,
     spec: 'dir:.',
   }
@@ -60,20 +54,38 @@ function parseArgs(argv) {
     } else if (arg === '--spec') {
       args.spec = valueOf(arg, i)
       i++
+    } else if (arg === '--lang') {
+      const lang = valueOf(arg, i).toLowerCase()
+      if (lang !== 'zh' && lang !== 'en') {
+        console.error('error: --lang must be zh or en')
+        process.exit(1)
+      }
+      args.lang = lang
+      i++
     } else if (arg === '--json') {
       args.json = true
     } else if (arg === '--exit-code') {
       args.exitCode = true
+    } else if (arg === '--verbose' || arg === '-v') {
+      args.verbose = true
+    } else if (arg === '--color') {
+      args.colorFlag = true
+    } else if (arg === '--no-color') {
+      args.colorFlag = false
     } else if (arg === '--help' || arg === '-h') {
       console.log(`Usage:
-  dsh-trust-check [--profile <name>] [--json] [--exit-code]
-  dsh-trust-check --dir <package-dir> [--spec <install-spec>] [--json] [--exit-code]
+  dsh-trust-check [--profile <name>] [--json] [--exit-code] [--verbose] [--lang zh|en] [--color|--no-color]
+  dsh-trust-check --dir <package-dir> [--spec <install-spec>] [--json] [--exit-code] [--verbose] [--lang zh|en] [--color|--no-color]
 
 Options:
   --profile <name>   Profile to audit (default: web or DSH_PROFILE)
   --dir <path>       Audit one package directory (mutually exclusive with --profile)
   --spec <spec>      Install spec label for --dir (default: dir:.)
-  --json             Machine-readable AuditResponse JSON
+  --json             Machine-readable AuditResponse JSON (marketplace / CI must use this)
+  --verbose, -v      Expand every plugin (default: compact — red/review/accepted/reconfirm)
+  --lang zh|en       Human-report language (default: zh, or en when LANG starts with en)
+  --color            Force ANSI colors (even when piped)
+  --no-color         Disable ANSI colors (also honors NO_COLOR)
   --exit-code        Exit 0 clear/accepted/expected, 1 review, 2 red, 3 scan failed.
                      Off by default. Exit 0 is "nothing detected", not a safety claim.
 `)
@@ -90,68 +102,17 @@ Options:
   return args
 }
 
-function printPlugin(p, ack) {
-  const v = verdict(p, ack)
-  console.log(`${p.name} ${p.version} — ${v}`)
-  console.log(`  ${ACTION_EN[v] ?? ''}`)
-  const list = concerns(p)
-  if (list.length > 0 && v !== 'expected' && v !== 'accepted') {
-    console.log('  why be careful:')
-    for (const item of list) console.log(`    · ${concernText(item)}`)
+/** Worst verdict across the response. Scan failure outranks every verdict. */
+function gateExitCode(response, dirMode) {
+  if (response.errors.length > 0) return 3
+  // An empty --dir result is a failed scan. An empty profile just has no plugins.
+  if (response.plugins.length === 0) return dirMode ? 3 : 0
+  const rank = { clear: 0, expected: 0, accepted: 0, review: 1, red: 2 }
+  let worst = 0
+  for (const plugin of response.plugins) {
+    worst = Math.max(worst, rank[verdict(plugin, response.acks?.[plugin.name])] ?? 3)
   }
-  const caps = p.capabilities.length === 0
-    ? 'none'
-    : p.capabilities.map(c => {
-      if (c !== 'network') return c
-      const reach = networkReach(p)
-      if (reach === 'outbound') return 'network (outbound)'
-      if (reach === 'same-origin') return 'network (same-origin)'
-      return c
-    }).join(', ')
-  console.log(`  capabilities: ${caps}`)
-  if (p.destinations?.length > 0) {
-    const { priority, safe } = partitionDestinations(p.destinations)
-    console.log('  destinations (literal):')
-    for (const d of priority.slice(0, 8)) console.log(`    ${d.kind}: ${d.value}`)
-    if (safe.length > 0) {
-      console.log(`    … + ${safe.length} allowlisted/loopback destination(s)`)
-    }
-  }
-  if (p.pathEscapes?.length > 0) {
-    console.log('  workspace path escapes:')
-    for (const pe of p.pathEscapes.slice(0, 8)) console.log(`    ${pe.kind}: ${pe.value}`)
-  }
-  if (p.secretTouches?.length > 0) {
-    console.log('  secret touches:')
-    for (const s of p.secretTouches.slice(0, 8)) console.log(`    ${s.kind}: ${s.value}`)
-  }
-  if (p.injections.length > 0) {
-    const tokenPart = p.injectedTokensEstimate > 0 ? ` · ~${p.injectedTokensEstimate} tokens (cost)` : ''
-    console.log(`  injections: ${p.injections.length} item(s)${tokenPart}`)
-    for (const inj of p.injections.slice(0, 5)) {
-      console.log(`    ${inj.kind}: ${formatInjectionDetail(inj.detail)}`)
-    }
-    if (p.injections.length > 5) console.log(`    … and ${p.injections.length - 5} more`)
-  }
-  const source = [p.pinned ? 'pinned' : 'unpinned']
-  if (p.repository === undefined) source.push('no repository')
-  else source.push(p.repository)
-  if (p.hasBuildScript) source.push(`install scripts: ${p.buildScripts.join(', ')}`)
-  console.log(`  source: ${source.join(' | ')}`)
-  if (p.evidence.length > 0) console.log(`  evidence: ${p.evidence.length} hit(s)`)
-  console.log('')
-}
-
-function humanReport(contextLabel, plugins, errors, acks) {
-  const counts = countVerdicts(plugins, acks)
-  console.log(contextLabel)
-  console.log(`${plugins.length} plugin(s) · ${counts.red} red · ${counts.accepted} accepted · ${counts.review} review · ${counts.expected} expected · ${counts.clear} clear`)
-  console.log('')
-  for (const p of plugins) printPlugin(p, acks?.[p.name])
-  if (errors.length > 0) {
-    console.log(`${errors.length} plugin(s) could not be read:`)
-    for (const e of errors) console.log(`  - ${e.name}: ${e.message}`)
-  }
+  return worst
 }
 
 const args = parseArgs(process.argv.slice(2))
@@ -190,22 +151,28 @@ if (args.json) {
   const label = args.dir !== undefined
     ? `dir: ${args.dir}`
     : `profile: ${args.profile}`
-  humanReport(label, response.plugins, response.errors, response.acks)
+  const lang = resolveCliLang({
+    langFlag: args.lang,
+    envLang: process.env.LC_ALL || process.env.LANG,
+  })
+  const color = resolveCliColor({
+    tty: Boolean(process.stdout.isTTY),
+    noColor: process.env.NO_COLOR,
+    colorFlag: args.colorFlag,
+  })
+  process.stdout.write(formatHumanReport({
+    contextLabel: label,
+    plugins: response.plugins,
+    errors: response.errors,
+    acks: response.acks,
+    lang,
+    verbose: args.verbose,
+    dirMode: args.dir !== undefined,
+    color,
+    columns: process.stdout.columns || 88,
+  }))
 }
 
 // Assigned, not process.exit(): a piped stdout write is async, and exiting
 // immediately can truncate the JSON a gate is about to parse.
 if (args.exitCode) process.exitCode = gateExitCode(response, args.dir !== undefined)
-
-/** Worst verdict across the response. Scan failure outranks every verdict. */
-function gateExitCode(response, dirMode) {
-  if (response.errors.length > 0) return 3
-  // An empty --dir result is a failed scan. An empty profile just has no plugins.
-  if (response.plugins.length === 0) return dirMode ? 3 : 0
-  const rank = { clear: 0, expected: 0, accepted: 0, review: 1, red: 2 }
-  let worst = 0
-  for (const plugin of response.plugins) {
-    worst = Math.max(worst, rank[verdict(plugin, response.acks?.[plugin.name])] ?? 3)
-  }
-  return worst
-}

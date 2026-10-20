@@ -32,8 +32,11 @@ Restart `dsh web`, then open **Settings → Plugin Trust**. Already installed: u
 A standalone CLI is also provided, independent of the DSH host:
 
 ```sh
-npx dsh-trust-check                 # audit the default profile `web`
+npx dsh-trust-check                 # audit default profile `web` (compact; Chinese unless LANG=en*)
 npx dsh-trust-check --profile work  # audit another profile
+npx dsh-trust-check --verbose       # expand every plugin
+npx dsh-trust-check --lang en       # English human report
+npx dsh-trust-check --no-color      # disable ANSI (off when piped; --color to force on a TTY)
 npx dsh-trust-check --json          # machine-readable output
 
 # Audit any extracted package directory (no profile, no DSH)
@@ -77,7 +80,7 @@ Settings use a single column of cards, with one plugin open at a time.
 4. **When the last acknowledgment no longer matches**: the badge shows **reconfirm**; capability gains and losses appear as `+cap` / `−cap` pills under the title.
 5. **Acknowledgment**: at the bottom of the card; writes the current fingerprint to the local acknowledgment store for the next scan.
 
-The CLI prints the same facts in its own layout.
+The CLI prints the same facts in its own layout. Compact by default: attention items expand as rounded cards (soft-wrap, width follows the terminal), with evidence under each concern; one-liners for `expected` / `clear`. Color on TTY; `--no-color` / `NO_COLOR` disable it. Pass `--verbose` for the full dump. Machine integrations (catalog, CI) must use `--json`, not the human report.
 
 | Verdict | Meaning | When |
 |---|---|---|

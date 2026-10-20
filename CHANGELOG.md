@@ -16,7 +16,7 @@ Each release lists **Affects catalog results** first: anything that can change w
 
 #### 其他
 
-无。
+- **CLI 人读输出（个人向）**：默认紧凑（展开有红线 / 需确认 / 风险已确认 / 需重新确认）；`expected` / `clear` 一行带过。需处理项用圆角卡片（软换行、字段分行、证据 `片段` + `@文件:行号`）；宽度跟终端列数走。concern 下附证据摘录（含红线映射）；紧凑模式最多列出 3 条注入细节，以及被 concern 顶掉的工作区外路径与密钥触摸摘要。TTY 下带 ANSI 层级；`--color` / `--no-color` / `NO_COLOR` 可控。中文为默认（`LANG=en*` 或 `--lang en` 切英语；机器集成请用 `--json`）；`--dir` 装前文案不再提 Settings；`--verbose` 输出全量细节。
 
 ### English
 
@@ -26,7 +26,7 @@ None.
 
 #### Other
 
-None.
+- **CLI human report (personal use)**: compact by default (expand red / review / accepted / reconfirm); one-liners for `expected` / `clear`. Attention items use rounded cards (soft-wrap, label/value on separate lines, evidence as snippet + `@file:line`); width follows the terminal. Concern bullets include evidence excerpts; compact lists at most three injection details, plus path-escape / secret-touch summaries when crowded out of concerns. ANSI hierarchy on TTY; `--color` / `--no-color` / `NO_COLOR` control color. Chinese by default (`LANG=en*` or `--lang en`; machine integrations must use `--json`); `--dir` pre-install copy no longer mentions Settings; `--verbose` for the full dump.
 
 ## 0.2.4 — 2026-10-19
 

@@ -32,8 +32,11 @@ dsh plugin --profile web add dsh-trust-check
 同时提供独立 CLI，不依赖 DSH 宿主：
 
 ```sh
-npx dsh-trust-check                 # 审计默认 profile `web`
+npx dsh-trust-check                 # 审计默认 profile `web`（默认紧凑中文）
 npx dsh-trust-check --profile work  # 审计其他 profile
+npx dsh-trust-check --verbose       # 展开每个插件的全量细节
+npx dsh-trust-check --lang en       # 英文人读输出（LANG=en* 时也会默认英文）
+npx dsh-trust-check --no-color      # 关闭 ANSI（管道默认无色；TTY 可用 --color 强制）
 npx dsh-trust-check --json          # 机器可读输出
 
 # 审计任意已解压的包目录（无需 profile、无需 DSH）
@@ -77,7 +80,7 @@ npx dsh-trust-check --dir ./pkg --exit-code
 4. **与上次确认不一致时**：右上角显示「需重新确认」；能力有增减时，标题下出现 `+能力` / `−能力` 小标签。
 5. **确认**：在卡片底部，把当前指纹写入本机确认记录，供下次扫描对比。
 
-CLI 打印同一套事实，版式独立于设置页卡片。
+CLI 打印同一套事实，版式独立于设置页。默认紧凑：需处理项用圆角卡片展开（软换行，宽度跟终端走），并在「为什么要小心」下附证据摘录；`expected` / `clear` 一行带过。TTY 下带颜色，`--no-color` / `NO_COLOR` 可关。加 `--verbose` 看全量。机器集成（市场目录、CI）请用 `--json`，不要解析人读输出。
 
 | 裁决 | 含义 | 何时出现 |
 |---|---|---|
