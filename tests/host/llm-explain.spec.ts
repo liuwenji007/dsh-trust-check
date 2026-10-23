@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { explainWithLlm, explainWithLlmResult, resolveExplainRoute } from '../../src/host/llm-explain.ts'
 
 describe('resolveExplainRoute', () => {
-  it('prefers a live agent session header config', async () => {
+  it('falls back to a live session header when no default model is set', async () => {
     const ctx = {
       agents: {
         list: () => [{
@@ -38,7 +38,62 @@ describe('resolveExplainRoute', () => {
     })
   })
 
-  it('uses first registered provider model when no agent route exists', async () => {
+  it('uses the user default model before the first catalog entry', async () => {
+    const ctx = {
+      agents: { list: () => [] },
+      agentDefaultModel: {
+        currentSelection: () => ({ provider: 'deepseek-account', model: 'deepseek-flash' }),
+      },
+      llm: {
+        listProviders: () => [{ id: 'deepseek-official' }],
+        listModels: vi.fn(async () => [{ id: 'deepseek-flash' }]),
+      },
+    }
+    await expect(resolveExplainRoute(ctx as never)).resolves.toEqual({
+      provider: 'deepseek-account',
+      model: 'deepseek-flash',
+    })
+    expect(ctx.llm.listModels).not.toHaveBeenCalled()
+  })
+
+  it('prefers the user default model over a stale live session', async () => {
+    const ctx = {
+      agents: {
+        list: () => [{
+          id: 's1',
+          options: { provider: 'deepseek-official', model: 'deepseek-flash' },
+          session: { requestHeader: () => undefined },
+        }],
+      },
+      agentDefaultModel: {
+        currentSelection: () => ({ provider: 'deepseek-account', model: 'deepseek-flash' }),
+      },
+      llm: { listProviders: () => [], listModels: vi.fn() },
+    }
+    await expect(resolveExplainRoute(ctx as never)).resolves.toEqual({
+      provider: 'deepseek-account',
+      model: 'deepseek-flash',
+    })
+  })
+
+  it('reads the default model through ctx.get when the property is missing', async () => {
+    const ctx = {
+      get: (name: string) => name === 'agentDefaultModel'
+        ? { currentSelection: () => ({ provider: 'deepseek-account', model: 'deepseek-flash' }) }
+        : undefined,
+      agents: { list: () => [] },
+      llm: {
+        listProviders: () => [{ id: 'deepseek-official' }],
+        listModels: vi.fn(async () => [{ id: 'deepseek-flash' }]),
+      },
+    }
+    await expect(resolveExplainRoute(ctx as never)).resolves.toEqual({
+      provider: 'deepseek-account',
+      model: 'deepseek-flash',
+    })
+  })
+
+  it('uses first registered provider model when no agent or default route exists', async () => {
     const ctx = {
       agents: { list: () => [] },
       llm: {
@@ -54,6 +109,61 @@ describe('resolveExplainRoute', () => {
 })
 
 describe('explainWithLlm', () => {
+  it('does not stamp a live chat session onto the one-shot reading', async () => {
+    async function* stream() {
+      yield { type: 'text-delta', index: 0, text: 'ok' }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    }
+    const ctx = {
+      agents: {
+        list: () => [{
+          id: 'live-session',
+          options: { provider: 'deepseek-official', model: 'deepseek-flash' },
+          session: { requestHeader: () => undefined },
+        }],
+      },
+      agentDefaultModel: {
+        currentSelection: () => ({
+          provider: 'deepseek-account',
+          model: 'deepseek-flash',
+          reasoningEffort: 'high',
+        }),
+      },
+      llm: {
+        listProviders: () => [],
+        listModels: async () => [],
+        stream: vi.fn(() => stream()),
+      },
+    }
+    await expect(explainWithLlm(ctx as never, 'p')).resolves.toBe('ok')
+    expect(ctx.llm.stream).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'deepseek-account',
+      model: 'deepseek-flash',
+      reasoningEffort: 'high',
+    }))
+    expect(ctx.llm.stream.mock.calls[0][0]).not.toHaveProperty('sessionId')
+  })
+
+  it('names the chosen route when the stream fails', async () => {
+    async function* stream() {
+      yield { type: 'finish', reason: { kind: 'error', failure: { message: 'Authentication Fails, Your api key: ****745f is invalid' } } }
+    }
+    const ctx = {
+      agents: { list: () => [] },
+      agentDefaultModel: {
+        currentSelection: () => ({ provider: 'deepseek-account', model: 'deepseek-flash' }),
+      },
+      llm: {
+        listProviders: () => [],
+        listModels: async () => [],
+        stream: vi.fn(() => stream()),
+      },
+    }
+    await expect(explainWithLlm(ctx as never, 'p')).rejects.toThrow(
+      /deepseek-account\/deepseek-flash/,
+    )
+  })
+
   it('streams assistant text through ctx.llm', async () => {
     async function* stream() {
       yield { type: 'text-delta', index: 0, text: 'Hello ' }

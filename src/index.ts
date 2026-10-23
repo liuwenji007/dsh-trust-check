@@ -64,7 +64,7 @@ export type { NpmProvenance, NpmProvenanceOptions } from './npm-provenance.ts'
 export const name = 'dsh-trust-check'
 
 /** Host services required for audit routes and optional LLM explanation. */
-export const inject = ['webServer', 'loader', 'llm', 'agents']
+export const inject = ['webServer', 'loader', 'llm', 'agents', 'agentDefaultModel']
 
 /** Optional cordis.yml configuration; profile defaults to the host's active profile. */
 export type Config = {
@@ -356,7 +356,7 @@ function guard(request: IncomingMessage, response: ServerResponse): boolean {
 }
 
 export function apply(ctx: Context, config?: Config): void {
-  ctx.inject(['webServer', 'loader', 'llm', 'agents'], (hostCtx: Context) => {
+  ctx.inject(['webServer', 'loader', 'llm', 'agents', 'agentDefaultModel'], (hostCtx: Context) => {
     const host = hostCtx as unknown as Host
     // Per request: the launcher may publish profileContext after this plugin mounts.
     const activeProfile = (): ActiveProfile => resolveActiveProfile(name => ctx.get(name), config)

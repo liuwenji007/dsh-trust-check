@@ -957,7 +957,7 @@ function PluginCardBody({
   )
   const explainCurrent = explainEntry !== null && explainEntry.key === explainKey ? explainEntry : null
   const explainText = explainCurrent?.text ?? null
-  const [explainError, setExplainError] = useState(false)
+  const [explainError, setExplainError] = useState<string | null>(null)
   const explainRef = useRef<HTMLElement>(null)
   const explainTitleId = `${evidenceRegionId(report.name)}-explain`
   const [explainSeq, setExplainSeq] = useState(0)
@@ -1013,14 +1013,23 @@ function PluginCardBody({
 
   const explain = async () => {
     setExplainLoading(true)
-    setExplainError(false)
+    setExplainError(null)
     try {
       const res = await fetch('/dsh-trust-check/explain', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ name: report.name, locale: explainLocale }),
       })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      if (!res.ok) {
+        let detail = ''
+        try {
+          const body = await res.json() as { error?: unknown }
+          if (typeof body.error === 'string' && body.error.trim() !== '') detail = body.error.trim()
+        } catch {
+          // keep the generic fallback below
+        }
+        throw new Error(detail !== '' ? detail : t('explain.error'))
+      }
       const data = await res.json() as { text?: string, truncated?: boolean }
       const entry: ExplainEntry = {
         key: explainKey,
@@ -1031,8 +1040,9 @@ function PluginCardBody({
       writeExplain(report.name, entry)
       setExplainEntry(entry)
       setExplainSeq(n => n + 1)
-    } catch {
-      setExplainError(true)
+    } catch (error) {
+      const message = error instanceof Error ? error.message.trim() : ''
+      setExplainError(message !== '' ? message : t('explain.error'))
     } finally {
       setExplainLoading(false)
     }
@@ -1199,7 +1209,7 @@ function PluginCardBody({
         </div>
         {ackStale && <div className={css.errorInline} role="status">{t('ack.stale')}</div>}
         {ackError && <div className={css.errorInline} role="status">{t('ack.error')}</div>}
-        {explainError && <div className={css.errorInline} role="status">{t('explain.error')}</div>}
+        {explainError !== null && <div className={css.errorInline} role="status">{explainError}</div>}
       </section>
       <p className={css.ackNote}>{t('ack.scope')}</p>
     </div>

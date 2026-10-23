@@ -242,6 +242,19 @@ describe('settings card reading order', () => {
     expect(screen.queryByRole('region', { name: zh['explain.title'] })).toBeNull()
   })
 
+  it('shows the server error detail when AI reading fails', async () => {
+    const user = userEvent.setup()
+    fetchMock.mockResolvedValue({
+      status: 500,
+      ok: false,
+      json: async () => ({ error: 'Authentication Fails (deepseek-official/deepseek-flash)' }),
+    })
+    renderReport(response([plugin()]))
+    await user.click(screen.getByRole('button', { name: zh['explain.button'] }))
+    expect(await screen.findByText('Authentication Fails (deepseek-official/deepseek-flash)')).toBeTruthy()
+    expect(screen.queryByText(zh['explain.error'])).toBeNull()
+  })
+
   it('hides the reconfirm badge when the acknowledgment still matches', async () => {
     const user = userEvent.setup()
     const row = plugin()
