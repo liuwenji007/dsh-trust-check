@@ -1,11 +1,11 @@
 /**
  * The trust-check mark in the settings navigation (puzzle + glass + pulse).
  *
- * The settings shell picks nav glyphs from a closed list of section ids
- * (`models`, `agent-presets`, `plugins`) and falls back to its own gear for
- * every other id; `settings.section` projects only `id` / `order` / `label`,
- * so a registrant has no icon to pass. Third-party sections therefore wear
- * the gear unless they claim their own row — same pattern as dsh-market.
+ * Hosts before dsh 0.2.2 pick nav glyphs from a closed list of section ids
+ * (`models`, `agent-presets`, `plugins`) and fall back to the gear for every
+ * other id. `settings.section` on those hosts projects only `id` / `order` /
+ * `label`, so a registrant has no icon to pass. Third-party sections therefore
+ * wear the gear unless they claim their own row — same pattern as dsh-market.
  *
  * Scope, deliberately narrow:
  *
@@ -15,8 +15,10 @@
  *   are removed with the fiber;
  * - a locale switch re-claims the row through the MutationObserver.
  *
- * Delete this module (and its call in index.ts) the day `settings.section`
- * grows an `icon` field.
+ * dsh 0.2.2 grew a real icon seat (`settings.section.icon`) and wrapped the
+ * fallback gear, so this stand-in no longer lines up with that shell — the
+ * caller keeps it only for hosts that never declare the seat. Delete this
+ * module once those hosts are gone.
  */
 import { trustMarkSvg } from './trust-mark.ts'
 
@@ -96,10 +98,15 @@ export interface NavIconContext {
  * @param resolveLabel - this plugin's current section label (the same thunk
  *   the `settings.section` registration passes), re-read on every sync so a
  *   locale switch is picked up without re-registering.
+ * @returns a stopper. Calling it removes the marker and the stylesheet; the
+ *   fiber's own disposal does the same, and either one is safe to repeat.
+ *   The caller uses it when a host that looked old turns out to paint icons
+ *   itself.
  */
-export function installSettingsNavIcon(ctx: NavIconContext, resolveLabel: () => string): void {
-  if (typeof document === 'undefined') return
+export function installSettingsNavIcon(ctx: NavIconContext, resolveLabel: () => string): () => void {
+  if (typeof document === 'undefined') return () => {}
 
+  let dispose = () => {}
   ctx.effect(() => {
     const tag = document.createElement('style')
     tag.dataset.plugin = 'dsh-trust-check'
@@ -130,11 +137,15 @@ export function installSettingsNavIcon(ctx: NavIconContext, resolveLabel: () => 
     const observer = new MutationObserver(schedule)
     observer.observe(document.body, { childList: true, subtree: true, characterData: true })
 
-    return () => {
+    const cleanup = () => {
+      if (disposed) return
       disposed = true
       observer.disconnect()
       for (const row of document.querySelectorAll(`[${NAV_ICON_MARKER}]`)) row.removeAttribute(NAV_ICON_MARKER)
       tag.remove()
     }
+    dispose = cleanup
+    return cleanup
   }, 'dsh-trust-check: settings nav icon')
+  return () => { dispose() }
 }

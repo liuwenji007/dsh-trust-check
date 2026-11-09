@@ -28,6 +28,30 @@ None.
 
 None.
 
+## 0.2.6 — 2026-11-09
+
+`schemaVersion`: 2.
+
+### 中文
+
+#### 影响目录结果
+
+无。
+
+#### 其他
+
+- **设置导航图标（#15）**：适配 dsh 0.2.2 的 `settings.section.icon`。有该槽位时通过正式座位画 trust mark，并停掉旧的 DOM 替换；老宿主仍走 stand-in，避免齿轮与自定义图标叠在一起。
+
+### English
+
+#### Affects catalog results
+
+None.
+
+#### Other
+
+- **Settings nav icon (#15)**: adapt to dsh 0.2.2's `settings.section.icon`. When the seat exists, paint the trust mark there and retire the DOM stand-in; older hosts keep the stand-in so the gear and custom mark do not sit side by side.
+
 ## 0.2.5 — 2026-10-23
 
 `schemaVersion`: 2.

@@ -2,9 +2,10 @@
  * The trust-check mark as geometry rather than a component.
  *
  * Source of truth: `assets/trust-nav-mark.svg` — a 64×64 monoline mark
- * (puzzle + glass; ECG path kept but not drawn). Settings-nav paints it as a CSS mask; paths are
- * inlined so the client bundle needs no raw-asset loader. The suite asserts
- * lockstep with the asset.
+ * (puzzle + glass; ECG path kept but not drawn). Settings-nav paints it as a
+ * CSS mask on older hosts, and as `TrustLogo` through `settings.section.icon`
+ * on dsh 0.2.2+; paths are inlined so the client bundle needs no raw-asset
+ * loader. The suite asserts lockstep with the asset.
  *
  * Drawn as strokes (not a Potrace fill dump): a 1254pt filled tracing
  * collapses into a speck under a 16px CSS mask.

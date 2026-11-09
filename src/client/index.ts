@@ -2,10 +2,12 @@
  * dsh-trust-check browser half: one `settings.section` page that renders the
  * audit report fetched from the node half's route.
  */
+import { createElement as h } from 'react'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { TrustReport } from './TrustReport.tsx'
+import { TrustLogo } from './TrustLogo.tsx'
 import { createTrustStore } from './stores.ts'
 import { installSettingsNavIcon } from './settings-nav-icon.ts'
 import { en, zh, type TrustKey } from './locales.ts'
@@ -14,6 +16,18 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** Trust report copy. */
     trust: TrustKey
+  }
+
+  /**
+   * dsh 0.2.2+ nav glyph seat. Declared until published slots types catch
+   * up; runtime detection is still `slots.inject`.
+   */
+  interface SlotMap {
+    'settings.section.icon': {
+      kind: 'list'
+      scope: 'root'
+      owner: { size?: number }
+    }
   }
 }
 
@@ -54,9 +68,26 @@ export function apply(ctx: ClientContext): void {
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-trust-check: dictionaries')
 
-  // Shell has no icon field on settings.section; claim the nav row and swap
-  // the fallback gear for the magnifying-glass mark (see settings-nav-icon.ts).
-  installSettingsNavIcon(ctx, () => sectionLabel(ctx))
+  // The section's nav glyph. Before dsh 0.2.2 the shell picked icons from its
+  // own ids and a registration had nothing to pass, so this package claimed
+  // its row and swapped the gear for the trust mark. 0.2.2 wraps that gear and
+  // offers `settings.section.icon` (same id as the section); registering the
+  // mark there is the one glyph, and leaving the stand-in up paints a second
+  // one beside it (#15). The slot is the detection, and it can arrive with the
+  // settings shell after the stand-in is already in place.
+  let stopNavStandIn: (() => void) | undefined
+  let hostPaintsNavIcon = false
+  ctx.slots.inject('settings.section.icon', () => {
+    hostPaintsNavIcon = true
+    stopNavStandIn?.()
+    stopNavStandIn = undefined
+    const off = ctx.slots.register({
+      name: 'settings.section.icon',
+      id: 'trust',
+    }, (owner: { size?: number } = {}) => h(TrustLogo, { size: owner.size ?? 16 }))
+    return typeof off === 'function' ? off as () => void : () => {}
+  })
+  if (!hostPaintsNavIcon) stopNavStandIn = installSettingsNavIcon(ctx, () => sectionLabel(ctx))
 
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
