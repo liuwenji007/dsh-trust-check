@@ -4,7 +4,7 @@
 [![npm version](https://img.shields.io/npm/v/dsh-trust-check)](https://www.npmjs.com/package/dsh-trust-check)
 [![npm downloads](https://img.shields.io/npm/dm/dsh-trust-check)](https://www.npmjs.com/package/dsh-trust-check)
 
-[中文](README.md)
+[中文](README.md) · [Русский](README.ru.md)
 
 Static **capability disclosure** for DeepSeek Harness plugins: permissions, injections, source, and install scripts — code-judged, reproducible, zero tokens.
 
