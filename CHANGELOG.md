@@ -28,6 +28,32 @@ None.
 
 None.
 
+## 0.2.7 — 2026-11-27
+
+`schemaVersion`: 2.
+
+### 中文
+
+#### 影响目录结果
+
+无。
+
+#### 其他
+
+- **反代 / `--trusted-host`（#16）**：设置页体检路由（audit / ack / explain）的信任判定改为与宿主普通 `/api` 相同：回环 Host，或 `webRuntime` / `webStartup` 里的 `trustedHosts`（含 `--trusted-host`），再加 Origin 同源与 `Sec-Fetch-Site: cross-site` 拒绝。不再要求 peer 为回环，也不再因转发头一票否决。未声明信任列表时，非回环 Host 仍 403。这不是鉴权，也不对齐宿主仍强制回环的特权 RPC。
+- 403 时清空缓存报告，并为体检 / 确认 / AI 解读提供专用提示；README 排障与 `SECURITY.md` 同步边界说明。
+
+### English
+
+#### Affects catalog results
+
+None.
+
+#### Other
+
+- **Reverse proxy / `--trusted-host` (#16)**: Settings checkup routes (audit / ack / explain) now use the same reachability rule as the host's ordinary `/api`: a loopback Host, or a `trustedHosts` entry from `webRuntime` / `webStartup` (including `--trusted-host`), plus an Origin host check and a `Sec-Fetch-Site: cross-site` refusal. A loopback peer is no longer required, and forwarding headers are no longer an automatic denial. Without a trust list, a non-loopback Host is still 403. This is not authentication, and it does not match the host's privileged RPCs, which stay loopback-only.
+- On 403, clear the cached report and show dedicated messages for checkup / ack / explain; README troubleshooting and `SECURITY.md` document the boundary.
+
 ## 0.2.6 — 2026-11-09
 
 `schemaVersion`: 2.

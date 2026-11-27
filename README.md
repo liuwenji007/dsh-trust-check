@@ -69,6 +69,7 @@ npx dsh-trust-check --dir ./pkg --exit-code
 | --- | --- |
 | 设置页 `dsh-client-store` missed the module table | 宿主过旧：先升 **dsh ≥ 0.1.0-rc.8**，再重启 Web；审计可先用上面的 CLI |
 | 设置里没有「插件体检」 | 确认已 `add`、已重启；或宿主太旧导致客户端未加载 |
+| 反代下体检 403（「当前入口未被允许」） | 宿主启动时声明 `--trusted-host <浏览器里的域名>`（与 `/api` 同一信任列表）。未加鉴权时不要把该入口暴露到公网。临时可用 `npx dsh-trust-check --profile web`，或经 SSH 隧道打开 `127.0.0.1` |
 
 ## 怎么读报告
 

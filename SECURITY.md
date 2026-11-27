@@ -34,8 +34,11 @@ A vulnerability is a way to make those claims silently wrong:
   `coverageNotes`.
 - **Fail-closed bypass**: an unreadable, oversized, or escaping tree is
   reported as a normal result instead of a scan failure.
-- **Local routes**: a request that is not same-origin loopback can read audit
-  results, change acknowledgements, or trigger the explain route.
+- **Local routes**: a request whose `Host` is neither a loopback name nor a
+  host-declared trusted authority (the same reachability rule as ordinary
+  `/api`) can read audit results, change acknowledgements, or trigger the
+  explain route. Reaching those routes on a trusted authority with no
+  authentication is a deployment choice, not a vulnerability in this package.
 
 ## What is not a vulnerability
 
@@ -56,6 +59,6 @@ A vulnerability is a way to make those claims silently wrong:
 
 报告时尽量附上：能复现问题的最小包目录结构和 `package.json`、执行的命令和得到的 JSON，以及你预期的结果。本项目由个人维护，会尽力处理；流程是先发布修复版本，再在发布说明里描述问题。
 
-**算作漏洞的情况**：本应命中的高置信度信号（安装脚本、覆盖或禁用核心 bundle、读到凭据且有网络、明文 HTTP 或字面量 IP 外连）没有命中；从入口或静态相对 import 可达的代码被静默跳过，既不进 `errors` 也不进 `coverageNotes`；本应 fail closed 的情况被当作正常结果输出；非同源、非本机的请求能够读取审计结果、修改确认记录或触发 AI 解释。
+**算作漏洞的情况**：本应命中的高置信度信号（安装脚本、覆盖或禁用核心 bundle、读到凭据且有网络、明文 HTTP 或字面量 IP 外连）没有命中；从入口或静态相对 import 可达的代码被静默跳过，既不进 `errors` 也不进 `coverageNotes`；本应 fail closed 的情况被当作正常结果输出；`Host` 既不是回环名、也不在宿主声明的信任 authority 内（与普通 `/api` 同一可达性规则）的请求能够读取审计结果、修改确认记录或触发 AI 解释。在已声明的信任 authority 上无鉴权即可访问，属于部署选择，不是本包漏洞。
 
 **不算漏洞的情况**：README “已知局限”和 THREAT-MODEL 里已经写明的静态分析边界；误报（请用误报 issue 模板）；对“某个能力对这个插件是否合理”的不同看法，这属于用户或集成方的策略判断。

@@ -162,35 +162,92 @@ export function isLoopbackRequest(request: IncomingMessage): boolean {
   return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1'
 }
 
-const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]'])
+/** Whole 127.0.0.0/8, plus the names the host fence treats as loopback. */
+function isLoopbackHostname(hostname: string): boolean {
+  if (hostname === 'localhost' || hostname === '[::1]') return true
+  const parts = hostname.split('.')
+  return parts.length === 4
+    && parts[0] === '127'
+    && parts.every(part => /^\d{1,3}$/.test(part) && Number(part) <= 255)
+}
+
+function headerValue(headers: IncomingMessage['headers'], name: string): string | undefined {
+  const value = headers[name]
+  return typeof value === 'string' ? value : undefined
+}
+
+function parseAuthority(authority: string): URL | undefined {
+  try {
+    return new URL(`http://${authority}`)
+  } catch {
+    return undefined
+  }
+}
 
 /**
- * A loopback peer is not enough: a DNS-rebound page reaches 127.0.0.1 with
- * its own name in Host and a matching Origin. Only loopback names pass.
+ * Canonical `host` or `host:port`. A written port is kept even when it is a
+ * scheme default (`:80` / `:443`), matching the host `/api` fence.
  */
-function loopbackHostHeader(host: string): boolean {
+function canonicalAuthority(entry: string, entryUrl: URL): string {
+  const port = entryUrl.port !== '' ? entryUrl.port : new URL(`https://${entry}`).port
+  return port === '' ? entryUrl.hostname : `${entryUrl.hostname}:${port}`
+}
+
+/** Port-less entries match the hostname on any port; `host:port` is exact. */
+function isTrustedAuthority(hostUrl: URL, trustedHosts: readonly string[]): boolean {
+  return trustedHosts.some(entry => {
+    const entryUrl = parseAuthority(entry)
+    if (entryUrl === undefined) return false
+    return canonicalAuthority(entry, entryUrl) === entryUrl.hostname
+      ? entryUrl.hostname === hostUrl.hostname
+      : entryUrl.host === hostUrl.host
+  })
+}
+
+/**
+ * Same reachability rule as the host's ordinary `/api` fence
+ * (`isTrustedApiRequest`): loopback hostname or a declared trusted authority,
+ * then `Sec-Fetch-Site: cross-site` and Origin-host checks. Not authentication,
+ * and not the host's privileged-RPC (loopback-only) fence. Peer address and
+ * forwarding headers are ignored — a reverse proxy is a trusted-host deployment.
+ *
+ * Semantics are copied because `@deepseek-ai/dsh-client-connection` does not
+ * export the function. Keep this in step with that implementation.
+ */
+export function trustedAuditRequest(
+  request: IncomingMessage,
+  trustedHosts: readonly string[] = [],
+): boolean {
+  const host = headerValue(request.headers, 'host')
+  if (host === undefined) return false
+  const hostUrl = parseAuthority(host)
+  if (hostUrl === undefined) return false
+  if (!isLoopbackHostname(hostUrl.hostname) && !isTrustedAuthority(hostUrl, trustedHosts)) return false
+  if (headerValue(request.headers, 'sec-fetch-site') === 'cross-site') return false
+  const origin = headerValue(request.headers, 'origin')
+  if (origin === undefined) return true
   try {
-    return LOOPBACK_HOSTNAMES.has(new URL(`http://${host}`).hostname)
+    return new URL(origin).host === hostUrl.host
   } catch {
     return false
   }
 }
 
-export function trustedAuditRequest(request: IncomingMessage): boolean {
-  if (!isLoopbackRequest(request)) return false
-  if (request.headers.forwarded !== undefined
-    || request.headers['x-forwarded-for'] !== undefined
-    || request.headers['x-real-ip'] !== undefined) return false
-  const origin = request.headers.origin
-  const host = request.headers.host
-  if (host === undefined || !loopbackHostHeader(host)) return false
-  if (origin === undefined) return true
-  try {
-    const parsed = new URL(origin)
-    return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.host === host
-  } catch {
-    return false
+/**
+ * `webRuntime.trustedHosts` (LAN literals plus `--trusted-host`) when the host
+ * has published it; otherwise `webStartup.trustedHosts`; otherwise none.
+ * Read on each request: Cordis has no optional inject, and `ctx.get` sees
+ * services in the same isolation scope without waiting on them at mount.
+ */
+export function auditTrustedHosts(get: (name: string) => unknown): readonly string[] {
+  const listOf = (name: string): readonly string[] | undefined => {
+    const service = get(name)
+    if (service === undefined || service === null || typeof service !== 'object') return undefined
+    const list = (service as { trustedHosts?: unknown }).trustedHosts
+    if (!Array.isArray(list)) return undefined
+    return list.filter((entry): entry is string => typeof entry === 'string')
   }
+  return listOf('webRuntime') ?? listOf('webStartup') ?? []
 }
 
 /**
@@ -347,9 +404,13 @@ async function llmExplain(ctx: Context, prompt: string): Promise<ExplainResult> 
   return explainWithLlmResult(ctx, prompt)
 }
 
-function guard(request: IncomingMessage, response: ServerResponse): boolean {
-  if (!trustedAuditRequest(request)) {
-    sendJson(response, 403, { error: 'audit is limited to same-origin loopback requests' })
+function guard(
+  request: IncomingMessage,
+  response: ServerResponse,
+  trustedHosts: readonly string[],
+): boolean {
+  if (!trustedAuditRequest(request, trustedHosts)) {
+    sendJson(response, 403, { error: 'audit is limited to loopback or host-trusted same-origin requests' })
     return false
   }
   return true
@@ -360,6 +421,7 @@ export function apply(ctx: Context, config?: Config): void {
     const host = hostCtx as unknown as Host
     // Per request: the launcher may publish profileContext after this plugin mounts.
     const activeProfile = (): ActiveProfile => resolveActiveProfile(name => ctx.get(name), config)
+    const trustedHosts = (): readonly string[] => auditTrustedHosts(name => ctx.get(name))
 
     host.effect(() => {
       const disposers = [
@@ -372,7 +434,7 @@ export function apply(ctx: Context, config?: Config): void {
               response.end()
               return
             }
-            if (!guard(request, response)) return
+            if (!guard(request, response, trustedHosts())) return
             const profile = activeProfile()
             sendJson(response, 200, runAudit(profile.name, profile.dir))
           },
@@ -381,7 +443,7 @@ export function apply(ctx: Context, config?: Config): void {
           kind: 'exact',
           path: '/dsh-trust-check/ack',
           handler: async (request, response) => {
-            if (!guard(request, response)) return
+            if (!guard(request, response, trustedHosts())) return
             const method = request.method ?? 'GET'
             if (method === 'POST') {
               try {
@@ -447,7 +509,7 @@ export function apply(ctx: Context, config?: Config): void {
               response.end()
               return
             }
-            if (!guard(request, response)) return
+            if (!guard(request, response, trustedHosts())) return
             try {
               const body = await readJsonBody(request) as { name?: string; locale?: string }
               if (typeof body.name !== 'string' || body.name === '') {

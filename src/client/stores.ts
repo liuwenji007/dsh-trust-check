@@ -14,6 +14,7 @@ export interface TrustStoreState {
 
 export type TrustStoreActions = {
   setReport: (draft: TrustStoreState, report: AuditResponse, at: number) => void
+  clearReport: (draft: TrustStoreState) => void
 }
 
 export function createTrustStore(): EngineStoreHandle<TrustStoreState, TrustStoreActions> {
@@ -24,6 +25,10 @@ export function createTrustStore(): EngineStoreHandle<TrustStoreState, TrustStor
       setReport: (draft, report, at) => {
         draft.report = normalizeAuditResponse(report)
         draft.fetchedAt = at
+      },
+      clearReport: draft => {
+        draft.report = null
+        draft.fetchedAt = null
       },
     },
   })

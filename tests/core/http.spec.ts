@@ -1,6 +1,6 @@
 import { Readable } from 'node:stream'
 import { describe, expect, it } from 'vitest'
-import { BodyTooLarge, ackAllowed, isLoopbackRequest, readJsonBody, requestBodyStatus, trustedAuditRequest } from '../../src/index.ts'
+import { BodyTooLarge, ackAllowed, auditTrustedHosts, isLoopbackRequest, readJsonBody, requestBodyStatus, trustedAuditRequest } from '../../src/index.ts'
 import type { AuditReport } from '../../src/core/types.ts'
 
 function requestOf(overrides: {
@@ -9,6 +9,8 @@ function requestOf(overrides: {
   origin?: string
   host?: string
   forwarded?: string
+  xForwardedFor?: string
+  secFetchSite?: string
 }): import('node:http').IncomingMessage {
   return {
     method: overrides.method ?? 'GET',
@@ -17,6 +19,8 @@ function requestOf(overrides: {
       ...(overrides.host !== undefined ? { host: overrides.host } : { host: '127.0.0.1:3000' }),
       ...(overrides.origin !== undefined ? { origin: overrides.origin } : {}),
       ...(overrides.forwarded !== undefined ? { forwarded: overrides.forwarded } : {}),
+      ...(overrides.xForwardedFor !== undefined ? { 'x-forwarded-for': overrides.xForwardedFor } : {}),
+      ...(overrides.secFetchSite !== undefined ? { 'sec-fetch-site': overrides.secFetchSite } : {}),
     },
   } as import('node:http').IncomingMessage
 }
@@ -33,20 +37,60 @@ describe('trustedAuditRequest', () => {
     }))).toBe(true)
   })
 
-  it('rejects non-loopback peers', () => {
-    expect(isLoopbackRequest(requestOf({ remoteAddress: '10.0.0.1' }))).toBe(false)
-    expect(trustedAuditRequest(requestOf({ remoteAddress: '10.0.0.1' }))).toBe(false)
+  it('allows the whole 127/8, not only 127.0.0.1', () => {
+    expect(trustedAuditRequest(requestOf({ host: '127.0.0.2:3000' }))).toBe(true)
   })
 
-  it('rejects mismatched Origin', () => {
+  it('does not require a loopback peer when Host is loopback or trusted', () => {
+    expect(isLoopbackRequest(requestOf({ remoteAddress: '10.0.0.1' }))).toBe(false)
+    expect(trustedAuditRequest(requestOf({ remoteAddress: '10.0.0.1' }))).toBe(true)
+    expect(trustedAuditRequest(requestOf({
+      remoteAddress: '10.0.0.1',
+      host: 'dsh.test',
+    }), ['dsh.test'])).toBe(true)
+  })
+
+  it('allows a declared trusted host, including a TLS Origin against a plaintext Host', () => {
+    expect(trustedAuditRequest(requestOf({ host: 'dsh.test' }), ['dsh.test'])).toBe(true)
+    expect(trustedAuditRequest(requestOf({
+      host: 'dsh.test',
+      origin: 'https://dsh.test',
+    }), ['dsh.test'])).toBe(true)
+    expect(trustedAuditRequest(requestOf({ host: 'dsh.test:8443' }), ['dsh.test'])).toBe(true)
+  })
+
+  it('matches an explicit trusted port exactly', () => {
+    expect(trustedAuditRequest(requestOf({ host: 'dsh.test:8443' }), ['dsh.test:8443'])).toBe(true)
+    expect(trustedAuditRequest(requestOf({ host: 'dsh.test:3080' }), ['dsh.test:8443'])).toBe(false)
+  })
+
+  it('rejects an unknown host and a missing trust list', () => {
+    expect(trustedAuditRequest(requestOf({ host: 'dsh.test' }))).toBe(false)
+    expect(trustedAuditRequest(requestOf({ host: 'other.test' }), ['dsh.test'])).toBe(false)
+  })
+
+  it('rejects mismatched Origin and cross-site fetch metadata', () => {
     expect(trustedAuditRequest(requestOf({
       origin: 'http://evil.example',
       host: '127.0.0.1:3000',
     }))).toBe(false)
+    expect(trustedAuditRequest(requestOf({
+      host: 'dsh.test',
+      origin: 'https://dsh.test',
+      secFetchSite: 'cross-site',
+    }), ['dsh.test'])).toBe(false)
+    expect(trustedAuditRequest(requestOf({
+      host: 'dsh.test',
+      origin: 'https://evil.example',
+    }), ['dsh.test'])).toBe(false)
   })
 
-  it('rejects forwarded proxy headers', () => {
-    expect(trustedAuditRequest(requestOf({ forwarded: 'for=1.2.3.4' }))).toBe(false)
+  it('ignores forwarding headers when the Host is already trusted', () => {
+    expect(trustedAuditRequest(requestOf({ forwarded: 'for=1.2.3.4' }))).toBe(true)
+    expect(trustedAuditRequest(requestOf({
+      host: 'dsh.test',
+      xForwardedFor: '203.0.113.5',
+    }), ['dsh.test'])).toBe(true)
   })
 
   it('rejects a DNS-rebound name even when Origin matches Host', () => {
@@ -64,6 +108,21 @@ describe('trustedAuditRequest', () => {
   it('rejects a loopback-looking name that is not loopback', () => {
     expect(trustedAuditRequest(requestOf({ host: '127.0.0.1.attacker.test:3000' }))).toBe(false)
     expect(trustedAuditRequest(requestOf({ host: 'localhost.attacker.test' }))).toBe(false)
+  })
+})
+
+describe('auditTrustedHosts', () => {
+  it('prefers webRuntime, then webStartup, then none', () => {
+    expect(auditTrustedHosts(() => undefined)).toEqual([])
+    expect(auditTrustedHosts(name => name === 'webStartup' ? { trustedHosts: ['from-startup'] } : undefined))
+      .toEqual(['from-startup'])
+    expect(auditTrustedHosts(name => {
+      if (name === 'webRuntime') return { trustedHosts: ['from-runtime'] }
+      if (name === 'webStartup') return { trustedHosts: ['from-startup'] }
+      return undefined
+    })).toEqual(['from-runtime'])
+    expect(auditTrustedHosts(name => name === 'webRuntime' ? { trustedHosts: [] } : { trustedHosts: ['from-startup'] }))
+      .toEqual([])
   })
 })
 

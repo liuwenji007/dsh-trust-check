@@ -947,7 +947,7 @@ function PluginCardBody({
   const repoHref = repositoryHref(report.repository)
   const [revealSeq, setRevealSeq] = useState(0)
   const [ackLoading, setAckLoading] = useState(false)
-  const [ackError, setAckError] = useState(false)
+  const [ackError, setAckError] = useState<'load' | 'forbidden' | null>(null)
   const [ackStale, setAckStale] = useState(false)
   const [explainLoading, setExplainLoading] = useState(false)
   const explainLocale = typeof document !== 'undefined' ? document.documentElement.lang : ''
@@ -968,7 +968,7 @@ function PluginCardBody({
 
   const postAck = async (acceptRisk = false) => {
     setAckLoading(true)
-    setAckError(false)
+    setAckError(null)
     try {
       const res = await fetch('/dsh-trust-check/ack', {
         method: 'POST',
@@ -985,11 +985,15 @@ function PluginCardBody({
         if (data.report !== undefined) onReplaceReport(data.report)
         return
       }
+      if (res.status === 403) {
+        setAckError('forbidden')
+        return
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       setAckStale(false)
       await onAckChange('ack')
     } catch {
-      setAckError(true)
+      setAckError('load')
     } finally {
       setAckLoading(false)
     }
@@ -997,15 +1001,19 @@ function PluginCardBody({
 
   const revokeAck = async () => {
     setAckLoading(true)
-    setAckError(false)
+    setAckError(null)
     try {
       const res = await fetch(`/dsh-trust-check/ack?name=${encodeURIComponent(report.name)}`, {
         method: 'DELETE',
       })
+      if (res.status === 403) {
+        setAckError('forbidden')
+        return
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       await onAckChange('revoke')
     } catch {
-      setAckError(true)
+      setAckError('load')
     } finally {
       setAckLoading(false)
     }
@@ -1021,6 +1029,10 @@ function PluginCardBody({
         body: JSON.stringify({ name: report.name, locale: explainLocale }),
       })
       if (!res.ok) {
+        if (res.status === 403) {
+          setExplainError(t('explain.error.forbidden'))
+          return
+        }
         let detail = ''
         try {
           const body = await res.json() as { error?: unknown }
@@ -1208,7 +1220,8 @@ function PluginCardBody({
           </div>
         </div>
         {ackStale && <div className={css.errorInline} role="status">{t('ack.stale')}</div>}
-        {ackError && <div className={css.errorInline} role="status">{t('ack.error')}</div>}
+        {ackError === 'forbidden' && <div className={css.errorInline} role="status">{t('ack.error.forbidden')}</div>}
+        {ackError === 'load' && <div className={css.errorInline} role="status">{t('ack.error')}</div>}
         {explainError !== null && <div className={css.errorInline} role="status">{explainError}</div>}
       </section>
       <p className={css.ackNote}>{t('ack.scope')}</p>
@@ -1322,7 +1335,7 @@ export function TrustReport({ useStore, actions, t }: TrustReportProps) {
   )
   const fetchedAt = useStore(s => s.fetchedAt)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(false)
+  const [error, setError] = useState<'load' | 'forbidden' | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [feedback, setFeedback] = useState<{ id: number, finding: FrozenFinding, opener: HTMLElement } | null>(null)
   const feedbackSeq = useRef(0)
@@ -1341,9 +1354,15 @@ export function TrustReport({ useStore, actions, t }: TrustReportProps) {
   /** `afterAck` keeps the reader's place instead of re-deriving which cards are open. */
   const refresh = async (afterAck?: { name: string, kind: AckChange }) => {
     setLoading(true)
-    setError(false)
+    setError(null)
     try {
       const response = await fetch('/dsh-trust-check/audit')
+      if (response.status === 403) {
+        actions.clearReport()
+        setExpanded(new Set())
+        setError('forbidden')
+        return
+      }
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const data = await response.json() as AuditResponse
       actions.setReport(data, Date.now())
@@ -1359,7 +1378,9 @@ export function TrustReport({ useStore, actions, t }: TrustReportProps) {
         setSettledName(afterAck.name)
       }
     } catch {
-      setError(true)
+      actions.clearReport()
+      setExpanded(new Set())
+      setError('load')
     } finally {
       setLoading(false)
     }
@@ -1514,9 +1535,10 @@ export function TrustReport({ useStore, actions, t }: TrustReportProps) {
         </div>
       </div>
 
-      {error && <div className={css.error} role="alert">{t('loadError')}</div>}
+      {error === 'forbidden' && <div className={css.error} role="alert">{t('loadError.forbidden')}</div>}
+      {error === 'load' && <div className={css.error} role="alert">{t('loadError')}</div>}
 
-      {!error && normalizedReport !== null && normalizedReport.plugins.length === 0 && normalizedReport.errors.length === 0 && (
+      {error === null && normalizedReport !== null && normalizedReport.plugins.length === 0 && normalizedReport.errors.length === 0 && (
         <div className={css.empty}>{t('empty')}</div>
       )}
 

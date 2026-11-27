@@ -64,7 +64,7 @@ function renderReport(row: AuditReport = plugin()) {
   const view = render(
     <TrustReport
       useStore={selector => selector(state)}
-      actions={{ setReport: () => {} }}
+      actions={{ setReport: () => {}, clearReport: () => {} }}
       t={(key: TrustKey) => zh[key]}
     />,
   )
@@ -155,7 +155,7 @@ describe('detection feedback dialog', () => {
     rerender(
       <TrustReport
         useStore={selector => selector(state)}
-        actions={{ setReport: () => {} }}
+        actions={{ setReport: () => {}, clearReport: () => {} }}
         t={(key: TrustKey) => zh[key]}
       />,
     )

@@ -81,14 +81,18 @@ function renderReport(report: AuditResponse | null, dictionary: Record<TrustKey,
     state.report = next
     state.fetchedAt = at
   })
+  const clearReport = vi.fn(() => {
+    state.report = null
+    state.fetchedAt = null
+  })
   const view = render(
     <TrustReport
       useStore={selector => selector(state)}
-      actions={{ setReport }}
+      actions={{ setReport, clearReport }}
       t={key => dictionary[key]}
     />,
   )
-  return { ...view, setReport, state }
+  return { ...view, setReport, clearReport, state }
 }
 
 describe('settings card reading order', () => {
@@ -632,6 +636,45 @@ describe('settings card reading order', () => {
     renderReport(null)
     expect(await screen.findByText(zh.loadError)).toBeTruthy()
     expect(screen.queryByText(zh.empty)).toBeNull()
+  })
+
+  it('shows the trust-boundary message on 403 and the generic failure on other HTTP errors', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 403 })
+    const forbidden = renderReport(null)
+    expect(await screen.findByText(zh['loadError.forbidden'])).toBeTruthy()
+    expect(screen.queryByText(zh.loadError)).toBeNull()
+    expect(forbidden.clearReport).toHaveBeenCalled()
+    forbidden.unmount()
+
+    fetchMock.mockResolvedValue({ ok: false, status: 500 })
+    const failed = renderReport(null)
+    expect(await screen.findByText(zh.loadError)).toBeTruthy()
+    expect(screen.queryByText(zh['loadError.forbidden'])).toBeNull()
+    expect(failed.clearReport).toHaveBeenCalled()
+  })
+
+  it('clears a cached report when a later refresh is forbidden', async () => {
+    const user = userEvent.setup()
+    fetchMock.mockResolvedValue({ ok: false, status: 403 })
+    const { clearReport, state } = renderReport(response([plugin()]))
+    expect(screen.getByText('demo-plugin')).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: zh.refresh }))
+    expect(await screen.findByText(zh['loadError.forbidden'])).toBeTruthy()
+    expect(clearReport).toHaveBeenCalled()
+    expect(state.report).toBeNull()
+    expect(screen.queryByText('demo-plugin')).toBeNull()
+  })
+
+  it('shows a trust-boundary message when ack or explain is forbidden', async () => {
+    const user = userEvent.setup()
+    renderReport(response([plugin()]))
+    fetchMock.mockResolvedValue({ ok: false, status: 403 })
+    await user.click(screen.getByRole('button', { name: zh['ack.accept'] }))
+    expect(await screen.findByText(zh['ack.error.forbidden'])).toBeTruthy()
+    expect(screen.queryByText(zh['ack.error'])).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: zh['explain.button'] }))
+    expect(await screen.findByText(zh['explain.error.forbidden'])).toBeTruthy()
   })
 
   it('does not repeat what the chips, header, and fold title already say', () => {

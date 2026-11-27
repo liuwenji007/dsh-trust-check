@@ -69,6 +69,7 @@ The exit code is always 0 by default. With `--exit-code`: `0` nothing detected i
 | --- | --- |
 | Settings: `dsh-client-store` missed the module table | Host too old: upgrade **dsh ≥ 0.1.0-rc.8**, restart Web; use the CLI above for audits in the meantime |
 | No “Plugin Trust” in Settings | Confirm `add` + restart; or the client failed to load on an old host |
+| Checkup 403 behind a reverse proxy (“this entry is not allowed”) | Start the host with `--trusted-host <the name in the browser>` (same trust list as `/api`). Do not expose that entry on the public internet without authentication. Meanwhile: `npx dsh-trust-check --profile web`, or an SSH tunnel to `127.0.0.1` |
 
 ## How to read the report
 
