@@ -10,7 +10,7 @@ import { TrustReport } from './TrustReport.tsx'
 import { TrustLogo } from './TrustLogo.tsx'
 import { createTrustStore } from './stores.ts'
 import { installSettingsNavIcon } from './settings-nav-icon.ts'
-import { en, zh, type TrustKey } from './locales.ts'
+import { UI_en, UI_ru, UI_zh, type TrustKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -54,8 +54,9 @@ function sectionLabel(ctx: ClientContext): string {
   if (typeof translated === 'string' && translated !== '' && translated !== 'settings.nav') {
     return translated
   }
-  const lang = locale?.language ?? locale?.locale ?? ''
-  return lang.toLowerCase().startsWith('en') ? en['settings.nav'] : zh['settings.nav']
+  const lang = (locale?.language ?? locale?.locale ?? '').toLowerCase()
+  if (lang.startsWith('ru')) return UI_ru['settings.nav']
+  return lang.startsWith('en') ? UI_en['settings.nav'] : UI_zh['settings.nav']
 }
 
 /**
@@ -66,7 +67,19 @@ export function apply(ctx: ClientContext): void {
   const handle = createTrustStore()
   const store = () => handle
 
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-trust-check: dictionaries')
+  // One dictionary per locale: the pinned client-locale types still list only
+  // zh/en, while the host ships a wider built-in set (de, en, es, fr, ja, pt,
+  // ru, zh), so the per-locale overload keeps `ru` typed and registered.
+  ctx.effect(() => {
+    const disposers = [
+      ctx.locale.register(NS, 'zh', UI_zh),
+      ctx.locale.register(NS, 'en', UI_en),
+      ctx.locale.register(NS, 'ru', UI_ru),
+    ]
+    return () => {
+      for (const dispose of disposers) dispose()
+    }
+  }, 'dsh-trust-check: dictionaries')
 
   // The section's nav glyph. Before dsh 0.2.2 the shell picked icons from its
   // own ids and a registration had nothing to pass, so this package claimed
