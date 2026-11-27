@@ -4,7 +4,7 @@
 [![npm version](https://img.shields.io/npm/v/dsh-trust-check)](https://www.npmjs.com/package/dsh-trust-check)
 [![npm downloads](https://img.shields.io/npm/dm/dsh-trust-check)](https://www.npmjs.com/package/dsh-trust-check)
 
-[English](README.en.md)
+[English](README.en.md) · [Русский](README.ru.md)
 
 DeepSeek Harness 插件静态**能力披露**：权限、注入、来源、安装脚本——代码判定、可复现、零 token。
 
