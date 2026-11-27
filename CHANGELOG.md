@@ -28,6 +28,30 @@ None.
 
 None.
 
+## 0.2.8 — 2026-11-27
+
+`schemaVersion`: 2.
+
+### 中文
+
+#### 影响目录结果
+
+- **裸相对 `fetch` 字面量不再判 network**：`fetch("x/y")` / `fetch("local.json")` 与 `fetch("/x")`、`fetch("./x")` 一样视为同源相对路径（不能换 origin）。带 scheme 或 `//host` 的字面量、变量、拼接、函数调用（如 `fetch(apiUrl(...))`）仍判 network。
+
+#### 其他
+
+无。
+
+### English
+
+#### Affects catalog results
+
+- **Bare path-relative `fetch` literals are no longer `network`**: `fetch("x/y")` / `fetch("local.json")` are treated like `fetch("/x")` and `fetch("./x")` — same-origin relative paths that cannot change host. Literals with a scheme or `//host`, variables, concatenation, and method calls (e.g. `fetch(apiUrl(...))`) still count as `network`.
+
+#### Other
+
+None.
+
 ## 0.2.7 — 2026-11-27
 
 `schemaVersion`: 2.

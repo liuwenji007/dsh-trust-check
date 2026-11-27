@@ -23,15 +23,17 @@ function manifestUsesHostRuntime(manifest: Record<string, unknown>): boolean {
 /**
  * Decide whether any `fetch(` call on one source line is network egress.
  *
- * A relative path whose origin is already fixed cannot egress. Quoted `${` is
- * literal text. In a template, `${…}` after `/` plus a non-slash character, or
- * after `./` / `../`, cannot pick another host; `${…}` right after a lone `/`
- * can (`/${name}` → `//host`). `blob:` / `data:` literals are scheme fetch
- * (Fetch Standard §4.3) and never enter HTTP fetch. Absolute URLs, variables,
- * concatenation, and method calls are egress. Escapes are folded the way the
- * URL parser folds them, so `\` / `\n` / `\u002f` / octal `\057` that become
- * `//host` still count. A comma or closing parenthesis after the literal
- * starts the next argument.
+ * A relative path whose origin is already fixed cannot egress — including
+ * path-relative forms with no leading slash (`x/y`), which resolve against the
+ * page URL and cannot change host. Quoted `${` is literal text. In a template,
+ * `${…}` after `/` plus a non-slash character, after `./` / `../`, or after a
+ * non-empty path-relative prefix, cannot pick another host; `${…}` right after
+ * a lone `/` can (`/${name}` → `//host`). `blob:` / `data:` literals are scheme
+ * fetch (Fetch Standard §4.3) and never enter HTTP fetch. Absolute URLs,
+ * scheme / `//host` forms, variables, concatenation, and method calls are
+ * egress. Escapes are folded the way the URL parser folds them, so `\` / `\n` /
+ * `\u002f` / octal `\057` that become `//host` still count. A comma or closing
+ * parenthesis after the literal starts the next argument.
  */
 
 /**
@@ -96,19 +98,30 @@ function interpolationAt(raw: string): number {
   return -1
 }
 
-/** A finished relative URL: path-absolute (`/x`, not `//host`), `./`, or `../`. */
+/** True when the string begins with an absolute / special URL scheme (`http:`, `blob:`, …). */
+function hasUrlScheme(decoded: string): boolean {
+  return /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(decoded)
+}
+
+/**
+ * A finished relative URL against the page origin: path-absolute (`/x`, not
+ * `//host`), dot-relative (`./` / `../`), or path-relative (`x`, `x/y`). A
+ * scheme or `//host` form can leave the origin and is not same-origin here.
+ */
 function isSameOriginUrl(decoded: string): boolean {
-  if (decoded.startsWith('/') && !decoded.startsWith('//')) return true
-  return decoded.startsWith('./') || decoded.startsWith('../')
+  if (decoded.startsWith('//') || hasUrlScheme(decoded)) return false
+  return true
 }
 
 /**
  * True when appending arbitrary text cannot change the origin.
  * A lone `/` is not locked: `/${name}` can become `//host`.
+ * A non-empty path-relative prefix (`api/…`) stays on the page origin.
  */
 function prefixLocksOrigin(decoded: string): boolean {
+  if (decoded.startsWith('//') || hasUrlScheme(decoded)) return false
   if (decoded.startsWith('/') && !decoded.startsWith('//')) return decoded.length >= 2
-  return decoded.startsWith('./') || decoded.startsWith('../')
+  return decoded.length >= 1
 }
 
 function isSameOriginFetchArg(arg: string, quote: string): boolean {

@@ -34,6 +34,20 @@ describe('scanCapabilities', () => {
         'await fetch("/api/dsh-workspace-scope/check")',
         'await fetch("./local.json")',
         'await fetch("../up.json")',
+        // Path-relative (no leading slash) still cannot change origin.
+        'await fetch("conversation-search/api")',
+        'await fetch("x/y")',
+        'await fetch("local.json")',
+      ].join('\n'),
+    }))
+    expect(result.capabilities).not.toContain('network')
+  })
+
+  it('does not flag a path-relative fetch whose interpolation cannot change the host', () => {
+    const result = scanCapabilities(input({
+      'lib/index.js': [
+        'await fetch(`api/${id}`)',
+        'await fetch(`conversation-search/${name}`)',
       ].join('\n'),
     }))
     expect(result.capabilities).not.toContain('network')
@@ -44,6 +58,7 @@ describe('scanCapabilities', () => {
       'lib/index.js': [
         "await fetch('https://api.example.com/v1')",
         'await fetch("//cdn.example.com/x")',
+        "await fetch('http:not-a-relative-path')",
       ].join('\n'),
     }))
     expect(result.capabilities).toContain('network')
