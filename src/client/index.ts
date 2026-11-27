@@ -40,8 +40,22 @@ export const inject = ['slots', 'locale']
 type LocaleFace = {
   language?: string
   locale?: string
+  /** Published snapshot; the only field that names the active locale on its own. */
+  getLocale?: () => { active?: string }
   t?: (ns: string, key: string) => string
   text?: (ns: string, key: string) => string
+}
+
+/**
+ * The active locale id, snapshot first: `language` is absent until the
+ * preference scope has answered, which is exactly the window the nav label is
+ * first resolved in.
+ * @param locale - optional locale face.
+ * @returns a lowercase locale id, empty when nothing knows it yet.
+ */
+function activeLocale(locale: LocaleFace | undefined): string {
+  const active = locale?.getLocale?.()?.active ?? locale?.language ?? locale?.locale ?? ''
+  return String(active).toLowerCase()
 }
 
 /**
@@ -54,7 +68,7 @@ function sectionLabel(ctx: ClientContext): string {
   if (typeof translated === 'string' && translated !== '' && translated !== 'settings.nav') {
     return translated
   }
-  const lang = (locale?.language ?? locale?.locale ?? '').toLowerCase()
+  const lang = activeLocale(locale)
   if (lang.startsWith('ru')) return UI_ru['settings.nav']
   return lang.startsWith('en') ? UI_en['settings.nav'] : UI_zh['settings.nav']
 }
@@ -102,12 +116,48 @@ export function apply(ctx: ClientContext): void {
   })
   if (!hostPaintsNavIcon) stopNavStandIn = installSettingsNavIcon(ctx, () => sectionLabel(ctx))
 
-  ctx.slots.inject('settings.section', () => ctx.slots.register({
-    name: 'settings.section',
-    id: 'trust',
-    order: 80,
-    locale: NS,
-    label: () => sectionLabel(ctx),
-    store,
-  }, TrustReport))
+  // The shell freezes a section's label when it builds the settings nav, so a
+  // label taken in that first pass outlives every later locale change: the page
+  // follows the live language while its own row in the list keeps the language
+  // it was first read in. Dictionary registrations only bump the locale
+  // revision and never emit `locale/change`, so this listens for the real
+  // switch and re-registers the section, which is the refresh the shell reacts
+  // to. Registering before the switch stays the inject's job.
+  const section: { stop?: () => void } = {}
+
+  const mountSection = () => {
+    const registered = ctx.slots.register({
+      name: 'settings.section',
+      id: 'trust',
+      order: 80,
+      locale: NS,
+      label: () => sectionLabel(ctx),
+      store,
+    }, TrustReport)
+    section.stop = typeof registered === 'function' ? registered as () => void : () => {}
+  }
+
+  ctx.slots.inject('settings.section', () => {
+    mountSection()
+    return () => {
+      section.stop?.()
+      section.stop = undefined
+    }
+  })
+
+  const on = (ctx as unknown as {
+    on?: (event: 'locale/change', listener: () => void) => (() => void) | void
+  }).on
+  if (typeof on === 'function') {
+    ctx.effect(() => {
+      const stopListening = on.call(ctx, 'locale/change', () => {
+        if (section.stop === undefined) return
+        section.stop()
+        mountSection()
+      })
+      return () => {
+        if (typeof stopListening === 'function') stopListening()
+      }
+    }, 'dsh-trust-check: section label follows the locale')
+  }
 }
